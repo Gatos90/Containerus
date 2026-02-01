@@ -15,6 +15,8 @@ import { FormsModule } from '@angular/forms';
 import { LucideAngularModule, ArrowRight, Sparkles, Search, History } from 'lucide-angular';
 import { Subject, debounceTime, distinctUntilChanged, switchMap, from } from 'rxjs';
 import { CommandHistoryService } from '../../state/command-history.service';
+import { AiService } from '../../../../core/services/ai.service';
+import { WarpTerminalStore } from '../../state/warp-terminal-store.service';
 
 @Component({
   selector: 'app-composer-bar',
@@ -31,6 +33,11 @@ export class ComposerBarComponent {
 
   private historyService = inject(CommandHistoryService);
   private destroyRef = inject(DestroyRef);
+  private aiService = inject(AiService);
+  private store = inject(WarpTerminalStore);
+
+  readonly isAiConfigured = this.aiService.isConfigured;
+  readonly currentCwd = this.store.currentCwd;
 
   readonly ArrowRight = ArrowRight;
   readonly Sparkles = Sparkles;
@@ -118,7 +125,20 @@ export class ComposerBarComponent {
   }
 
   toggleMode(): void {
+    // Don't allow switching to AI mode if not configured
+    if (this.mode() === 'command' && !this.isAiConfigured()) {
+      return;
+    }
     this.mode.update((current) => (current === 'command' ? 'ai' : 'command'));
+  }
+
+  onInputChange(): void {
+    // Auto-activate AI mode when typing # at start (if configured)
+    if (this.value.startsWith('#') && this.mode() === 'command' && this.isAiConfigured()) {
+      this.mode.set('ai');
+      // Remove the # prefix since we're now in AI mode
+      this.value = this.value.slice(1);
+    }
   }
 
   onKeyDown(event: KeyboardEvent): void {

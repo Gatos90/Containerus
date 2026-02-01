@@ -9,6 +9,8 @@ import {
   Play,
   ChevronDown,
   ChevronRight,
+  Terminal,
+  FileText,
 } from 'lucide-angular';
 import type { CommandBlock } from '../../models/terminal-block.model';
 import type { RenderedLine } from '../../models/terminal-output.model';
@@ -41,6 +43,8 @@ export class CommandBlockCardComponent {
   readonly Play = Play;
   readonly ChevronDown = ChevronDown;
   readonly ChevronRight = ChevronRight;
+  readonly Terminal = Terminal;
+  readonly FileText = FileText;
 
   get statusLabel(): string {
     switch (this.block.status.state) {

@@ -136,14 +136,6 @@
       </div>
     }
   </div>
-
-  <!-- AI Input Bar - only show when NOT in warp mode (warp has its own composer-bar) -->
-  @if (!showWarpTerminal()) {
-    <app-ai-input-bar
-      [terminalContext]="getRecentOutput()"
-      (executeCommand)="executeCommand($event)"
-    />
-  }
 </div>
 
 <!-- Command Palette Overlay -->

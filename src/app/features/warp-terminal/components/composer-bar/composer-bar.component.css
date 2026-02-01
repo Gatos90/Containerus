@@ -61,6 +61,11 @@
   color: var(--text-secondary);
 }
 
+.mode-pill:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .send-button {
   display: inline-flex;
   align-items: center;

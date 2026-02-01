@@ -43,22 +43,28 @@
   }
 
   <div class="composer-left">
-    <span class="cwd-pill">E:\development\Containerus</span>
+    <span class="cwd-pill">{{ currentCwd() }}</span>
   </div>
   <div class="composer-input">
     <textarea
       #composerInput
       [(ngModel)]="value"
+      (ngModelChange)="onInputChange()"
       (keydown)="onKeyDown($event)"
       rows="2"
-      placeholder="Type a command, or ask AI to draft one..."
+      [placeholder]="isAiConfigured() ? 'Type a command, or # for AI...' : 'Type a command...'"
     ></textarea>
   </div>
   <div class="composer-right">
     <button class="history-button" (click)="openHistoryPopup()" title="Command history">
       <lucide-icon [img]="History" class="w-4 h-4"></lucide-icon>
     </button>
-    <button class="mode-pill" (click)="toggleMode()">
+    <button
+      class="mode-pill"
+      (click)="toggleMode()"
+      [disabled]="!isAiConfigured()"
+      [title]="isAiConfigured() ? 'Toggle AI mode' : 'AI not configured - set up in Settings'"
+    >
       <lucide-icon [img]="Sparkles" class="w-4 h-4"></lucide-icon>
       <span>{{ mode() === 'command' ? 'Command' : 'AI' }}</span>
     </button>

@@ -18,6 +18,7 @@ export interface TerminalStateSnapshot {
   followMode: boolean;
   searchOpen: boolean;
   searchQuery: string;
+  currentCwd: string;
   nextBlockId: number;
   createdAt: number;
 }
@@ -41,6 +42,7 @@ export class WarpTerminalStore {
   readonly followMode = signal(true);
   readonly searchOpen = signal(false);
   readonly searchQuery = signal('');
+  readonly currentCwd = signal<string>('~');
   private _nextBlockId = 1;
   private readonly aiState = signal<AiState>({
     isThinking: false,
@@ -113,6 +115,10 @@ export class WarpTerminalStore {
 
   setSearchQuery(query: string): void {
     this.searchQuery.set(query);
+  }
+
+  updateCwd(cwd: string): void {
+    this.currentCwd.set(cwd);
   }
 
   setSelection(selection: SelectionState): void {
@@ -205,7 +211,7 @@ export class WarpTerminalStore {
       commandText,
       source,
       status: { state: 'queued' },
-      cwdLabel: 'E:\\development\\Containerus',
+      cwdLabel: this.currentCwd(),
       hostLabel: 'local',
       renderState: buffer,
       metrics,
@@ -269,6 +275,25 @@ export class WarpTerminalStore {
         durationMs: duration,
       },
     });
+
+    // Try to detect CWD from terminal prompt in output
+    this.detectCwdFromOutput(block.renderState.getAllText());
+  }
+
+  /** Parse CWD from terminal prompt patterns like "user@host:/path$" */
+  private detectCwdFromOutput(output: string): void {
+    // Get last few lines where prompt would appear
+    const lines = output.split('\n').slice(-5);
+    const text = lines.join('\n');
+
+    // Pattern: user@host:/path$ or user@host:path#
+    // Examples: root@ubuntu:~/.docker#, kevin@server:/var/log$
+    const promptPattern = /[\w.-]+@[\w.-]+:([^\s$#]+)[\$#]\s*$/m;
+    const match = text.match(promptPattern);
+
+    if (match && match[1]) {
+      this.currentCwd.set(match[1]);
+    }
   }
 
   /** Get the next block ID and increment the counter */
@@ -286,6 +311,7 @@ export class WarpTerminalStore {
       followMode: this.followMode(),
       searchOpen: this.searchOpen(),
       searchQuery: this.searchQuery(),
+      currentCwd: this.currentCwd(),
       nextBlockId: this._nextBlockId,
       createdAt: Date.now(),
     };
@@ -299,6 +325,7 @@ export class WarpTerminalStore {
     this.followMode.set(snapshot.followMode);
     this.searchOpen.set(snapshot.searchOpen);
     this.searchQuery.set(snapshot.searchQuery);
+    this.currentCwd.set(snapshot.currentCwd ?? '~');
     this._nextBlockId = snapshot.nextBlockId;
     this.pipeline.clear();
   }
