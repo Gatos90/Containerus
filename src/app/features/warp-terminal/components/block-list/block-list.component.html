@@ -1,0 +1,27 @@
+<div class="block-list" #scrollContainer (scroll)="onScroll()">
+  <div class="block-stream">
+    @for (block of blocks; track block.id) {
+      <app-command-block-card
+        [block]="block"
+        [selected]="selection.kind === 'block' && selection.blockId === block.id"
+        [highlightLines]="highlightMap.get(block.id)"
+        (select)="select(block.id)"
+        (copyCommand)="copyCommand.emit(block.id)"
+        (copyOutput)="copyOutput.emit(block.id)"
+        (rerun)="rerun.emit(block.id)"
+        (toggleCollapse)="toggleCollapse.emit(block.id)"
+        (textSelection)="setTextSelection($event)"
+      ></app-command-block-card>
+    } @empty {
+      <div class="empty-state">
+        <p>No commands yet. Start by running your first command.</p>
+      </div>
+    }
+  </div>
+
+  @if (showJumpButton()) {
+    <button class="jump-button" (click)="jumpToLatest.emit()">
+      Jump to latest
+    </button>
+  }
+</div>

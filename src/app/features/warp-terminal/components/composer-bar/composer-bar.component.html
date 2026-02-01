@@ -1,0 +1,70 @@
+<div class="composer-bar">
+  <!-- History Popup -->
+  @if (showHistoryPopup()) {
+    <div class="history-backdrop" (click)="closeHistoryPopup()"></div>
+    <div class="history-popup">
+      <div class="history-search">
+        <lucide-icon [img]="Search" class="search-icon"></lucide-icon>
+        <input
+          type="text"
+          placeholder="Search history..."
+          [value]="historyFilter()"
+          (input)="onHistoryFilterInput($event)"
+          (keydown)="onKeyDown($event)"
+          autofocus
+        />
+      </div>
+      <div class="history-list" #historyList>
+        @if (isSearching()) {
+          <div class="history-searching">Searching remote history...</div>
+        }
+        @if (hasMoreHistory() && !historyFilter()) {
+          <div class="history-load-more">↑ Press up to load more</div>
+        }
+        @for (cmd of filteredHistory(); track cmd; let i = $index) {
+          <button
+            class="history-item"
+            [class.selected]="selectedHistoryIndex() === i"
+            (click)="selectHistoryItem(i)"
+            (mouseenter)="selectedHistoryIndex.set(i)"
+          >
+            <span class="history-text">{{ cmd }}</span>
+          </button>
+        } @empty {
+          <div class="history-empty">No matching commands</div>
+        }
+      </div>
+      <div class="history-footer">
+        <span class="hint">↑↓ navigate</span>
+        <span class="hint">↵ select</span>
+        <span class="hint">esc close</span>
+      </div>
+    </div>
+  }
+
+  <div class="composer-left">
+    <span class="cwd-pill">E:\development\Containerus</span>
+  </div>
+  <div class="composer-input">
+    <textarea
+      #composerInput
+      [(ngModel)]="value"
+      (keydown)="onKeyDown($event)"
+      rows="2"
+      placeholder="Type a command, or ask AI to draft one..."
+    ></textarea>
+  </div>
+  <div class="composer-right">
+    <button class="history-button" (click)="openHistoryPopup()" title="Command history">
+      <lucide-icon [img]="History" class="w-4 h-4"></lucide-icon>
+    </button>
+    <button class="mode-pill" (click)="toggleMode()">
+      <lucide-icon [img]="Sparkles" class="w-4 h-4"></lucide-icon>
+      <span>{{ mode() === 'command' ? 'Command' : 'AI' }}</span>
+    </button>
+    <button class="send-button" (click)="send()">
+      <span>Run</span>
+      <lucide-icon [img]="ArrowRight" class="w-4 h-4"></lucide-icon>
+    </button>
+  </div>
+</div>

@@ -1,0 +1,684 @@
+import { CommonModule } from '@angular/common';
+import { Component, inject, OnInit, signal } from '@angular/core';
+import { FormsModule } from '@angular/forms';
+import { RouterLink } from '@angular/router';
+import {
+  LucideAngularModule,
+  Server,
+  Plus,
+  RefreshCw,
+  Link,
+  Unlink,
+  Terminal,
+  Trash2,
+  Pencil,
+  X,
+  FolderOpen,
+  Crown,
+  ShieldCheck,
+  Cpu,
+  MemoryStick,
+  HardDrive,
+  User,
+  Clock,
+  Box,
+  Layers,
+  Search,
+  Circle,
+  Activity,
+} from 'lucide-angular';
+import { ContainerRuntime } from '../../../core/models/container.model';
+import { ContainerSystem, ExtendedSystemInfo, LiveSystemMetrics, NewSystemRequest, OsType, SshAuthMethod, UpdateSystemRequest } from '../../../core/models/system.model';
+
+export interface LoadLevelInfo {
+  level: 'unknown' | 'low' | 'medium' | 'high' | 'critical';
+  label: string;
+  dots: number;
+  color: string;
+  bgColor: string;
+  tooltip: string;
+  score: number;
+}
+import { KeychainService } from '../../../core/services/keychain.service';
+import { SystemService } from '../../../core/services/system.service';
+import { SystemState } from '../../../state/system.state';
+import { AppState } from '../../../state/app.state';
+
+@Component({
+  selector: 'app-system-list',
+  standalone: true,
+  imports: [CommonModule, FormsModule, RouterLink, LucideAngularModule],
+  templateUrl: './system-list.component.html',
+})
+export class SystemListComponent implements OnInit {
+  readonly systemState = inject(SystemState);
+  readonly appState = inject(AppState);
+  private readonly systemService = inject(SystemService);
+  private readonly keychainService = inject(KeychainService);
+
+  readonly Server = Server;
+  readonly Plus = Plus;
+  readonly RefreshCw = RefreshCw;
+  readonly Link = Link;
+  readonly Unlink = Unlink;
+  readonly Terminal = Terminal;
+  readonly Trash2 = Trash2;
+  readonly Pencil = Pencil;
+  readonly X = X;
+  readonly FolderOpen = FolderOpen;
+  readonly Crown = Crown;
+  readonly ShieldCheck = ShieldCheck;
+  readonly Cpu = Cpu;
+  readonly MemoryStick = MemoryStick;
+  readonly HardDrive = HardDrive;
+  readonly User = User;
+  readonly Clock = Clock;
+  readonly Box = Box;
+  readonly Layers = Layers;
+  readonly Search = Search;
+  readonly Circle = Circle;
+  readonly Activity = Activity;
+
+  refreshing = false;
+  showAddDialog = false;
+  showEditDialog = false;
+  editingSystemId: string | null = null;
+  isMobile = signal(false);
+  addingSystem = signal(false);
+
+  addForm = {
+    name: '',
+    hostname: '',
+    connectionType: 'local' as 'local' | 'remote',
+    primaryRuntime: 'docker' as ContainerRuntime,
+    autoConnect: true,
+    sshUsername: 'root',
+    sshPort: 22,
+    sshAuthMethod: 'password' as SshAuthMethod,
+    sshKeyPath: '',
+    sshKeyContent: '',
+    sshKeyImportMethod: 'paste' as 'paste' | 'file',
+    sshKeyPassphrase: '',
+    sshPassword: '',
+  };
+
+  editForm = {
+    name: '',
+    hostname: '',
+    connectionType: 'local' as 'local' | 'remote',
+    primaryRuntime: 'docker' as ContainerRuntime,
+    autoConnect: true,
+    sshUsername: 'root',
+    sshPort: 22,
+    sshAuthMethod: 'password' as SshAuthMethod,
+    sshKeyPath: '',
+    sshKeyContent: '',
+    sshKeyImportMethod: 'paste' as 'paste' | 'file',
+    sshKeyPassphrase: '',
+    sshPassword: '',
+    availableRuntimes: [] as ContainerRuntime[],
+  };
+
+  importingKey = signal(false);
+
+  async ngOnInit(): Promise<void> {
+    // Detect platform for mobile-specific UX
+    const mobile = await this.keychainService.checkPlatform();
+    this.isMobile.set(mobile);
+    if (mobile) {
+      this.addForm.connectionType = 'remote'; // Default to remote on mobile
+    }
+    await this.refresh();
+  }
+
+  async refresh(): Promise<void> {
+    this.refreshing = true;
+    try {
+      await this.systemState.loadSystems();
+
+      // Fetch extended info for connected systems that don't have it yet
+      const connectedSystems = this.systemState.connectedSystems();
+      for (const system of connectedSystems) {
+        if (!this.systemState.getExtendedInfo(system.id)) {
+          // Don't await - let it load in background
+          this.systemState.fetchExtendedInfo(system.id);
+        }
+      }
+    } finally {
+      this.refreshing = false;
+    }
+  }
+
+  getConnectionState(systemId: string): string {
+    return this.systemState.getConnectionState(systemId);
+  }
+
+  async connect(systemId: string): Promise<void> {
+    const system = this.systemState.systems().find(s => s.id === systemId);
+
+    // Try to connect - backend will use stored credentials from database
+    // If no credentials stored, backend will fall back to keyring (desktop) or fail (mobile)
+    let password: string | undefined;
+    let passphrase: string | undefined;
+
+    // On desktop, also try keychain for backward compatibility
+    if (!this.isMobile() && await this.keychainService.needsPasswordOnConnect()) {
+      if (system?.sshConfig?.username && system.sshConfig.authMethod === 'password') {
+        const storedPassword = await this.keychainService.getSshPassword(system.sshConfig.username);
+        password = storedPassword ?? undefined;
+      }
+    }
+
+    const success = await this.systemState.connectSystem(systemId, password, passphrase);
+
+    if (success) {
+      await this.appState.loadAllDataForSystem(systemId);
+      await this.systemState.detectRuntimes(systemId);
+    } else if (this.isMobile() && system?.connectionType === 'remote') {
+      // Connection failed on mobile - might need credentials
+      // Prompt user and try again
+      if (system?.sshConfig?.authMethod === 'password') {
+        const pwd = prompt('Enter SSH password for ' + system.sshConfig.username + '@' + system.hostname);
+        if (pwd) {
+          // Store for future use and retry
+          await this.systemService.storeSshCredentials(systemId, pwd, undefined);
+          const retrySuccess = await this.systemState.connectSystem(systemId, pwd);
+          if (retrySuccess) {
+            await this.appState.loadAllDataForSystem(systemId);
+            await this.systemState.detectRuntimes(systemId);
+          }
+        }
+      } else if (system?.sshConfig?.authMethod === 'publicKey') {
+        const pp = prompt('Enter passphrase for SSH key (leave empty if unencrypted):');
+        if (pp !== null) {
+          // Store for future use and retry
+          await this.systemService.storeSshCredentials(systemId, undefined, pp || undefined);
+          const retrySuccess = await this.systemState.connectSystem(systemId, undefined, pp || undefined);
+          if (retrySuccess) {
+            await this.appState.loadAllDataForSystem(systemId);
+            await this.systemState.detectRuntimes(systemId);
+          }
+        }
+      }
+    }
+  }
+
+  async disconnect(systemId: string): Promise<void> {
+    await this.systemState.disconnectSystem(systemId);
+    this.appState.clearDataForSystem(systemId);
+  }
+
+  async addSystem(): Promise<void> {
+    if (!this.addForm.name || !this.addForm.hostname) return;
+
+    // Clear any previous errors and set loading state
+    this.systemState.clearError();
+    this.addingSystem.set(true);
+
+    console.log('[SystemList] addSystem started', {
+      name: this.addForm.name,
+      hostname: this.addForm.hostname,
+      connectionType: this.addForm.connectionType,
+      isMobile: this.isMobile(),
+    });
+
+    try {
+      // On mobile, skip keychain storage - it's unreliable (hangs indefinitely)
+      // We'll pass the password directly for the initial connection
+      const mobile = this.isMobile();
+
+      // Store SSH password in keychain (desktop only - mobile keychain is unreliable)
+      if (
+        !mobile &&
+        this.addForm.connectionType === 'remote' &&
+        this.addForm.sshAuthMethod === 'password' &&
+        this.addForm.sshPassword
+      ) {
+        try {
+          console.log('[SystemList] Storing SSH password in keychain...');
+          await this.keychainService.storeSshPassword(
+            this.addForm.sshUsername,
+            this.addForm.sshPassword
+          );
+          console.log('[SystemList] SSH password stored successfully');
+        } catch (err) {
+          console.error('[SystemList] Failed to store SSH password:', err);
+          this.systemState.setError('Failed to store SSH password: ' + (err instanceof Error ? err.message : String(err)));
+          return;
+        }
+      }
+
+      // Store SSH key passphrase in keychain if provided (desktop only)
+      if (
+        !mobile &&
+        this.addForm.connectionType === 'remote' &&
+        this.addForm.sshAuthMethod === 'publicKey' &&
+        this.addForm.sshKeyPath &&
+        this.addForm.sshKeyPassphrase
+      ) {
+        try {
+          console.log('[SystemList] Storing SSH key passphrase in keychain...');
+          await this.keychainService.storeSshKeyPassphrase(
+            this.addForm.sshKeyPath,
+            this.addForm.sshKeyPassphrase
+          );
+          console.log('[SystemList] SSH key passphrase stored successfully');
+        } catch (err) {
+          console.error('[SystemList] Failed to store SSH key passphrase:', err);
+          this.systemState.setError('Failed to store SSH key passphrase: ' + (err instanceof Error ? err.message : String(err)));
+          return;
+        }
+      }
+
+      // Determine if we're using key content (paste or import) vs file path
+      const usingKeyContent = this.addForm.sshAuthMethod === 'publicKey' &&
+        (this.addForm.sshKeyImportMethod === 'paste' || this.isMobile()) &&
+        this.addForm.sshKeyContent;
+
+      const request: NewSystemRequest = {
+        name: this.addForm.name,
+        hostname: this.addForm.hostname,
+        connectionType: this.addForm.connectionType,
+        primaryRuntime: this.addForm.primaryRuntime,
+        availableRuntimes: [this.addForm.primaryRuntime],
+        autoConnect: this.addForm.autoConnect,
+        sshConfig:
+          this.addForm.connectionType === 'remote'
+            ? {
+                username: this.addForm.sshUsername,
+                port: this.addForm.sshPort,
+                authMethod: this.addForm.sshAuthMethod,
+                privateKeyPath:
+                  this.addForm.sshAuthMethod === 'publicKey' && !usingKeyContent
+                    ? this.addForm.sshKeyPath
+                    : null,
+                privateKeyContent:
+                  usingKeyContent
+                    ? this.addForm.sshKeyContent
+                    : null,
+                connectionTimeout: 30,
+              }
+            : null,
+      };
+
+      // For mobile, ALWAYS pass credentials directly since keychain is unreliable
+      // For desktop with autoConnect, also pass for immediate connection
+      const passwordForConnect =
+        this.addForm.connectionType === 'remote' &&
+        this.addForm.sshAuthMethod === 'password'
+          ? this.addForm.sshPassword
+          : undefined;
+
+      // For public key auth, pass passphrase directly (mobile can't use keyring)
+      const passphraseForConnect =
+        this.addForm.connectionType === 'remote' &&
+        this.addForm.sshAuthMethod === 'publicKey'
+          ? this.addForm.sshKeyPassphrase || undefined
+          : undefined;
+
+      // For public key auth with content, pass the key content for connection
+      const privateKeyForConnect =
+        usingKeyContent
+          ? this.addForm.sshKeyContent
+          : undefined;
+
+      console.log('[SystemList] Calling systemState.addSystem...');
+      const system = await this.systemState.addSystem(request, passwordForConnect, passphraseForConnect, privateKeyForConnect);
+      console.log('[SystemList] systemState.addSystem returned:', system);
+
+      if (system) {
+        // Store credentials in database for future autoConnect (works on all platforms)
+        if (this.addForm.connectionType === 'remote') {
+          const credPassword = this.addForm.sshAuthMethod === 'password' ? this.addForm.sshPassword : undefined;
+          const credPassphrase = this.addForm.sshAuthMethod === 'publicKey' ? this.addForm.sshKeyPassphrase : undefined;
+          const credPrivateKey = usingKeyContent ? this.addForm.sshKeyContent : undefined;
+          if (credPassword || credPassphrase || credPrivateKey) {
+            try {
+              console.log('[SystemList] Storing SSH credentials in database...');
+              await this.systemService.storeSshCredentials(system.id, credPassword || undefined, credPassphrase || undefined, credPrivateKey || undefined);
+              console.log('[SystemList] SSH credentials stored successfully');
+            } catch (err) {
+              // Non-fatal - just log the error, connection already succeeded
+              console.warn('[SystemList] Failed to store SSH credentials:', err);
+            }
+          }
+        }
+
+        if (this.addForm.autoConnect) {
+          console.log('[SystemList] Auto-connecting and loading data...');
+          await this.appState.loadAllDataForSystem(system.id);
+          await this.systemState.detectRuntimes(system.id);
+        }
+        this.showAddDialog = false;
+        this.resetForm();
+      } else {
+        // System was not added - error should already be set by systemState
+        console.error('[SystemList] System was not added (returned null)');
+      }
+    } catch (err) {
+      console.error('[SystemList] Unexpected error in addSystem:', err);
+      const message = err instanceof Error ? err.message :
+        typeof err === 'string' ? err : 'An unexpected error occurred while adding the system';
+      this.systemState.setError(message);
+    } finally {
+      this.addingSystem.set(false);
+    }
+  }
+
+  private resetForm(): void {
+    this.addForm = {
+      name: '',
+      hostname: '',
+      connectionType: this.isMobile() ? 'remote' : 'local',
+      primaryRuntime: 'docker',
+      autoConnect: true,
+      sshUsername: 'root',
+      sshPort: 22,
+      sshAuthMethod: 'password',
+      sshKeyPath: '',
+      sshKeyContent: '',
+      sshKeyImportMethod: 'paste',
+      sshKeyPassphrase: '',
+      sshPassword: '',
+    };
+  }
+
+  openEditDialog(system: ContainerSystem): void {
+    this.editingSystemId = system.id;
+    this.editForm = {
+      name: system.name,
+      hostname: system.hostname,
+      connectionType: system.connectionType,
+      primaryRuntime: system.primaryRuntime,
+      autoConnect: system.autoConnect,
+      sshUsername: system.sshConfig?.username ?? 'root',
+      sshPort: system.sshConfig?.port ?? 22,
+      sshAuthMethod: system.sshConfig?.authMethod ?? 'password',
+      sshKeyPath: system.sshConfig?.privateKeyPath ?? '',
+      sshKeyContent: system.sshConfig?.privateKeyContent ?? '',
+      sshKeyImportMethod: system.sshConfig?.privateKeyContent ? 'paste' : (system.sshConfig?.privateKeyPath ? 'file' : 'paste'),
+      sshKeyPassphrase: '',
+      sshPassword: '',
+      availableRuntimes: system.availableRuntimes,
+    };
+    this.showEditDialog = true;
+  }
+
+  async updateSystem(): Promise<void> {
+    if (!this.editingSystemId || !this.editForm.name || !this.editForm.hostname) return;
+
+    // Clear any previous errors
+    this.systemState.clearError();
+
+    // On mobile, skip keychain storage - it's unreliable
+    const mobile = this.isMobile();
+
+    // Store SSH password in keychain if provided (desktop only)
+    if (
+      !mobile &&
+      this.editForm.connectionType === 'remote' &&
+      this.editForm.sshAuthMethod === 'password' &&
+      this.editForm.sshPassword
+    ) {
+      try {
+        await this.keychainService.storeSshPassword(
+          this.editForm.sshUsername,
+          this.editForm.sshPassword
+        );
+      } catch (err) {
+        console.error('Failed to store SSH password:', err);
+        this.systemState.setError('Failed to store SSH password: ' + (err instanceof Error ? err.message : String(err)));
+        return;
+      }
+    }
+
+    // Store SSH key passphrase in keychain if provided (desktop only)
+    if (
+      !mobile &&
+      this.editForm.connectionType === 'remote' &&
+      this.editForm.sshAuthMethod === 'publicKey' &&
+      this.editForm.sshKeyPath &&
+      this.editForm.sshKeyPassphrase
+    ) {
+      try {
+        await this.keychainService.storeSshKeyPassphrase(
+          this.editForm.sshKeyPath,
+          this.editForm.sshKeyPassphrase
+        );
+      } catch (err) {
+        console.error('Failed to store SSH key passphrase:', err);
+        this.systemState.setError('Failed to store SSH key passphrase: ' + (err instanceof Error ? err.message : String(err)));
+        return;
+      }
+    }
+
+    // Determine if we're using key content (paste or import) vs file path
+    const usingKeyContent = this.editForm.sshAuthMethod === 'publicKey' &&
+      (this.editForm.sshKeyImportMethod === 'paste' || this.isMobile()) &&
+      this.editForm.sshKeyContent;
+
+    const request: UpdateSystemRequest = {
+      id: this.editingSystemId,
+      name: this.editForm.name,
+      hostname: this.editForm.hostname,
+      connectionType: this.editForm.connectionType,
+      primaryRuntime: this.editForm.primaryRuntime,
+      availableRuntimes: this.editForm.availableRuntimes,
+      autoConnect: this.editForm.autoConnect,
+      sshConfig:
+        this.editForm.connectionType === 'remote'
+          ? {
+              username: this.editForm.sshUsername,
+              port: this.editForm.sshPort,
+              authMethod: this.editForm.sshAuthMethod,
+              privateKeyPath:
+                this.editForm.sshAuthMethod === 'publicKey' && !usingKeyContent
+                  ? this.editForm.sshKeyPath
+                  : null,
+              privateKeyContent:
+                usingKeyContent
+                  ? this.editForm.sshKeyContent
+                  : null,
+              connectionTimeout: 30,
+            }
+          : null,
+    };
+
+    const updated = await this.systemState.updateSystem(request);
+
+    // Store new credentials if provided
+    if (updated && this.editForm.connectionType === 'remote') {
+      const credPassword = this.editForm.sshAuthMethod === 'password' && this.editForm.sshPassword ? this.editForm.sshPassword : undefined;
+      const credPassphrase = this.editForm.sshAuthMethod === 'publicKey' && this.editForm.sshKeyPassphrase ? this.editForm.sshKeyPassphrase : undefined;
+      const credPrivateKey = usingKeyContent ? this.editForm.sshKeyContent : undefined;
+      if (credPassword || credPassphrase || credPrivateKey) {
+        try {
+          await this.systemService.storeSshCredentials(updated.id, credPassword, credPassphrase, credPrivateKey);
+        } catch (err) {
+          console.warn('[SystemList] Failed to store updated SSH credentials:', err);
+        }
+      }
+    }
+
+    this.showEditDialog = false;
+    this.editingSystemId = null;
+  }
+
+  async deleteSystem(systemId: string): Promise<void> {
+    if (!confirm('Are you sure you want to delete this system?')) return;
+
+    // Disconnect first if connected
+    if (this.getConnectionState(systemId) === 'connected') {
+      await this.disconnect(systemId);
+    }
+
+    await this.systemState.removeSystem(systemId);
+  }
+
+  async browseForSshKey(formType: 'add' | 'edit'): Promise<void> {
+    try {
+      const selectedPath = await this.systemService.browseSshKey();
+      if (selectedPath) {
+        // Warn if user selected the public key instead of private key
+        if (selectedPath.endsWith('.pub')) {
+          this.systemState.setError('Please select the private key file (without .pub extension)');
+          return;
+        }
+        if (formType === 'add') {
+          this.addForm.sshKeyPath = selectedPath;
+        } else {
+          this.editForm.sshKeyPath = selectedPath;
+        }
+      }
+    } catch (err) {
+      console.error('Failed to open file dialog:', err);
+    }
+  }
+
+  /**
+   * Import SSH key from file and store its content
+   * Used for mobile file picker where we need the actual key content
+   */
+  async importKeyFromFile(formType: 'add' | 'edit'): Promise<void> {
+    this.importingKey.set(true);
+    try {
+      const keyContent = await this.systemService.browseAndImportSshKey();
+      if (keyContent) {
+        if (formType === 'add') {
+          this.addForm.sshKeyContent = keyContent;
+        } else {
+          this.editForm.sshKeyContent = keyContent;
+        }
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to import SSH key';
+      this.systemState.setError(message);
+      console.error('Failed to import SSH key:', err);
+    } finally {
+      this.importingKey.set(false);
+    }
+  }
+
+  /**
+   * Get extended info for a system
+   */
+  getExtendedInfo(systemId: string): ExtendedSystemInfo | null {
+    return this.systemState.getExtendedInfo(systemId);
+  }
+
+  /**
+   * Get live metrics for a system
+   */
+  getLiveMetrics(systemId: string): LiveSystemMetrics | null {
+    return this.systemState.getLiveMetrics(systemId);
+  }
+
+  /**
+   * Get composite system stress score from live metrics.
+   * Formula: CPU (60%) + Memory (30%) + Swap (10%)
+   */
+  getLoadLevel(metrics: LiveSystemMetrics | null): LoadLevelInfo {
+    if (!metrics) {
+      return {
+        level: 'unknown',
+        label: 'Unknown',
+        dots: 0,
+        color: 'text-zinc-500',
+        bgColor: 'bg-zinc-500',
+        tooltip: 'No metrics available',
+        score: 0,
+      };
+    }
+
+    // Weighted composite score
+    const cpuWeight = 0.6;
+    const memWeight = 0.3;
+    const swapWeight = 0.1;
+    const swapUsage = metrics.swapUsagePercent ?? 0;
+
+    const score =
+      metrics.cpuUsagePercent * cpuWeight +
+      metrics.memoryUsagePercent * memWeight +
+      swapUsage * swapWeight;
+
+    const roundedScore = Math.round(score);
+
+    if (score < 30) {
+      return {
+        level: 'low',
+        label: 'Low',
+        dots: 1,
+        color: 'text-green-500',
+        bgColor: 'bg-green-500',
+        tooltip: `Low: System is mostly idle (${roundedScore}% composite load)`,
+        score: roundedScore,
+      };
+    }
+    if (score < 60) {
+      return {
+        level: 'medium',
+        label: 'Medium',
+        dots: 3,
+        color: 'text-amber-500',
+        bgColor: 'bg-amber-500',
+        tooltip: `Medium: Normal utilization (${roundedScore}% composite load)`,
+        score: roundedScore,
+      };
+    }
+    if (score < 85) {
+      return {
+        level: 'high',
+        label: 'High',
+        dots: 4,
+        color: 'text-red-500',
+        bgColor: 'bg-red-500',
+        tooltip: `High: System under pressure (${roundedScore}% composite load)`,
+        score: roundedScore,
+      };
+    }
+    return {
+      level: 'critical',
+      label: 'Critical',
+      dots: 5,
+      color: 'text-red-600',
+      bgColor: 'bg-red-600',
+      tooltip: `Critical: System overloaded! (${roundedScore}% composite load)`,
+      score: roundedScore,
+    };
+  }
+
+  /** Array for load dots rendering */
+  readonly loadDots = [1, 2, 3, 4, 5];
+
+  /**
+   * Get OS icon (emoji) for a system
+   */
+  getOsIcon(osType: OsType | undefined): string {
+    switch (osType) {
+      case 'linux':
+        return '🐧';
+      case 'macos':
+        return '🍎';
+      case 'windows':
+        return '🪟';
+      default:
+        return '💻';
+    }
+  }
+
+  /**
+   * Get OS display name
+   */
+  getOsName(osType: OsType | undefined): string {
+    switch (osType) {
+      case 'linux':
+        return 'Linux';
+      case 'macos':
+        return 'macOS';
+      case 'windows':
+        return 'Windows';
+      default:
+        return 'Unknown';
+    }
+  }
+}

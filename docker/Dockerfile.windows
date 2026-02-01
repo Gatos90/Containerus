@@ -1,0 +1,72 @@
+# Dockerfile for cross-compiling Containerus for Windows
+# Uses cargo-xwin for MSVC-compatible builds
+
+FROM ubuntu:22.04
+
+# Prevent interactive prompts during package installation
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    # Build essentials
+    build-essential \
+    curl \
+    wget \
+    file \
+    pkg-config \
+    # SSL/TLS
+    libssl-dev \
+    # Wine for running Windows tools
+    wine64 \
+    # Clang/LLVM for cross-compilation
+    clang \
+    llvm \
+    lld \
+    # Git
+    git \
+    # Unzip for Windows SDK
+    unzip \
+    p7zip-full \
+    # NSIS for installer creation
+    nsis \
+    # Clean up
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Rust
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+ENV PATH="/root/.cargo/bin:${PATH}"
+
+# Add Windows target
+RUN rustup target add x86_64-pc-windows-msvc
+
+# Install cargo-xwin (handles Windows SDK download automatically)
+RUN cargo install cargo-xwin
+
+# Install Node.js 20 LTS
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y nodejs \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install pnpm
+RUN npm install -g pnpm
+
+# Install Tauri CLI
+RUN cargo install tauri-cli
+
+# Pre-download Windows SDK headers via xwin
+# This caches the SDK so builds are faster
+RUN cargo xwin --version || true
+ENV XWIN_CACHE_DIR="/root/.cache/cargo-xwin"
+
+# Create working directory
+WORKDIR /app
+
+# Configure cargo for Windows cross-compilation
+RUN mkdir -p /root/.cargo && echo '\
+[target.x86_64-pc-windows-msvc]\n\
+linker = "lld-link"\n\
+rustflags = ["-C", "link-arg=-fuse-ld=lld"]\n\
+' >> /root/.cargo/config.toml
+
+# Set default command
+CMD ["bash"]

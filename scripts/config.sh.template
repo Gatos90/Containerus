@@ -1,0 +1,67 @@
+#!/bin/bash
+# Containerus Release Configuration Template
+# Copy this file to config.sh and fill in your credentials
+# NEVER commit config.sh to version control!
+
+# =============================================================================
+# macOS Code Signing & Notarization
+# =============================================================================
+# Get your signing identity from: security find-identity -v -p codesigning
+export APPLE_SIGNING_IDENTITY=""  # e.g., "Developer ID Application: Your Name (TEAMID)"
+
+# Apple ID for notarization (your Apple Developer account email)
+export APPLE_ID=""
+
+# App-specific password (generate at appleid.apple.com > Security > App-Specific Passwords)
+export APPLE_PASSWORD=""
+
+# Team ID (10-character string from Apple Developer account)
+export APPLE_TEAM_ID=""
+
+# =============================================================================
+# Android Keystore
+# =============================================================================
+# Path to your keystore file (create with: keytool -genkey ...)
+export ANDROID_KEYSTORE=""  # e.g., "./scripts/containerus.jks"
+
+# Keystore password
+export ANDROID_KEYSTORE_PASSWORD=""
+
+# Key alias
+export ANDROID_KEY_ALIAS="containerus"
+
+# Key password (often same as keystore password)
+export ANDROID_KEY_PASSWORD=""
+
+# =============================================================================
+# iOS Signing (requires Apple Developer Program membership)
+# =============================================================================
+# Name of the distribution certificate in your Keychain
+export IOS_SIGNING_IDENTITY=""  # e.g., "Apple Distribution: Your Name (TEAMID)"
+
+# Bundle identifier (must match your provisioning profile)
+export IOS_BUNDLE_ID="org.creativdev.containerus"
+
+# Team ID (same as APPLE_TEAM_ID)
+export IOS_TEAM_ID=""
+
+# Provisioning profile name (installed in ~/Library/MobileDevice/Provisioning Profiles/)
+export IOS_PROVISIONING_PROFILE=""
+
+# =============================================================================
+# Build Configuration
+# =============================================================================
+# Skip notarization for development builds (set to "true" to skip)
+export SKIP_NOTARIZATION="false"
+
+# Skip code signing entirely (for testing builds only)
+export SKIP_SIGNING="false"
+
+# Parallel build jobs (adjust based on your CPU cores)
+export BUILD_JOBS="4"
+
+# =============================================================================
+# Android SDK/NDK Paths (set by setup-android-sdk.sh, override if needed)
+# =============================================================================
+export ANDROID_HOME="${ANDROID_HOME:-$HOME/Library/Android/sdk}"
+export ANDROID_NDK_HOME="${ANDROID_NDK_HOME:-$ANDROID_HOME/ndk/26.1.10909125}"

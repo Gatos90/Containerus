@@ -1,0 +1,52 @@
+<div class="space-y-2">
+  <div class="flex items-center justify-between">
+    <div class="flex items-center gap-2 text-xs text-zinc-400">
+      <lucide-icon [img]="Network" class="w-3 h-3"></lucide-icon>
+      <span>Ports ({{ ports().length }})</span>
+    </div>
+    <div class="flex items-center gap-1">
+      <button
+        (click)="copyAllPorts()"
+        class="p-1 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 rounded transition-colors"
+        title="Copy all ports"
+      >
+        <lucide-icon [img]="Copy" class="w-3 h-3"></lucide-icon>
+      </button>
+      @if (showManageButton()) {
+        <button
+          (click)="manageForwards.emit()"
+          class="p-1 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 rounded transition-colors"
+          title="Manage forwards"
+        >
+          <lucide-icon [img]="Settings" class="w-3 h-3"></lucide-icon>
+        </button>
+      }
+    </div>
+  </div>
+
+  <div class="flex flex-wrap gap-2">
+    @for (port of visiblePorts(); track port.containerPort) {
+      <app-port-badge
+        [port]="port"
+        [containerId]="containerId()"
+        [systemId]="systemId()"
+      />
+    }
+
+    <!-- Show more/less button when collapsible -->
+    @if (isCollapsible()) {
+      <button
+        (click)="toggleExpanded()"
+        class="flex items-center gap-1 px-2 py-1 text-xs text-zinc-400 hover:text-zinc-200 bg-zinc-700/50 hover:bg-zinc-700 rounded transition-colors"
+      >
+        @if (expanded()) {
+          <lucide-icon [img]="ChevronUp" class="w-3 h-3"></lucide-icon>
+          <span>Show less</span>
+        } @else {
+          <lucide-icon [img]="ChevronDown" class="w-3 h-3"></lucide-icon>
+          <span>+{{ hiddenCount() }} more</span>
+        }
+      </button>
+    }
+  </div>
+</div>

@@ -1,0 +1,288 @@
+.terminal-workspace {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: #09090b;
+}
+
+/* Grid layouts */
+.workspace-grid {
+  display: grid;
+  flex: 1;
+  gap: 2px;
+  background: #27272a;
+  min-height: 200px;
+}
+
+.workspace-grid.single {
+  grid-template-columns: 1fr;
+  grid-template-rows: 1fr;
+}
+
+.workspace-grid.split-h {
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr;
+}
+
+.workspace-grid.split-v {
+  grid-template-columns: 1fr;
+  grid-template-rows: 1fr 1fr;
+}
+
+.workspace-grid.quad {
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+}
+
+/* Terminal slots */
+.terminal-slot {
+  background: #09090b;
+  overflow: hidden;
+  position: relative;
+}
+
+.terminal-slot.active {
+  outline: 2px solid #3b82f6;
+  outline-offset: -2px;
+}
+
+.terminal-host {
+  width: 100%;
+  height: 100%;
+  position: absolute;
+  inset: 0;
+}
+
+.terminal-host :host ::ng-deep .xterm {
+  padding: 8px;
+}
+
+/* Hide xterm when in warp mode (but keep it alive for PTY output) */
+.terminal-host.hidden-for-warp {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* Warp overlay on top of hidden xterm */
+.warp-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.warp-overlay app-warp-terminal-view {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+}
+
+.empty-slot-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #09090b;
+  border: 1px dashed #3f3f46;
+  z-index: 1;
+}
+
+/* Dock bar */
+.dock-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  background: #18181b;
+  border-top: 1px solid #27272a;
+  flex-shrink: 0;
+}
+
+/* Layout controls */
+.layout-controls {
+  display: flex;
+  gap: 2px;
+}
+
+.layout-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+  border-radius: 4px;
+  color: #71717a;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.layout-btn:hover {
+  background: #27272a;
+  color: #a1a1aa;
+}
+
+.layout-btn.active {
+  background: #27272a;
+  color: #fafafa;
+}
+
+.layout-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.layout-btn:disabled:hover {
+  background: transparent;
+  color: #71717a;
+}
+
+/* Terminal tabs */
+.terminal-tabs {
+  display: flex;
+  gap: 4px;
+  flex: 1;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #3f3f46 transparent;
+}
+
+.terminal-tabs::-webkit-scrollbar {
+  height: 4px;
+}
+
+.terminal-tabs::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.terminal-tabs::-webkit-scrollbar-thumb {
+  background: #3f3f46;
+  border-radius: 2px;
+}
+
+.terminal-tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  background: #27272a;
+  border: 1px solid #3f3f46;
+  border-radius: 4px;
+  font-size: 12px;
+  color: #a1a1aa;
+  white-space: nowrap;
+  max-width: 200px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.terminal-tab:hover {
+  background: #3f3f46;
+  color: #fafafa;
+}
+
+.terminal-tab.active {
+  background: #3f3f46;
+  color: #fafafa;
+  border-color: #3b82f6;
+}
+
+.close-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+  border-radius: 2px;
+  color: #71717a;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  margin-left: auto;
+  transition: all 0.15s ease;
+}
+
+.close-btn:hover {
+  background: #52525b;
+  color: #fafafa;
+}
+
+/* Minimize button */
+.minimize-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+  border-radius: 4px;
+  color: #71717a;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.minimize-btn:hover {
+  background: #27272a;
+  color: #a1a1aa;
+}
+
+/* Mobile responsive adjustments */
+@media (max-width: 640px) {
+  /* On mobile, keep normal column direction (dock at bottom) */
+  /* Add padding to account for mobile navigation bar */
+  .terminal-workspace {
+    padding-bottom: calc(60px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .dock-bar {
+    padding: 8px 12px;
+    gap: 8px;
+    flex-wrap: nowrap;
+    border-top: 1px solid #27272a;
+  }
+
+  /* Hide layout controls on mobile (we force single column anyway) */
+  .layout-controls {
+    display: none;
+  }
+
+  /* Larger touch targets for buttons */
+  .layout-btn,
+  .minimize-btn {
+    padding: 10px;
+    min-width: 44px;
+    min-height: 44px;
+    flex-shrink: 0;
+  }
+
+  /* Terminal tabs - scrollable, share space with controls */
+  .terminal-tabs {
+    flex: 1;
+    min-width: 0;
+    overflow-x: auto;
+  }
+
+  .terminal-tab {
+    padding: 10px 12px;
+    font-size: 13px;
+    min-height: 40px;
+  }
+
+  .close-btn {
+    padding: 6px;
+    min-width: 28px;
+    min-height: 28px;
+  }
+
+  /* Dividers - hide on mobile */
+  .h-6.w-px {
+    display: none;
+  }
+
+  /* Force single column on very small screens regardless of layout selection */
+  .workspace-grid {
+    grid-template-columns: 1fr !important;
+    grid-template-rows: 1fr !important;
+  }
+}

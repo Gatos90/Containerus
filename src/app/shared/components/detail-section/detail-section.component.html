@@ -1,0 +1,36 @@
+<div class="space-y-2">
+  <div class="flex items-center justify-between">
+    @if (collapsible()) {
+      <button
+        (click)="toggle()"
+        class="flex items-center gap-2 text-sm font-medium text-zinc-300 hover:text-zinc-100 transition-colors"
+      >
+        <lucide-icon
+          [img]="collapsed() ? ChevronRight : ChevronDown"
+          class="w-4 h-4"
+        ></lucide-icon>
+        <lucide-icon [img]="getIcon()" class="w-4 h-4"></lucide-icon>
+        <span>{{ title() }}</span>
+      </button>
+    } @else {
+      <div class="flex items-center gap-2 text-sm font-medium text-zinc-300">
+        <lucide-icon [img]="getIcon()" class="w-4 h-4"></lucide-icon>
+        <span>{{ title() }}</span>
+      </div>
+    }
+    @if (showCopyAll() && !collapsed()) {
+      <button
+        (click)="onCopyAll()"
+        class="flex items-center gap-1 px-2 py-1 text-xs text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 rounded transition-colors"
+      >
+        <lucide-icon [img]="Copy" class="w-3 h-3"></lucide-icon>
+        Copy All
+      </button>
+    }
+  </div>
+  @if (!collapsible() || !collapsed()) {
+    <div class="bg-zinc-900/50 rounded-lg p-2">
+      <ng-content />
+    </div>
+  }
+</div>

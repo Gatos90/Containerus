@@ -1,0 +1,65 @@
+# See https://docs.github.com/get-started/getting-started-with-git/ignoring-files for more about ignoring files.
+
+# Compiled output
+/dist
+/tmp
+/out-tsc
+/bazel-out
+
+# Node
+/node_modules
+npm-debug.log
+yarn-error.log
+
+# IDEs and editors
+.idea/
+.project
+.classpath
+.c9/
+*.launch
+.settings/
+*.sublime-workspace
+
+# Visual Studio Code
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+.history/*
+
+# Miscellaneous
+/.angular/cache
+.sass-cache/
+/connect.lock
+/coverage
+/libpeerconnection.log
+testem.log
+/typings
+
+# System files
+.DS_Store
+Thumbs.db
+
+# Release artifacts
+/release/
+
+# Build scripts credentials (contains secrets!)
+scripts/config.sh
+scripts/android-env.sh
+scripts/*.jks
+
+# Android keystore
+*.jks
+*.keystore
+
+# Tauri build artifacts
+src-tauri/target/
+src-tauri/gen/
+
+# Docker build cache
+.docker-cache/
+
+.pnpm-store/
+
+scripts/.config.sh

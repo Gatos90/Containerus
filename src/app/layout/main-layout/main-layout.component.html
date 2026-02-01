@@ -1,0 +1,47 @@
+<div class="flex h-screen bg-zinc-950 text-zinc-100">
+  <app-sidebar></app-sidebar>
+
+  <main class="flex-1 flex flex-col overflow-hidden">
+    @if (appState.globalError()) {
+      <div class="bg-red-900/50 border-b border-red-800 px-4 py-2 flex items-center justify-between">
+        <span class="text-red-200 text-sm">{{ appState.globalError() }}</span>
+        <button
+          (click)="appState.clearAllErrors()"
+          class="text-red-400 hover:text-red-300 text-sm"
+        >
+          Dismiss
+        </button>
+      </div>
+    }
+
+    @if (showTerminalWorkspace()) {
+      @if (terminalState.isDockFullscreen()) {
+        <!-- Fullscreen: workspace takes all content area -->
+        <app-terminal-workspace class="flex-1"></app-terminal-workspace>
+      } @else {
+        <!-- Split view: content + terminal workspace -->
+        <div class="flex-1 min-w-0 flex flex-col overflow-hidden">
+          <!-- Main content area (adjusts based on dock minimized state) -->
+          <div
+            class="min-w-0 overflow-auto pb-16 md:pb-0"
+            [class.flex-1]="terminalState.isDockMinimized()"
+            [style.height]="terminalState.isDockMinimized() ? 'auto' : '50%'"
+          >
+            <router-outlet></router-outlet>
+          </div>
+
+          <!-- Terminal workspace dock -->
+          <app-terminal-workspace
+            class="flex-shrink-0"
+            [style.height]="terminalState.isDockMinimized() ? 'auto' : '50%'"
+          ></app-terminal-workspace>
+        </div>
+      }
+    } @else {
+      <!-- Normal layout without workspace -->
+      <div class="flex-1 min-w-0 overflow-auto pb-16 md:pb-0">
+        <router-outlet></router-outlet>
+      </div>
+    }
+  </main>
+</div>

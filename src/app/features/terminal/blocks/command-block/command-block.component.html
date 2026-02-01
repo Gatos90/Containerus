@@ -1,0 +1,99 @@
+<div
+  class="command-block group"
+  [class.collapsed]="isCollapsed()"
+  [class.success]="isSuccess()"
+  [class.error]="isError()"
+  [class.running]="isRunning()"
+>
+  <!-- Header row -->
+  <div class="command-header">
+    <!-- Collapse toggle -->
+    <button
+      type="button"
+      class="collapse-toggle"
+      (click)="onToggle()"
+      [attr.aria-expanded]="!isCollapsed()"
+      aria-label="Toggle command details"
+    >
+      <lucide-icon
+        [img]="isCollapsed() ? ChevronRight : ChevronDown"
+        class="w-4 h-4 text-zinc-500"
+      />
+    </button>
+
+    <!-- Status indicator -->
+    <div class="status-indicator" [class]="statusColor()">
+      <lucide-icon
+        [img]="statusIcon()"
+        class="w-4 h-4"
+        [class.animate-spin]="isRunning()"
+      />
+    </div>
+
+    <!-- Command text -->
+    <div class="command-text">
+      <code>{{ command() }}</code>
+    </div>
+
+    <!-- Action buttons (visible on hover) -->
+    <div class="action-buttons">
+      @if (formattedDuration()) {
+        <span class="duration">{{ formattedDuration() }}</span>
+      }
+
+      <button
+        type="button"
+        class="action-btn"
+        (click)="onCopy()"
+        title="Copy command"
+        aria-label="Copy command"
+      >
+        <lucide-icon [img]="Copy" class="w-3.5 h-3.5" />
+      </button>
+
+      @if (!isRunning()) {
+        <button
+          type="button"
+          class="action-btn"
+          (click)="onRerun()"
+          title="Re-run command"
+          aria-label="Re-run command"
+        >
+          <lucide-icon [img]="RotateCcw" class="w-3.5 h-3.5" />
+        </button>
+      }
+    </div>
+  </div>
+
+  <!-- Expanded details -->
+  @if (!isCollapsed()) {
+    <div class="command-details">
+      @if (workingDirectory()) {
+        <div class="detail-row">
+          <span class="detail-label">Directory:</span>
+          <span class="detail-value">{{ workingDirectory() }}</span>
+        </div>
+      }
+
+      @if (exitCode() !== null) {
+        <div class="detail-row">
+          <span class="detail-label">Exit code:</span>
+          <span
+            class="detail-value"
+            [class.text-green-400]="exitCode() === 0"
+            [class.text-red-400]="exitCode() !== 0"
+          >
+            {{ exitCode() }}
+          </span>
+        </div>
+      }
+
+      @if (formattedDuration()) {
+        <div class="detail-row">
+          <span class="detail-label">Duration:</span>
+          <span class="detail-value">{{ formattedDuration() }}</span>
+        </div>
+      }
+    </div>
+  }
+</div>

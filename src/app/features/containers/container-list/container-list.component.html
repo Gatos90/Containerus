@@ -1,0 +1,430 @@
+<div class="p-3 sm:p-4 md:p-6 space-y-3 sm:space-y-4 md:space-y-6">
+  <!-- Header -->
+  <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+    <div class="flex items-center gap-4">
+      <div>
+        <h1 class="text-xl sm:text-2xl font-bold">Container Management</h1>
+        <p class="text-xs sm:text-sm text-zinc-400 hidden sm:block">Manage containers across systems</p>
+      </div>
+      <!-- Compact colored stats -->
+      <div class="flex items-center gap-2 text-sm">
+        <span class="text-green-500 font-medium" title="Running">{{ containerState.stats().running }}</span>
+        <span class="text-zinc-600">/</span>
+        <span class="text-red-500 font-medium" title="Stopped">{{ containerState.stats().stopped }}</span>
+        <span class="text-zinc-600">/</span>
+        <span class="text-yellow-500 font-medium" title="Paused">{{ containerState.stats().paused }}</span>
+      </div>
+    </div>
+
+    <div class="flex items-center gap-2 sm:gap-3">
+      <!-- Mobile Filter Sheet Trigger -->
+      <button
+        (click)="showMobileFilters.set(true)"
+        class="md:hidden p-2.5 touch-target rounded-lg border border-zinc-700 hover:bg-zinc-800 transition-colors"
+        title="Filters"
+      >
+        <lucide-icon [img]="SlidersHorizontal" class="w-4 h-4"></lucide-icon>
+      </button>
+
+      <!-- Refresh -->
+      <button
+        (click)="refresh()"
+        class="flex items-center p-2.5 sm:px-3 sm:py-1.5 rounded-lg border border-zinc-700 text-sm hover:bg-zinc-800 transition-colors"
+        [disabled]="isRefreshing()"
+        title="Refresh"
+      >
+        <lucide-icon
+          [img]="RefreshCw"
+          class="w-4 h-4"
+          [class.animate-spin]="isRefreshing()"
+        ></lucide-icon>
+        <span class="hidden sm:inline ml-2">Refresh</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Search and Filters Bar -->
+  <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+    <!-- Search -->
+    <div class="relative flex-1 sm:max-w-xs">
+      <lucide-icon
+        [img]="Search"
+        class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500"
+      ></lucide-icon>
+      <input
+        type="text"
+        placeholder="Search containers..."
+        [ngModel]="containerState.searchQuery()"
+        (ngModelChange)="containerState.setSearchQuery($event)"
+        class="w-full h-9 pl-10 pr-4 bg-zinc-800 border border-zinc-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+      />
+    </div>
+
+    <!-- Desktop filters -->
+    <div class="hidden md:flex items-center gap-2 flex-wrap">
+      <!-- Status filter with counts -->
+      <select
+        [ngModel]="containerState.statusFilter()"
+        (ngModelChange)="containerState.setStatusFilter($event)"
+        class="h-9 px-3 bg-zinc-800 border border-zinc-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+      >
+        <option [ngValue]="null">All ({{ containerState.stats().total }})</option>
+        <option value="running">Running ({{ containerState.stats().running }})</option>
+        <option value="exited">Stopped ({{ containerState.stats().stopped }})</option>
+        <option value="paused">Paused ({{ containerState.stats().paused }})</option>
+        <option value="created">Created</option>
+      </select>
+
+      <!-- System filter -->
+      <select
+        [ngModel]="containerState.systemFilter()"
+        (ngModelChange)="containerState.setSystemFilter($event)"
+        class="h-9 px-3 bg-zinc-800 border border-zinc-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+      >
+        <option [ngValue]="null">All Systems</option>
+        @for (system of systemState.connectedSystems(); track system.id) {
+          <option [ngValue]="system.id">{{ system.name }}</option>
+        }
+      </select>
+
+      <!-- Runtime filter -->
+      <select
+        [ngModel]="containerState.runtimeFilter()"
+        (ngModelChange)="containerState.setRuntimeFilter($event)"
+        class="h-9 px-3 bg-zinc-800 border border-zinc-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+      >
+        <option [ngValue]="null">All Runtimes</option>
+        <option value="docker">Docker</option>
+        <option value="podman">Podman</option>
+        <option value="apple">Apple</option>
+      </select>
+
+      <!-- Sort -->
+      <select
+        [ngModel]="containerState.sortOption()"
+        (ngModelChange)="containerState.setSortOption($event)"
+        class="h-9 px-3 bg-zinc-800 border border-zinc-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+      >
+        <option value="name">Sort: Name</option>
+        <option value="status">Sort: Status</option>
+        <option value="created">Sort: Created</option>
+      </select>
+
+      <!-- View toggle -->
+      <div class="flex items-center gap-1 border border-zinc-700 rounded-lg p-1">
+        <button
+          (click)="viewMode.set('grid')"
+          class="p-1.5 rounded transition-colors"
+          [class.bg-zinc-700]="viewMode() === 'grid'"
+          title="Grid view"
+        >
+          <lucide-icon [img]="LayoutGrid" class="w-4 h-4"></lucide-icon>
+        </button>
+        <button
+          (click)="viewMode.set('list')"
+          class="p-1.5 rounded transition-colors"
+          [class.bg-zinc-700]="viewMode() === 'list'"
+          title="List view"
+        >
+          <lucide-icon [img]="List" class="w-4 h-4"></lucide-icon>
+        </button>
+      </div>
+    </div>
+
+    <!-- Mobile: View toggle and count -->
+    <div class="flex md:hidden items-center justify-between">
+      <span class="text-sm text-zinc-400">
+        {{ containerState.filteredContainers().length }} containers
+      </span>
+      <div class="flex items-center gap-1 border border-zinc-700 rounded-lg p-1">
+        <button
+          (click)="viewMode.set('grid')"
+          class="p-2 touch-target-sm rounded transition-colors"
+          [class.bg-zinc-700]="viewMode() === 'grid'"
+        >
+          <lucide-icon [img]="LayoutGrid" class="w-4 h-4"></lucide-icon>
+        </button>
+        <button
+          (click)="viewMode.set('list')"
+          class="p-2 touch-target-sm rounded transition-colors"
+          [class.bg-zinc-700]="viewMode() === 'list'"
+        >
+          <lucide-icon [img]="List" class="w-4 h-4"></lucide-icon>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Container Grid -->
+  <div
+    [class]="viewMode() === 'grid'
+      ? 'space-y-3 sm:grid sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-3 sm:gap-4 sm:auto-rows-min'
+      : 'space-y-3'"
+  >
+    @for (container of containerState.filteredContainers(); track container.id) {
+      <div
+        class="bg-zinc-800 rounded-lg border border-zinc-700/50 flex flex-col overflow-hidden"
+        [class.row-span-2]="expandedContainerId() === container.id"
+      >
+        <!-- Fixed Header (never scrolls) -->
+        <div class="flex-shrink-0 p-4 pb-2">
+          <!-- Card Header -->
+          <div class="flex items-start justify-between">
+            <div class="flex-1 min-w-0">
+              <div class="font-medium truncate">{{ getDisplayName(container) }}</div>
+              <div class="text-sm text-zinc-400 truncate">{{ container.image }}</div>
+            </div>
+            <div class="flex items-center gap-1">
+              <button
+                (click)="openModal(container)"
+                class="p-1.5 rounded-lg hover:bg-zinc-700 transition-colors text-zinc-400 hover:text-zinc-200"
+                title="Open full details"
+              >
+                <lucide-icon [img]="Maximize2" class="w-4 h-4"></lucide-icon>
+              </button>
+              <button
+                (click)="toggleDetails(container)"
+                class="p-1.5 rounded-lg hover:bg-zinc-700 transition-colors text-zinc-400 hover:text-zinc-200"
+                title="View details"
+              >
+                <lucide-icon [img]="Info" class="w-4 h-4"></lucide-icon>
+              </button>
+            </div>
+          </div>
+
+          <!-- Status Row -->
+          <div class="flex items-center justify-between mt-2">
+            <div class="flex items-center gap-2">
+              <span
+                class="w-2 h-2 rounded-full"
+                [class.bg-green-500]="container.status === 'running'"
+                [class.bg-red-500]="container.status === 'exited' || container.status === 'dead'"
+                [class.bg-yellow-500]="container.status === 'paused'"
+                [class.bg-orange-500]="container.status === 'created'"
+                [class.bg-blue-500]="container.status === 'restarting'"
+              ></span>
+              <span
+                class="text-sm"
+                [class.text-green-500]="container.status === 'running'"
+                [class.text-red-500]="container.status === 'exited' || container.status === 'dead'"
+                [class.text-yellow-500]="container.status === 'paused'"
+                [class.text-orange-500]="container.status === 'created'"
+                [class.text-blue-500]="container.status === 'restarting'"
+              >
+                {{ getStatusText(container.status) }}
+              </span>
+            </div>
+            <span class="text-xs text-zinc-500">{{ getRelativeTime(container.createdAt) }}</span>
+          </div>
+        </div>
+
+        <!-- Scrollable Body -->
+        <div class="flex-1 min-h-0 overflow-auto px-4 pb-4 space-y-3">
+          <!-- Ports Section -->
+          @if (container.ports && container.ports.length > 0) {
+            <app-port-section
+              [ports]="container.ports"
+              [containerId]="container.id"
+              [systemId]="container.systemId"
+            />
+          }
+
+          <!-- Action Buttons -->
+          <div class="flex flex-wrap gap-2 pt-2 border-t border-zinc-700/50 mt-2">
+            @if (isRunning(container)) {
+              <button
+                (click)="performAction(container, 'stop')"
+                class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-red-500/50 text-red-400 text-sm hover:bg-red-500/10 transition-colors"
+                [disabled]="containerState.isLoading(container.id)"
+              >
+                <lucide-icon [img]="Square" class="w-3.5 h-3.5"></lucide-icon>
+                Stop
+              </button>
+              <button
+                (click)="performAction(container, 'restart')"
+                class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-zinc-600 text-zinc-300 text-sm hover:bg-zinc-700 transition-colors"
+                [disabled]="containerState.isLoading(container.id)"
+              >
+                <lucide-icon [img]="RotateCcw" class="w-3.5 h-3.5"></lucide-icon>
+                Restart
+              </button>
+              <button
+                (click)="showLogs(container)"
+                class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-zinc-600 text-zinc-300 text-sm hover:bg-zinc-700 transition-colors"
+              >
+                <lucide-icon [img]="FileText" class="w-3.5 h-3.5"></lucide-icon>
+                Logs
+              </button>
+              <a
+                [routerLink]="['/terminal', container.systemId, container.id]"
+                class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-zinc-600 text-zinc-300 text-sm hover:bg-zinc-700 transition-colors"
+              >
+                <lucide-icon [img]="Terminal" class="w-3.5 h-3.5"></lucide-icon>
+                Terminal
+              </a>
+            } @else {
+              <button
+                (click)="performAction(container, 'start')"
+                class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-green-500/50 text-green-400 text-sm hover:bg-green-500/10 transition-colors"
+                [disabled]="containerState.isLoading(container.id)"
+              >
+                <lucide-icon [img]="Play" class="w-3.5 h-3.5"></lucide-icon>
+                Start
+              </button>
+              <button
+                (click)="performAction(container, 'restart')"
+                class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-zinc-600 text-zinc-300 text-sm hover:bg-zinc-700 transition-colors"
+                [disabled]="containerState.isLoading(container.id)"
+              >
+                <lucide-icon [img]="RotateCcw" class="w-3.5 h-3.5"></lucide-icon>
+                Restart
+              </button>
+              <button
+                (click)="showLogs(container)"
+                class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-zinc-600 text-zinc-300 text-sm hover:bg-zinc-700 transition-colors"
+              >
+                <lucide-icon [img]="FileText" class="w-3.5 h-3.5"></lucide-icon>
+                Logs
+              </button>
+            }
+          </div>
+
+          <!-- Expanded Details -->
+          @if (expandedContainerId() === container.id) {
+            <div class="pt-3 border-t border-zinc-700">
+              <app-container-details [container]="container" />
+            </div>
+          }
+        </div>
+      </div>
+    } @empty {
+      <div class="col-span-full text-center py-12 text-zinc-500">
+        @if (systemState.connectedSystems().length === 0) {
+          <p>No systems connected. Go to Systems to connect.</p>
+        } @else if (containerState.searchQuery() || containerState.statusFilter() || containerState.runtimeFilter()) {
+          <p>No containers match your filters.</p>
+        } @else {
+          <p>No containers found on connected systems.</p>
+        }
+      </div>
+    }
+  </div>
+</div>
+
+<!-- Detail Modal -->
+@if (modalContainer()) {
+  <app-container-detail-modal
+    [container]="modalContainer()!"
+    (close)="closeModal()"
+    (viewLogs)="showLogs(modalContainer()!)"
+  />
+}
+
+<!-- Logs Modal -->
+@if (logsContainer()) {
+  <app-logs-viewer-modal
+    [container]="logsContainer()!"
+    (close)="closeLogs()"
+  />
+}
+
+<!-- Mobile Filter Sheet -->
+@if (showMobileFilters()) {
+  <div class="fixed inset-0 z-50 md:hidden">
+    <!-- Backdrop -->
+    <div
+      class="absolute inset-0 bg-black/60"
+      (click)="showMobileFilters.set(false)"
+    ></div>
+
+    <!-- Sheet - with max height and scroll for small screens -->
+    <div class="absolute bottom-0 left-0 right-0 bg-zinc-900 rounded-t-2xl safe-bottom animate-in slide-in-from-bottom duration-300 max-h-[85dvh] flex flex-col">
+      <!-- Handle -->
+      <div class="flex justify-center py-3 flex-shrink-0">
+        <div class="w-12 h-1 bg-zinc-700 rounded-full"></div>
+      </div>
+
+      <!-- Header -->
+      <div class="flex items-center justify-between px-4 pb-4 flex-shrink-0">
+        <h2 class="text-lg font-semibold">Filters</h2>
+        <button
+          (click)="showMobileFilters.set(false)"
+          class="p-2 touch-target rounded-lg hover:bg-zinc-800 transition-colors"
+        >
+          <lucide-icon [img]="X" class="w-5 h-5"></lucide-icon>
+        </button>
+      </div>
+
+      <!-- Filter Options - scrollable -->
+      <div class="px-4 pb-6 space-y-5 overflow-auto flex-1 min-h-0">
+        <!-- Sort -->
+        <div class="space-y-2">
+          <label class="text-sm text-zinc-400 font-medium">Sort by</label>
+          <select
+            [ngModel]="containerState.sortOption()"
+            (ngModelChange)="containerState.setSortOption($event)"
+            class="w-full px-4 py-3 bg-zinc-800 border border-zinc-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="name">Name</option>
+            <option value="status">Status</option>
+            <option value="created">Created</option>
+          </select>
+        </div>
+
+        <!-- System -->
+        <div class="space-y-2">
+          <label class="text-sm text-zinc-400 font-medium">System</label>
+          <select
+            [ngModel]="containerState.systemFilter()"
+            (ngModelChange)="containerState.setSystemFilter($event)"
+            class="w-full px-4 py-3 bg-zinc-800 border border-zinc-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            <option [ngValue]="null">All Systems</option>
+            @for (system of systemState.connectedSystems(); track system.id) {
+              <option [ngValue]="system.id">{{ system.name }}</option>
+            }
+          </select>
+        </div>
+
+        <!-- Status -->
+        <div class="space-y-2">
+          <label class="text-sm text-zinc-400 font-medium">Status</label>
+          <select
+            [ngModel]="containerState.statusFilter()"
+            (ngModelChange)="containerState.setStatusFilter($event)"
+            class="w-full px-4 py-3 bg-zinc-800 border border-zinc-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            <option [ngValue]="null">All Statuses</option>
+            <option value="running">Running</option>
+            <option value="exited">Exited</option>
+            <option value="paused">Paused</option>
+            <option value="created">Created</option>
+          </select>
+        </div>
+
+        <!-- Runtime -->
+        <div class="space-y-2">
+          <label class="text-sm text-zinc-400 font-medium">Runtime</label>
+          <select
+            [ngModel]="containerState.runtimeFilter()"
+            (ngModelChange)="containerState.setRuntimeFilter($event)"
+            class="w-full px-4 py-3 bg-zinc-800 border border-zinc-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            <option [ngValue]="null">All Runtimes</option>
+            <option value="docker">Docker</option>
+            <option value="podman">Podman</option>
+            <option value="apple">Apple</option>
+          </select>
+        </div>
+
+        <!-- Apply Button -->
+        <button
+          (click)="showMobileFilters.set(false)"
+          class="w-full py-3.5 bg-blue-600 text-white font-medium rounded-xl hover:bg-blue-700 transition-colors"
+        >
+          Apply Filters
+        </button>
+      </div>
+    </div>
+  </div>
+}

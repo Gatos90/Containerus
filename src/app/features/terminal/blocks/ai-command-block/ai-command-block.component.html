@@ -1,0 +1,220 @@
+<div class="ai-command-block" [class]="borderColor()" [class.collapsed]="isCollapsed()" [class.loading]="isLoading()">
+  <!-- COLLAPSED: Single line with toggle, icon, command, status, and action buttons -->
+  @if (isCollapsed()) {
+    <div class="collapsed-row">
+      <button type="button" class="collapse-toggle" (click)="onToggleCollapse()" title="Expand">
+        <lucide-icon [img]="ChevronRight" class="w-4 h-4" />
+      </button>
+      <lucide-icon [img]="statusIcon()" class="w-4 h-4" [class]="statusColor()" />
+      <code class="collapsed-command">$ {{ command() }}</code>
+      @if (!isPending()) {
+        <span class="status-badge" [class]="statusBadgeClass()">{{ statusText() }}</span>
+      }
+      <!-- Action buttons -->
+      <div class="collapsed-actions">
+        <button
+          type="button"
+          class="collapsed-action-btn"
+          (click)="onCopy()"
+          title="Copy command"
+        >
+          <lucide-icon [img]="Copy" class="w-3.5 h-3.5" />
+        </button>
+        @if (!isPending()) {
+          <button
+            type="button"
+            class="collapsed-action-btn"
+            (click)="onExecute()"
+            title="Re-run command"
+          >
+            <lucide-icon [img]="RotateCcw" class="w-3.5 h-3.5" />
+          </button>
+        }
+      </div>
+    </div>
+  } @else {
+    <!-- EXPANDED: Full layout -->
+
+    <!-- Query Header - Shows the user's AI query -->
+    @if (query()) {
+      <div class="query-header">
+        <button type="button" class="collapse-toggle" (click)="onToggleCollapse()" title="Collapse" [disabled]="isLoading()">
+          <lucide-icon [img]="ChevronDown" class="w-4 h-4" />
+        </button>
+        <lucide-icon [img]="Zap" class="w-4 h-4 text-purple-400" />
+        <span class="query-text">"{{ query() }}"</span>
+        @if (contextLines() && contextLines()! > 0) {
+          <span class="context-badge" title="Terminal context included">
+            <lucide-icon [img]="FileText" class="w-3 h-3" />
+            {{ contextLines() }} lines context
+          </span>
+        }
+        @if (isLoading()) {
+          <lucide-icon [img]="Loader2" class="w-4 h-4 loading-spinner ml-auto" />
+        }
+      </div>
+    }
+
+    <!-- LOADING STATE: Show spinner and message -->
+    @if (isLoading()) {
+      <div class="loading-content">
+        <div class="loading-row">
+          <lucide-icon [img]="Loader2" class="w-5 h-5 loading-spinner text-purple-400" />
+          <span class="loading-text">Generating command...</span>
+        </div>
+      </div>
+    } @else {
+      <!-- Warning Banner -->
+      @if (warning()) {
+        <div class="warning-banner">
+          <lucide-icon [img]="AlertTriangle" class="w-4 h-4 flex-shrink-0" />
+          <span>{{ warning() }}</span>
+        </div>
+      }
+
+      <!-- Command Header with status -->
+      <div class="command-header">
+        @if (!query()) {
+          <button type="button" class="collapse-toggle" (click)="onToggleCollapse()" title="Collapse">
+            <lucide-icon [img]="ChevronDown" class="w-4 h-4" />
+          </button>
+        }
+        <lucide-icon [img]="statusIcon()" class="w-4 h-4" [class]="statusColor()" />
+        <span class="command-label">Suggested Command</span>
+        <div class="header-spacer"></div>
+        @if (!isPending()) {
+          <span class="status-badge" [class]="statusBadgeClass()">{{ statusText() }}</span>
+        }
+      </div>
+
+    <!-- Command Preview -->
+    <div class="command-section">
+      <div class="command-preview" [class.dangerous]="isDangerous()">
+        <span class="command-prompt">$</span>
+        <code>{{ command() }}</code>
+      </div>
+      @if (isDangerous() || requiresSudo()) {
+        <div class="badges-row">
+          @if (isDangerous()) {
+            <span class="badge badge-danger">
+              <lucide-icon [img]="AlertTriangle" class="w-3 h-3" />
+              Potentially Dangerous
+            </span>
+          }
+          @if (requiresSudo()) {
+            <span class="badge badge-sudo">
+              <lucide-icon [img]="ShieldAlert" class="w-3 h-3" />
+              Requires Sudo
+            </span>
+          }
+        </div>
+      }
+    </div>
+
+    <!-- Explanation -->
+    @if (explanation()) {
+      <div class="explanation-section">
+        <div class="explanation-header">
+          <lucide-icon [img]="Lightbulb" class="w-4 h-4 text-amber-400" />
+          <span>What this does</span>
+        </div>
+        <p class="explanation-text">{{ explanation() }}</p>
+      </div>
+    }
+
+    <!-- Affected Files - Collapsible -->
+    @if (affectsFiles().length > 0) {
+      <div class="affects-section">
+        <button type="button" class="affects-toggle" (click)="toggleAffectsFiles()">
+          <lucide-icon [img]="FolderOpen" class="w-4 h-4 text-blue-400" />
+          <span>Affects {{ affectsFiles().length }} file{{ affectsFiles().length > 1 ? 's' : '' }}</span>
+          <lucide-icon
+            [img]="showAffectsFiles ? ChevronDown : ChevronRight"
+            class="w-3 h-3 ml-auto"
+          />
+        </button>
+        @if (showAffectsFiles) {
+          <div class="affects-list">
+            @for (file of affectsFiles(); track file) {
+              <div class="affects-item">
+                <lucide-icon [img]="FileCode" class="w-3 h-3 text-zinc-500" />
+                <span>{{ file }}</span>
+              </div>
+            }
+          </div>
+        }
+      </div>
+    }
+
+    <!-- Action Buttons -->
+    @if (isPending()) {
+      <div class="action-buttons">
+        <button
+          type="button"
+          class="btn btn-primary"
+          [class.btn-danger]="isDangerous()"
+          (click)="onExecute()"
+        >
+          <lucide-icon [img]="Play" class="w-4 h-4" />
+          Run
+        </button>
+        <button type="button" class="btn btn-secondary" (click)="onInsert()">
+          <lucide-icon [img]="Copy" class="w-4 h-4" />
+          Insert
+        </button>
+        <button type="button" class="btn btn-ghost" (click)="onReject()">
+          <lucide-icon [img]="X" class="w-4 h-4" />
+          Reject
+        </button>
+      </div>
+    }
+
+    <!-- Alternatives Section -->
+    @if (hasAlternatives()) {
+      <div class="alternatives-section">
+        <button type="button" class="alternatives-toggle" (click)="toggleAlternatives()">
+          <lucide-icon [img]="Layers" class="w-4 h-4 text-purple-400" />
+          <span>{{ alternatives().length }} Alternative{{ alternatives().length > 1 ? 's' : '' }}</span>
+          <lucide-icon
+            [img]="showAlternatives ? ChevronDown : ChevronRight"
+            class="w-3 h-3 ml-auto"
+          />
+        </button>
+
+        @if (showAlternatives) {
+          <div class="alternatives-list">
+            @for (alt of alternatives(); track alt.command) {
+              <div class="alternative-item">
+                <div class="alt-header">
+                  <code class="alt-command">{{ alt.command }}</code>
+                  @if (isPending()) {
+                    <div class="alt-actions">
+                      <button
+                        type="button"
+                        class="btn-icon"
+                        (click)="onExecuteAlternative(alt.command)"
+                        title="Run this alternative"
+                      >
+                        <lucide-icon [img]="Play" class="w-3 h-3" />
+                      </button>
+                      <button
+                        type="button"
+                        class="btn-icon"
+                        (click)="onInsertAlternative(alt.command)"
+                        title="Insert this alternative"
+                      >
+                        <lucide-icon [img]="Copy" class="w-3 h-3" />
+                      </button>
+                    </div>
+                  }
+                </div>
+                <p class="alt-description">{{ alt.description }}</p>
+              </div>
+            }
+          </div>
+        }
+      </div>
+    }
+    }
+  }
+</div>

@@ -1,0 +1,45 @@
+<div class="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
+  <h3 class="text-sm font-semibold text-zinc-300 mb-3 flex items-center gap-2">
+    <lucide-icon [img]="Box" class="w-4 h-4"></lucide-icon>
+    Unassigned Containers
+  </h3>
+
+  @if (hasContainers()) {
+    <div class="space-y-4">
+      @for (sc of systemContainers(); track sc.system.id) {
+        <div>
+          <div class="text-xs text-zinc-500 mb-2">{{ sc.system.name }}</div>
+          <div
+            class="flex flex-wrap gap-2 min-h-[40px] p-2 rounded-lg border border-dashed border-zinc-700"
+            cdkDropList
+            [id]="getDropListId(sc.system.id)"
+            [cdkDropListData]="sc.containers"
+            [cdkDropListConnectedTo]="connectedDropListIds()"
+            [cdkDropListSortingDisabled]="true"
+          >
+            @for (container of sc.containers; track container.id) {
+              <div cdkDrag [cdkDragData]="container">
+                <app-container-chip
+                  [container]="container"
+                  [removable]="false"
+                  [networkCount]="getNetworkCount(container)"
+                />
+                <!-- Drag preview -->
+                <div *cdkDragPreview class="bg-zinc-800 rounded-full px-3 py-1.5 shadow-lg border border-zinc-600">
+                  <span class="text-sm text-white">{{ container.name || container.id.slice(0, 12) }}</span>
+                </div>
+                <!-- Placeholder while dragging -->
+                <div *cdkDragPlaceholder class="w-24 h-8 rounded-full bg-zinc-700/30 border-2 border-dashed border-zinc-600"></div>
+              </div>
+            }
+          </div>
+        </div>
+      }
+    </div>
+  } @else {
+    <div class="text-center py-6 text-zinc-500">
+      <p class="text-sm">No containers available</p>
+      <p class="text-xs opacity-60 mt-1">Containers will appear here when systems are connected</p>
+    </div>
+  }
+</div>

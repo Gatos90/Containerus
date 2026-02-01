@@ -1,0 +1,97 @@
+<div class="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4" (click)="onCancel()">
+  <div
+    class="bg-zinc-900 border border-zinc-700 rounded-xl w-full max-w-lg shadow-2xl overflow-hidden"
+    (click)="$event.stopPropagation()"
+    (keydown)="onKeydown($event)"
+  >
+    <!-- Header -->
+    <div class="flex items-center justify-between p-4 border-b border-zinc-800">
+      <div>
+        <h2 class="text-lg font-semibold">{{ template().name }}</h2>
+        <p class="text-sm text-zinc-400">Fill in the required variables</p>
+      </div>
+      <button
+        (click)="onCancel()"
+        class="p-1.5 rounded hover:bg-zinc-800 text-zinc-400 hover:text-zinc-200 transition-colors"
+      >
+        <lucide-icon [img]="X" class="w-5 h-5"></lucide-icon>
+      </button>
+    </div>
+
+    <!-- Variables Form -->
+    <div class="p-4 space-y-4 max-h-[50vh] overflow-y-auto">
+      @for (variable of variables(); track variable.name; let i = $index) {
+        <div class="space-y-1.5">
+          <div class="flex items-center justify-between">
+            <label class="flex items-center gap-2 text-sm font-medium">
+              <code class="px-1.5 py-0.5 rounded bg-zinc-800 text-yellow-400 font-mono text-xs">${{ variable.name }}</code>
+              @if (variable.required) {
+                <span class="text-red-400 text-xs">*</span>
+              }
+            </label>
+          </div>
+
+          @if (variable.description) {
+            <p class="text-xs text-zinc-500">{{ variable.description }}</p>
+          }
+
+          @if (variable.suggestions.length > 0) {
+            <select
+              [ngModel]="variable.value"
+              (ngModelChange)="updateValue(i, $event)"
+              class="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="">Select a value...</option>
+              @for (suggestion of variable.suggestions; track suggestion) {
+                <option [value]="suggestion">{{ suggestion }}</option>
+              }
+            </select>
+            <p class="text-xs text-zinc-500">Or enter a custom value:</p>
+          }
+
+          <input
+            #firstInput
+            type="text"
+            [ngModel]="variable.value"
+            (ngModelChange)="updateValue(i, $event)"
+            [placeholder]="variable.suggestions.length > 0 ? 'Custom value...' : 'Enter value...'"
+            class="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono"
+          />
+        </div>
+      }
+    </div>
+
+    <!-- Command Preview -->
+    <div class="px-4 py-3 bg-zinc-800/50 border-t border-zinc-800">
+      <div class="flex items-center gap-2 mb-2">
+        <lucide-icon [img]="Variable" class="w-4 h-4 text-zinc-500"></lucide-icon>
+        <span class="text-xs text-zinc-400">Command Preview</span>
+      </div>
+      <code class="block text-sm text-green-400 font-mono whitespace-pre-wrap break-all">{{ previewCommand() }}</code>
+    </div>
+
+    <!-- Footer -->
+    <div class="flex items-center justify-between p-4 border-t border-zinc-800">
+      <span class="text-xs text-zinc-500">
+        <kbd class="px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400">Ctrl+⏎</kbd>
+        Execute
+      </span>
+      <div class="flex gap-2">
+        <button
+          (click)="onCancel()"
+          class="px-4 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-sm transition-colors"
+        >
+          Cancel
+        </button>
+        <button
+          (click)="onExecute()"
+          [disabled]="!isValid()"
+          class="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          <lucide-icon [img]="Play" class="w-4 h-4"></lucide-icon>
+          Execute
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
