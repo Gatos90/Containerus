@@ -1,0 +1,218 @@
+<!-- Backdrop -->
+<div
+  class="fixed inset-0 bg-black/70 z-50 flex items-end sm:items-center justify-center sm:p-4"
+  (click)="onBackdropClick($event)"
+>
+  <!-- Modal - Full screen on mobile with proper viewport height -->
+  <div
+    class="bg-zinc-900 w-full h-[100dvh] sm:h-auto sm:rounded-xl sm:max-w-5xl sm:max-h-[90vh] overflow-hidden flex flex-col shadow-2xl"
+    (click)="$event.stopPropagation()"
+  >
+    <!-- Header -->
+    <div class="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 border-b border-zinc-800">
+      <div class="flex items-center gap-2 sm:gap-3 min-w-0">
+        <lucide-icon [img]="FileText" class="w-5 h-5 text-zinc-400 flex-shrink-0"></lucide-icon>
+        <div class="min-w-0">
+          <h2 class="text-base sm:text-lg font-semibold truncate">Container Logs</h2>
+          <p class="text-xs sm:text-sm text-zinc-400 truncate">{{ containerName() }}</p>
+        </div>
+      </div>
+
+      <!-- Close button - always visible on mobile -->
+      <button
+        (click)="close.emit()"
+        class="p-2.5 sm:p-2 touch-target text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 rounded-lg transition-colors flex-shrink-0"
+      >
+        <lucide-icon [img]="X" class="w-5 h-5"></lucide-icon>
+      </button>
+    </div>
+
+    <!-- Toolbar - horizontally scrollable on mobile -->
+    <div class="border-b border-zinc-800 bg-zinc-800/30">
+      <div class="overflow-x-auto scrollbar-hide">
+        <div class="flex items-center gap-2 sm:gap-3 px-4 sm:px-6 py-2 min-w-max">
+          <!-- Tail Size -->
+          <div class="flex items-center gap-2">
+            <span class="text-xs sm:text-sm text-zinc-400 whitespace-nowrap">Lines:</span>
+            <select
+              [ngModel]="tailSize()"
+              (ngModelChange)="onTailChange($event)"
+              class="px-2 py-1.5 bg-zinc-800 border border-zinc-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option [value]="100">100</option>
+              <option [value]="500">500</option>
+              <option [value]="1000">1000</option>
+              <option [value]="5000">5000</option>
+            </select>
+          </div>
+
+          <!-- Timestamps Toggle -->
+          <label class="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              [ngModel]="showTimestamps()"
+              (ngModelChange)="onTimestampsChange($event)"
+              class="w-4 h-4 rounded border-zinc-600 bg-zinc-800 text-blue-500 focus:ring-blue-500 focus:ring-offset-zinc-900"
+            />
+            <lucide-icon [img]="Clock" class="w-4 h-4 text-zinc-400"></lucide-icon>
+            <span class="text-xs sm:text-sm text-zinc-400 whitespace-nowrap">Timestamps</span>
+          </label>
+
+          <!-- Divider -->
+          <div class="w-px h-6 bg-zinc-700"></div>
+
+          <!-- Refresh -->
+          <button
+            (click)="loadLogs()"
+            class="p-2.5 sm:p-2 touch-target text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 rounded-lg transition-colors"
+            title="Refresh logs"
+            [disabled]="isLoading()"
+          >
+            <lucide-icon
+              [img]="RefreshCw"
+              class="w-4 h-4"
+              [class.animate-spin]="isLoading()"
+            ></lucide-icon>
+          </button>
+
+          <!-- Copy -->
+          <button
+            (click)="copyLogs()"
+            class="p-2.5 sm:p-2 touch-target text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 rounded-lg transition-colors"
+            title="Copy logs"
+            [disabled]="!logs() || isLoading()"
+          >
+            <lucide-icon [img]="Copy" class="w-4 h-4"></lucide-icon>
+          </button>
+
+          <!-- Download -->
+          <button
+            (click)="downloadLogs()"
+            class="p-2.5 sm:p-2 touch-target text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 rounded-lg transition-colors"
+            title="Download logs"
+            [disabled]="!logs() || isLoading()"
+          >
+            <lucide-icon [img]="Download" class="w-4 h-4"></lucide-icon>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Search Bar -->
+    @if (logs()) {
+      <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 px-4 sm:px-6 py-2 border-b border-zinc-800 bg-zinc-800/50">
+        <div class="relative flex-1 sm:max-w-md">
+          <lucide-icon
+            [img]="Search"
+            class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500"
+          ></lucide-icon>
+          <input
+            type="text"
+            placeholder="Search logs..."
+            [ngModel]="searchQuery()"
+            (ngModelChange)="onSearchChange($event)"
+            class="w-full pl-10 pr-4 py-2 sm:py-1.5 bg-zinc-900 border border-zinc-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
+        @if (searchQuery()) {
+          <div class="flex items-center justify-between sm:justify-start gap-1">
+            @if (matchCount() > 0) {
+              <div class="flex items-center gap-1 text-sm text-zinc-400">
+                <input
+                  type="number"
+                  [value]="currentMatchIndex() + 1"
+                  (change)="onMatchIndexInput($event)"
+                  (keydown.enter)="onMatchIndexInput($event)"
+                  min="1"
+                  [max]="matchCount()"
+                  class="w-14 sm:w-12 px-2 sm:px-1.5 py-1.5 sm:py-0.5 bg-zinc-800 border border-zinc-700 rounded text-center text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                />
+                <span>/ {{ matchCount() }}</span>
+              </div>
+            } @else {
+              <span class="text-sm text-zinc-400">No matches</span>
+            }
+            <div class="flex items-center gap-1">
+              <button
+                (click)="previousMatch()"
+                class="p-2 sm:p-1.5 touch-target-sm text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 rounded transition-colors"
+                [disabled]="matchCount() === 0"
+                title="Previous match"
+              >
+                <lucide-icon [img]="ChevronUp" class="w-4 h-4"></lucide-icon>
+              </button>
+              <button
+                (click)="nextMatch()"
+                class="p-2 sm:p-1.5 touch-target-sm text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 rounded transition-colors"
+                [disabled]="matchCount() === 0"
+                title="Next match"
+              >
+                <lucide-icon [img]="ChevronDown" class="w-4 h-4"></lucide-icon>
+              </button>
+              <button
+                (click)="clearSearch()"
+                class="p-2 sm:p-1.5 touch-target-sm text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 rounded transition-colors"
+                title="Clear search"
+              >
+                <lucide-icon [img]="X" class="w-4 h-4"></lucide-icon>
+              </button>
+            </div>
+          </div>
+        }
+      </div>
+    }
+
+    <!-- Content -->
+    <div class="flex-1 min-h-0 p-3 sm:p-4 flex flex-col">
+      @if (isLoading() && !logs()) {
+        <div class="flex items-center justify-center flex-1">
+          <lucide-icon [img]="Loader2" class="w-8 h-8 animate-spin text-zinc-400"></lucide-icon>
+          <span class="ml-3 text-zinc-400">Loading logs...</span>
+        </div>
+      } @else if (error()) {
+        <div class="flex flex-col items-center justify-center flex-1 text-center px-4">
+          <lucide-icon [img]="AlertTriangle" class="w-10 sm:w-12 h-10 sm:h-12 text-red-400 mb-4"></lucide-icon>
+          <p class="text-red-400 font-medium">Failed to load logs</p>
+          <p class="text-zinc-500 text-sm mt-1">{{ error() }}</p>
+          <button
+            (click)="loadLogs()"
+            class="mt-4 px-4 py-2.5 sm:py-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-sm transition-colors"
+          >
+            Try Again
+          </button>
+        </div>
+      } @else if (!logs()) {
+        <div class="flex flex-col items-center justify-center flex-1 text-center px-4">
+          <lucide-icon [img]="FileText" class="w-10 sm:w-12 h-10 sm:h-12 text-zinc-600 mb-4"></lucide-icon>
+          <p class="text-zinc-400">No logs available</p>
+          <p class="text-zinc-500 text-sm mt-1">This container has not produced any logs yet.</p>
+        </div>
+      } @else {
+        <div
+          #logsContainer
+          class="flex-1 min-h-0 overflow-auto bg-zinc-950 rounded-lg p-3 sm:p-4 font-mono text-xs sm:text-sm leading-relaxed"
+        >
+          <pre
+            class="text-zinc-300 whitespace-pre-wrap break-words"
+            [innerHTML]="highlightedLogs()"
+          ></pre>
+        </div>
+      }
+    </div>
+
+    <!-- Footer with safe area padding for notched devices -->
+    <div class="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 border-t border-zinc-800 safe-bottom">
+      <div class="text-xs sm:text-sm text-zinc-500">
+        @if (logs()) {
+          {{ lineCount() }} lines
+        }
+      </div>
+      <button
+        (click)="close.emit()"
+        class="px-4 py-2.5 sm:py-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-sm transition-colors"
+      >
+        Close
+      </button>
+    </div>
+  </div>
+</div>

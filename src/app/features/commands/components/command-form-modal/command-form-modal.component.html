@@ -1,0 +1,200 @@
+<div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+  <div
+    class="bg-zinc-900 rounded-lg w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col"
+    (click)="$event.stopPropagation()"
+  >
+    <!-- Header -->
+    <div class="flex items-center justify-between p-4 border-b border-zinc-800">
+      <h2 class="text-lg font-semibold">
+        @if (isEditing()) {
+          Edit Command
+        } @else {
+          Create Command
+        }
+      </h2>
+      <button
+        (click)="onCancel()"
+        class="p-1.5 rounded hover:bg-zinc-800 text-zinc-400 hover:text-zinc-200 transition-colors"
+      >
+        <lucide-icon [img]="X" class="w-5 h-5"></lucide-icon>
+      </button>
+    </div>
+
+    <!-- Form Content -->
+    <div class="flex-1 overflow-y-auto p-4 space-y-4">
+      <!-- Name -->
+      <div>
+        <label class="block text-sm text-zinc-400 mb-1">Name *</label>
+        <input
+          type="text"
+          [(ngModel)]="form.name"
+          placeholder="e.g., Shell into Container"
+          class="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+        />
+      </div>
+
+      <!-- Description -->
+      <div>
+        <label class="block text-sm text-zinc-400 mb-1">Description *</label>
+        <textarea
+          [(ngModel)]="form.description"
+          placeholder="Brief description of what this command does"
+          rows="2"
+          class="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+        ></textarea>
+      </div>
+
+      <!-- Command -->
+      <div>
+        <label class="block text-sm text-zinc-400 mb-1">Command *</label>
+        <textarea
+          [(ngModel)]="form.command"
+          (ngModelChange)="detectVariables()"
+          placeholder="e.g., docker exec -it ${CONTAINER_NAME} /bin/bash"
+          rows="3"
+          class="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm resize-none"
+        ></textarea>
+        <p class="text-xs text-zinc-500 mt-1">
+          Use $&#123;VARIABLE_NAME&#125; for placeholders that will be filled at runtime
+        </p>
+      </div>
+
+      <!-- Detected Variables -->
+      @if (detectedVariables().length > 0) {
+        <div class="bg-zinc-800/50 rounded-lg p-3 space-y-3">
+          <div class="flex items-center gap-2 text-sm text-zinc-300">
+            <lucide-icon [img]="Variable" class="w-4 h-4"></lucide-icon>
+            Detected Variables
+          </div>
+          <div class="space-y-2">
+            @for (varName of detectedVariables(); track varName; let i = $index) {
+              <div class="flex items-start gap-3 bg-zinc-900/50 rounded p-2">
+                <code class="text-xs text-yellow-400 font-mono shrink-0 pt-1.5">${{ varName }}</code>
+                <div class="flex-1 space-y-2">
+                  <input
+                    type="text"
+                    [(ngModel)]="form.variables[i].description"
+                    placeholder="Description"
+                    class="w-full px-2 py-1 bg-zinc-800 border border-zinc-700 rounded text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  />
+                  <div class="flex items-center gap-3">
+                    <input
+                      type="text"
+                      [(ngModel)]="form.variables[i].defaultValue"
+                      placeholder="Default value (optional)"
+                      class="flex-1 px-2 py-1 bg-zinc-800 border border-zinc-700 rounded text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    />
+                    <label class="flex items-center gap-1.5 text-xs text-zinc-400">
+                      <input
+                        type="checkbox"
+                        [(ngModel)]="form.variables[i].required"
+                        class="w-3.5 h-3.5 rounded border-zinc-600 bg-zinc-800 text-blue-600"
+                      />
+                      Required
+                    </label>
+                  </div>
+                </div>
+              </div>
+            }
+          </div>
+        </div>
+      }
+
+      <!-- Category -->
+      <div>
+        <label class="block text-sm text-zinc-400 mb-1">Category</label>
+        <select
+          [(ngModel)]="form.category"
+          class="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+        >
+          <option value="container-management">Container Management</option>
+          <option value="debugging">Debugging</option>
+          <option value="networking">Networking</option>
+          <option value="images">Images</option>
+          <option value="volumes">Volumes</option>
+          <option value="system">System</option>
+          <option value="pods">Pods</option>
+          <option value="custom">Custom</option>
+        </select>
+      </div>
+
+      <!-- Tags -->
+      <div>
+        <label class="block text-sm text-zinc-400 mb-1">Tags</label>
+        <input
+          type="text"
+          [(ngModel)]="form.tags"
+          placeholder="Comma-separated tags (e.g., docker, shell, debug)"
+          class="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+        />
+      </div>
+
+      <!-- Runtimes -->
+      <div>
+        <label class="block text-sm text-zinc-400 mb-2">Compatible Runtimes</label>
+        <div class="flex flex-wrap gap-3">
+          <label class="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              [(ngModel)]="form.runtimes.docker"
+              class="w-4 h-4 rounded border-zinc-600 bg-zinc-800 text-blue-600 focus:ring-blue-500"
+            />
+            Docker
+          </label>
+          <label class="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              [(ngModel)]="form.runtimes.podman"
+              class="w-4 h-4 rounded border-zinc-600 bg-zinc-800 text-blue-600 focus:ring-blue-500"
+            />
+            Podman
+          </label>
+          <label class="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              [(ngModel)]="form.runtimes.apple"
+              class="w-4 h-4 rounded border-zinc-600 bg-zinc-800 text-blue-600 focus:ring-blue-500"
+            />
+            Apple
+          </label>
+        </div>
+        <p class="text-xs text-zinc-500 mt-1">
+          Leave all unchecked to support all runtimes
+        </p>
+      </div>
+
+      <!-- Favorite -->
+      <div>
+        <label class="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            [(ngModel)]="form.isFavorite"
+            class="w-4 h-4 rounded border-zinc-600 bg-zinc-800 text-yellow-600 focus:ring-yellow-500"
+          />
+          Add to favorites
+        </label>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="flex justify-end gap-2 p-4 border-t border-zinc-800">
+      <button
+        (click)="onCancel()"
+        class="px-4 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 transition-colors"
+      >
+        Cancel
+      </button>
+      <button
+        (click)="onSave()"
+        [disabled]="!isValid()"
+        class="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+      >
+        @if (isEditing()) {
+          Save Changes
+        } @else {
+          Create Command
+        }
+      </button>
+    </div>
+  </div>
+</div>

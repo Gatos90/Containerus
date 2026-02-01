@@ -1,0 +1,27 @@
+<div class="output-viewport" #viewport (mouseup)="onMouseUp()">
+  <div class="output-lines">
+    @if (hasSections()) {
+      <!-- Section-based rendering with collapse support -->
+      @for (item of sectionsWithLines(); track item.section.id) {
+        <app-output-section
+          [section]="item.section"
+          [lines]="item.lines"
+          [isStreaming]="isRunning"
+          (toggle)="toggleSection(item.section.id)"
+        />
+      }
+    } @else {
+      <!-- Fallback: flat line rendering -->
+      @for (item of allLines(); track item.index) {
+        <div
+          class="output-line"
+          [class.is-highlighted]="highlightLines?.has(item.index)"
+        >
+          @for (span of item.line.spans; track span) {
+            <span [class]="getAnsiClasses(span.styleToken)">{{ span.text || ' ' }}</span>
+          }
+        </div>
+      }
+    }
+  </div>
+</div>

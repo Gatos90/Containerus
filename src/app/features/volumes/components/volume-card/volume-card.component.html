@@ -1,0 +1,81 @@
+<div class="bg-zinc-800 border border-zinc-700 rounded-lg p-4 flex flex-col h-full">
+  <!-- Header -->
+  <div class="flex items-start justify-between gap-2 mb-3">
+    <div class="flex-1 min-w-0">
+      <h3 class="font-medium text-white truncate" [title]="volume().name">
+        {{ volume().name }}
+      </h3>
+      <div class="flex items-center gap-1.5 mt-1 text-xs text-zinc-400">
+        <lucide-icon [img]="HardDrive" class="w-3 h-3"></lucide-icon>
+        <span>{{ volume().driver }}</span>
+      </div>
+    </div>
+
+    <!-- Delete button -->
+    <button
+      type="button"
+      (click)="onDelete($event)"
+      [disabled]="isDeleting() || containerCount() > 0"
+      class="p-1.5 rounded-lg hover:bg-zinc-700 text-zinc-400 hover:text-red-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+      [title]="containerCount() > 0 ? 'Cannot delete: volume in use' : 'Delete volume'"
+    >
+      <lucide-icon
+        [img]="Trash2"
+        class="w-4 h-4"
+        [class.animate-pulse]="isDeleting()"
+      ></lucide-icon>
+    </button>
+  </div>
+
+  <!-- Mountpoint -->
+  <div class="flex items-center gap-2 text-xs text-zinc-500 mb-3">
+    <lucide-icon [img]="FolderOpen" class="w-3.5 h-3.5 flex-shrink-0"></lucide-icon>
+    <span class="truncate" [title]="volume().mountpoint">{{ truncatedMountpoint() }}</span>
+  </div>
+
+  <!-- Status badges -->
+  <div class="flex flex-wrap gap-1.5 mb-3">
+    @if (isOrphaned()) {
+      <span class="px-2 py-0.5 text-xs rounded-full bg-yellow-500/20 text-yellow-400 border border-yellow-500/30">
+        Orphaned
+      </span>
+    }
+    @if (containerCount() > 0) {
+      <span class="px-2 py-0.5 text-xs rounded-full bg-green-500/20 text-green-400 border border-green-500/30">
+        {{ containerCount() }} {{ containerCount() === 1 ? 'container' : 'containers' }}
+      </span>
+    }
+  </div>
+
+  <!-- Labels -->
+  @if (hasLabels()) {
+    <div class="flex flex-wrap gap-1 mb-3">
+      @for (label of labelEntries(); track label[0]) {
+        <span
+          class="inline-flex items-center gap-1 px-1.5 py-0.5 text-xs rounded bg-zinc-700/50 text-zinc-400"
+          [title]="label[0] + '=' + label[1]"
+        >
+          <lucide-icon [img]="Tag" class="w-2.5 h-2.5"></lucide-icon>
+          <span class="truncate max-w-[80px]">{{ label[0] }}</span>
+        </span>
+      }
+    </div>
+  }
+
+  <!-- Container chips -->
+  <div class="flex-1">
+    @if (containerCount() > 0) {
+      <div class="flex flex-wrap gap-1.5">
+        @for (container of containers(); track container.id) {
+          <app-container-chip
+            [container]="container"
+            [removable]="false"
+            [compact]="true"
+          />
+        }
+      </div>
+    } @else {
+      <div class="text-xs text-zinc-500 italic">No containers using this volume</div>
+    }
+  </div>
+</div>

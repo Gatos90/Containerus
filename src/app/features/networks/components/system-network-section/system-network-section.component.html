@@ -1,0 +1,95 @@
+<div class="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden mb-4">
+  <!-- Header -->
+  <button
+    type="button"
+    (click)="toggleExpanded()"
+    class="w-full px-4 py-3 pb-4 flex items-center justify-between hover:bg-zinc-800/50 transition-colors"
+  >
+    <div class="flex items-center gap-3">
+      <lucide-icon
+        [img]="expanded() ? ChevronDown : ChevronRight"
+        class="w-5 h-5 text-zinc-400"
+      ></lucide-icon>
+
+      <div class="text-left">
+        <h2 class="font-semibold text-white">{{ system().name }}</h2>
+        <div class="flex items-center gap-2 text-xs text-zinc-400">
+          <span class="px-1.5 py-0.5 rounded bg-zinc-700">{{ runtimeIcon() }}</span>
+          <lucide-icon [img]="Globe" class="w-3 h-3"></lucide-icon>
+          <span>{{ system().hostname }}</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="flex items-center gap-4 text-sm">
+      <div class="text-right">
+        <span class="text-zinc-300 font-medium">{{ networkCount() }}</span>
+        <span class="text-zinc-500 ml-1">Networks</span>
+      </div>
+      <div class="text-right">
+        <span class="text-zinc-300 font-medium">{{ containerCount() }}</span>
+        <span class="text-zinc-500 ml-1">Containers</span>
+      </div>
+    </div>
+  </button>
+
+  <!-- Content -->
+  @if (expanded()) {
+    <div class="px-4 pb-4 space-y-4" cdkDropListGroup>
+      @if (networks().length > 0) {
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          @for (network of networks(); track network.id) {
+            <app-network-card
+              [network]="network"
+              [containers]="getContainersInNetwork(network)"
+              [isDefault]="isDefaultNetwork(network)"
+              [dropListId]="getDropListId(network)"
+              [connectedDropLists]="getConnectedDropLists(network)"
+              (containerRemoved)="onContainerRemoved($event, network)"
+              (containerDropped)="onContainerDropped($event, network)"
+            />
+          }
+        </div>
+      } @else {
+        <div class="text-center py-8 text-zinc-500">
+          <lucide-icon [img]="Server" class="w-8 h-8 mx-auto mb-2 opacity-50"></lucide-icon>
+          <p class="text-sm">No networks found on this system</p>
+        </div>
+      }
+
+      <!-- Unassigned Containers for this System -->
+      @if (unassignedContainers().length > 0) {
+        <div class="mt-4 pt-4 border-t border-zinc-800">
+          <h3 class="text-sm font-medium text-zinc-400 mb-3 flex items-center gap-2">
+            <lucide-icon [img]="Box" class="w-4 h-4"></lucide-icon>
+            Available Containers
+          </h3>
+          <div
+            class="flex flex-wrap gap-2 min-h-[40px] p-3 rounded-lg border border-dashed border-zinc-700 bg-zinc-800/30"
+            cdkDropList
+            [id]="unassignedDropListId()"
+            [cdkDropListData]="unassignedContainers()"
+            [cdkDropListConnectedTo]="dropListIds()"
+            [cdkDropListSortingDisabled]="true"
+          >
+            @for (container of unassignedContainers(); track container.id) {
+              <div cdkDrag [cdkDragData]="container">
+                <app-container-chip
+                  [container]="container"
+                  [removable]="false"
+                  [networkCount]="getNetworkCount(container)"
+                />
+                <!-- Drag preview -->
+                <div *cdkDragPreview class="bg-zinc-800 rounded-full px-3 py-1.5 shadow-lg border border-zinc-600">
+                  <span class="text-sm text-white">{{ container.name || container.id.slice(0, 12) }}</span>
+                </div>
+                <!-- Placeholder while dragging -->
+                <div *cdkDragPlaceholder class="w-24 h-8 rounded-full bg-zinc-700/30 border-2 border-dashed border-zinc-600"></div>
+              </div>
+            }
+          </div>
+        </div>
+      }
+    </div>
+  }
+</div>

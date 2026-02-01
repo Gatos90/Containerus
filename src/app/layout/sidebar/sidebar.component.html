@@ -1,0 +1,280 @@
+<!-- Desktop Sidebar - hidden on mobile -->
+<aside class="hidden md:flex flex-col h-full w-64 bg-zinc-900 border-r border-zinc-800">
+  <!-- Fixed Header -->
+  <div class="p-4 border-b border-zinc-800 flex-shrink-0">
+    <h1 class="text-xl font-bold text-white flex items-center gap-2">
+      <img src="assets/ContainerusIcon.png" alt="Containerus" class="w-6 h-6">
+      Containerus
+    </h1>
+  </div>
+
+  <!-- Scrollable Nav -->
+  <nav class="flex-1 overflow-auto min-h-0 p-3 space-y-1">
+    @for (item of navItems; track item.route) {
+      <a
+        [routerLink]="item.route"
+        routerLinkActive="bg-zinc-800 text-white"
+        class="flex items-center gap-3 px-3 py-2 rounded-lg text-zinc-400 hover:bg-zinc-800 hover:text-white transition-colors"
+      >
+        <lucide-icon [img]="item.icon" class="w-5 h-5"></lucide-icon>
+        <span class="flex-1">{{ item.label }}</span>
+        @if (item.badge && item.badge() !== null) {
+          <span class="px-2 py-0.5 text-xs rounded-full bg-zinc-700 text-zinc-300">
+            {{ item.badge() }}
+          </span>
+        }
+      </a>
+    }
+  </nav>
+
+  <!-- Fixed Bottom: Connected Systems - Collapsible -->
+  <div class="flex-shrink-0 border-t border-zinc-800">
+    <div class="p-3">
+      <button
+        (click)="toggleSystemsExpanded()"
+        class="w-full flex items-center justify-between text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
+      >
+        <span class="flex items-center gap-2">
+          Connected Systems
+          <span class="px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400">
+            {{ systemState.connectedSystems().length }}
+          </span>
+        </span>
+        <lucide-icon
+          [img]="systemsExpanded() ? ChevronDown : ChevronUp"
+          class="w-4 h-4"
+        ></lucide-icon>
+      </button>
+
+      @if (systemsExpanded()) {
+        <div class="mt-2 space-y-1 max-h-64 overflow-auto">
+          @for (system of systemState.connectedSystems(); track system.id) {
+            @let info = getExtendedInfo(system.id);
+            <div
+              class="group rounded-lg text-sm text-zinc-400 hover:bg-zinc-800 hover:text-white transition-colors"
+              [class.bg-zinc-800]="systemState.selectedSystemId() === system.id"
+              [class.text-white]="systemState.selectedSystemId() === system.id"
+            >
+              <!-- System header with name, OS icon, and badges -->
+              <button
+                (click)="selectSystem(system.id)"
+                class="w-full flex items-center gap-2 px-3 py-2"
+              >
+                <span class="w-2 h-2 rounded-full bg-green-500 flex-shrink-0"></span>
+                <span class="truncate flex-1 text-left">{{ system.name }}</span>
+                <!-- OS icon -->
+                <span class="text-sm" [title]="info?.osType || 'Unknown OS'">{{ getOsIcon(info?.osType) }}</span>
+                <!-- Root badge -->
+                @if (info?.isRoot) {
+                  <lucide-icon
+                    [img]="Crown"
+                    class="w-3.5 h-3.5 text-amber-500"
+                    title="Root user"
+                  ></lucide-icon>
+                }
+                <!-- Sudo badge -->
+                @if (info?.canSudo && !info?.isRoot) {
+                  <lucide-icon
+                    [img]="ShieldCheck"
+                    class="w-3.5 h-3.5 text-blue-400"
+                    title="Can sudo"
+                  ></lucide-icon>
+                }
+              </button>
+
+              <!-- Quick stats line -->
+              @if (info) {
+                <div class="px-3 pb-1 text-[10px] text-zinc-500 truncate">
+                  {{ formatQuickStats(info) }}
+                  @if (info.runningContainers !== null && info.runningContainers !== undefined) {
+                    <span class="ml-1">
+                      · <span class="text-green-500">{{ info.runningContainers }}</span>/<span class="text-zinc-500">{{ info.totalContainers ?? 0 }}</span> containers
+                    </span>
+                  }
+                  @if (info.diskUsagePercent) {
+                    <span class="ml-1" [class.text-amber-500]="info.diskUsagePercent > 80" [class.text-red-500]="info.diskUsagePercent > 90">
+                      · {{ info.diskUsagePercent }}% disk
+                    </span>
+                  }
+                </div>
+              }
+
+              <!-- Compact Live Metrics -->
+              @let metrics = getLiveMetrics(system.id);
+              @if (metrics) {
+                <div class="px-3 pb-2 space-y-1">
+                  <!-- CPU Bar -->
+                  <div class="flex items-center gap-1.5">
+                    <span class="text-[9px] text-zinc-500 w-6">CPU</span>
+                    <div class="flex-1 h-1 bg-zinc-700 rounded-full overflow-hidden">
+                      <div
+                        class="h-full rounded-full transition-all duration-500"
+                        [class]="getMetricBarClass(metrics.cpuUsagePercent)"
+                        [style.width.%]="metrics.cpuUsagePercent"
+                      ></div>
+                    </div>
+                    <span
+                      class="text-[9px] min-w-[2rem] text-right"
+                      [class]="getMetricTextClass(metrics.cpuUsagePercent)"
+                    >
+                      {{ metrics.cpuUsagePercent | number:'1.0-0' }}%
+                    </span>
+                  </div>
+
+                  <!-- Memory Bar -->
+                  <div class="flex items-center gap-1.5">
+                    <span class="text-[9px] text-zinc-500 w-6">RAM</span>
+                    <div class="flex-1 h-1 bg-zinc-700 rounded-full overflow-hidden">
+                      <div
+                        class="h-full rounded-full transition-all duration-500"
+                        [class]="getMetricBarClass(metrics.memoryUsagePercent)"
+                        [style.width.%]="metrics.memoryUsagePercent"
+                      ></div>
+                    </div>
+                    <span
+                      class="text-[9px] min-w-[2rem] text-right"
+                      [class]="getMetricTextClass(metrics.memoryUsagePercent)"
+                    >
+                      {{ metrics.memoryUsagePercent | number:'1.0-0' }}%
+                    </span>
+                  </div>
+
+                  <!-- Load Indicator -->
+                  @if (metrics.loadAverage && info?.cpuCount) {
+                    @let loadLevel = getLoadLevel(metrics.loadAverage, info?.cpuCount);
+                    <div class="flex items-center gap-1.5" [title]="loadLevel.tooltip">
+                      <span class="text-[9px] text-zinc-500 w-6">Load</span>
+                      <div class="flex items-center gap-0.5">
+                        @for (i of loadDots; track i) {
+                          <span
+                            class="w-1.5 h-1.5 rounded-full"
+                            [class]="i <= loadLevel.dots ? loadLevel.bgColor : 'bg-zinc-700'"
+                          ></span>
+                        }
+                      </div>
+                      <span class="text-[9px] ml-1" [class]="loadLevel.color">{{ loadLevel.label }}</span>
+                    </div>
+                  }
+                </div>
+              }
+
+              <!-- Actions -->
+              <div class="flex items-center gap-1 px-2 pb-2 pt-0">
+                <button
+                  (click)="openTerminal($event, system)"
+                  class="flex items-center gap-1 px-2 py-1 text-xs rounded bg-zinc-700/50 hover:bg-zinc-700 text-zinc-400 hover:text-white transition-colors"
+                  title="Open Terminal"
+                >
+                  <lucide-icon [img]="Terminal" class="w-3 h-3"></lucide-icon>
+                  Terminal
+                </button>
+                <button
+                  (click)="viewSystem($event, system)"
+                  class="flex items-center gap-1 px-2 py-1 text-xs rounded bg-zinc-700/50 hover:bg-zinc-700 text-zinc-400 hover:text-white transition-colors"
+                  title="View Details"
+                >
+                  <lucide-icon [img]="ExternalLink" class="w-3 h-3"></lucide-icon>
+                </button>
+                <button
+                  (click)="disconnectSystem($event, system)"
+                  class="flex items-center gap-1 px-2 py-1 text-xs rounded bg-zinc-700/50 hover:bg-red-900/50 text-zinc-400 hover:text-red-400 transition-colors"
+                  title="Disconnect"
+                >
+                  <lucide-icon [img]="Unplug" class="w-3 h-3"></lucide-icon>
+                </button>
+              </div>
+            </div>
+          } @empty {
+            <p class="text-xs text-zinc-600 px-3 py-2">No systems connected</p>
+          }
+        </div>
+      }
+    </div>
+
+    <!-- Stats Footer -->
+    <div class="p-3 border-t border-zinc-800">
+      <div class="flex items-center justify-between text-xs">
+        <span class="text-zinc-500">
+          {{ containerState.stats().running }} running
+        </span>
+        <span class="text-zinc-600">
+          {{ containerState.stats().total }} total
+        </span>
+      </div>
+    </div>
+  </div>
+</aside>
+
+<!-- Mobile Bottom Navigation -->
+<nav class="md:hidden fixed bottom-0 inset-x-0 bg-zinc-900 border-t border-zinc-800 z-40">
+  <div class="flex justify-around items-stretch safe-bottom">
+    @for (item of mobileNavItems; track item.route) {
+      <a
+        [routerLink]="item.route"
+        routerLinkActive="text-blue-500"
+        #rla="routerLinkActive"
+        class="flex flex-col items-center justify-center py-2 px-3 touch-target flex-1"
+        [class.text-blue-500]="rla.isActive"
+        [class.text-zinc-400]="!rla.isActive"
+      >
+        <div class="relative">
+          <lucide-icon [img]="item.icon" class="w-5 h-5"></lucide-icon>
+          @if (item.badge && item.badge() !== null && item.badge()! > 0) {
+            <span class="absolute -top-1 -right-2 w-4 h-4 text-[10px] font-medium rounded-full bg-blue-600 text-white flex items-center justify-center">
+              {{ item.badge()! > 99 ? '99+' : item.badge() }}
+            </span>
+          }
+        </div>
+        <span class="text-[10px] mt-1">{{ item.label }}</span>
+      </a>
+    }
+
+    <!-- "More" button -->
+    <button
+      (click)="showMoreSheet.set(true)"
+      class="flex flex-col items-center justify-center py-2 px-3 touch-target flex-1 text-zinc-400"
+    >
+      <lucide-icon [img]="MoreHorizontal" class="w-5 h-5"></lucide-icon>
+      <span class="text-[10px] mt-1">More</span>
+    </button>
+  </div>
+</nav>
+
+<!-- More Menu Bottom Sheet -->
+@if (showMoreSheet()) {
+  <div class="fixed inset-0 z-50 md:hidden">
+    <!-- Backdrop -->
+    <div
+      class="absolute inset-0 bg-black/60"
+      (click)="showMoreSheet.set(false)"
+    ></div>
+
+    <!-- Sheet - with max height for small screens -->
+    <div class="absolute bottom-0 left-0 right-0 bg-zinc-900 rounded-t-2xl safe-bottom max-h-[85dvh] flex flex-col">
+      <!-- Handle -->
+      <div class="flex justify-center py-3 flex-shrink-0">
+        <div class="w-12 h-1 bg-zinc-700 rounded-full"></div>
+      </div>
+
+      <!-- Menu Items - scrollable if needed -->
+      <nav class="px-4 pb-6 space-y-1 overflow-auto flex-1 min-h-0">
+        @for (item of moreNavItems; track item.route) {
+          <a
+            [routerLink]="item.route"
+            (click)="showMoreSheet.set(false)"
+            routerLinkActive="bg-zinc-800 text-white"
+            class="flex items-center gap-3 px-4 py-3 rounded-xl text-zinc-300 hover:bg-zinc-800 transition-colors touch-target"
+          >
+            <lucide-icon [img]="item.icon" class="w-5 h-5"></lucide-icon>
+            <span class="flex-1">{{ item.label }}</span>
+            @if (item.badge && item.badge() !== null) {
+              <span class="px-2 py-0.5 text-xs rounded-full bg-zinc-700">
+                {{ item.badge() }}
+              </span>
+            }
+          </a>
+        }
+      </nav>
+    </div>
+  </div>
+}

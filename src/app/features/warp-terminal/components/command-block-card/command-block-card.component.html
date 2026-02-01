@@ -1,0 +1,89 @@
+<section
+  class="block-card group"
+  [class.is-selected]="selected"
+  [id]="'block-' + block.id"
+>
+  <header class="block-header" (click)="select.emit()">
+    <div class="header-left">
+      <span class="status-icon" [attr.data-tone]="statusTone">
+        @switch (block.status.state) {
+          @case ('running') {
+            <lucide-icon [img]="Loader2" class="w-4 h-4 animate-spin"></lucide-icon>
+          }
+          @case ('finished') {
+            <lucide-icon
+              [img]="block.status.exitCode === 0 ? CheckCircle2 : XCircle"
+              class="w-4 h-4"
+            ></lucide-icon>
+          }
+          @case ('cancelled') {
+            <lucide-icon [img]="XCircle" class="w-4 h-4"></lucide-icon>
+          }
+          @default {
+            <span class="status-dot"></span>
+          }
+        }
+      </span>
+      <span class="prompt">$</span>
+      <span class="command-text">{{ block.commandText }}</span>
+      <span class="meta-pill">{{ statusLabel }}</span>
+    </div>
+    <div class="header-right">
+      <span class="meta">{{ block.cwdLabel }}</span>
+      @if (block.status.state === 'finished') {
+        <span class="meta">{{ block.status.endedAt | date: 'shortTime' }}</span>
+      }
+      <div class="action-row">
+        <button class="action-button" (click)="copyCommand.emit()" title="Copy command">
+          <lucide-icon [img]="Copy" class="w-4 h-4"></lucide-icon>
+        </button>
+        <button class="action-button" (click)="copyOutput.emit()" title="Copy output">
+          <lucide-icon [img]="Copy" class="w-4 h-4"></lucide-icon>
+        </button>
+        <button class="action-button" (click)="rerun.emit()" title="Rerun">
+          <lucide-icon [img]="Play" class="w-4 h-4"></lucide-icon>
+        </button>
+        <button class="action-button" (click)="toggleCollapse.emit()" title="Collapse">
+          <lucide-icon
+            [img]="block.isCollapsed ? ChevronRight : ChevronDown"
+            class="w-4 h-4"
+          ></lucide-icon>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <div class="block-divider"></div>
+
+  @if (!block.isCollapsed) {
+    <div class="output-expanded">
+      <app-output-viewport
+        [buffer]="block.renderState"
+        [isRunning]="block.status.state === 'running'"
+        [highlightLines]="highlightLines"
+        (textSelection)="onTextSelection($event)"
+      ></app-output-viewport>
+    </div>
+  } @else {
+    <button class="output-collapsed" (click)="toggleCollapse.emit()">
+      <span class="collapsed-summary">
+        <lucide-icon [img]="ChevronRight" size="14"></lucide-icon>
+        <span class="line-count">{{ block.metrics.lineCount }} lines</span>
+        @if (block.metrics.bytesReceived > 0) {
+          <span class="byte-count">{{ formatBytes(block.metrics.bytesReceived) }}</span>
+        }
+      </span>
+    </button>
+  }
+
+  <footer class="block-footer">
+    <span>{{ block.metrics.lineCount }} lines</span>
+    <span>{{ block.metrics.bytesReceived }} bytes</span>
+    @if (block.metrics.durationMs) {
+      <span>{{ (block.metrics.durationMs / 1000) | number: '1.1-1' }}s</span>
+    }
+    @if (block.status.state === 'finished' && block.status.exitCode !== 0) {
+      <span class="exit-badge">Exit {{ block.status.exitCode }}</span>
+    }
+  </footer>
+</section>

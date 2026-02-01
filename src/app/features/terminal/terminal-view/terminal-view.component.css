@@ -1,0 +1,65 @@
+:host {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.terminal-split {
+  display: grid;
+  grid-template-columns: 1fr;
+  grid-template-rows: 1fr;
+  flex: 1;
+  min-height: 0;
+}
+
+.terminal-xterm {
+  min-height: 0;
+}
+
+.terminal-warp {
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* Toggle view: hide xterm when warp is shown (not side-by-side) */
+:host.warp-enabled .terminal-xterm {
+  display: none;
+}
+
+:host ::ng-deep .xterm {
+  padding: 8px;
+}
+
+:host ::ng-deep .xterm-viewport {
+  overflow-y: auto !important;
+}
+
+/* Custom scrollbar styling */
+:host ::ng-deep .xterm-viewport::-webkit-scrollbar {
+  width: 8px;
+}
+
+:host ::ng-deep .xterm-viewport::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+:host ::ng-deep .xterm-viewport::-webkit-scrollbar-thumb {
+  background: #3f3f46;
+  border-radius: 4px;
+}
+
+:host ::ng-deep .xterm-viewport::-webkit-scrollbar-thumb:hover {
+  background: #52525b;
+}
+
+/* Search decoration styling */
+:host ::ng-deep .xterm-decoration-top,
+:host ::ng-deep .xterm-decoration-container {
+  opacity: 0.9;
+}
+
+:host ::ng-deep .xterm .xterm-screen .xterm-decoration-container .xterm-decoration {
+  border-radius: 2px;
+}

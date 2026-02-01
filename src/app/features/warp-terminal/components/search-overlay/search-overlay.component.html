@@ -1,0 +1,27 @@
+@if (open) {
+  <div class="search-backdrop" (click)="close.emit()"></div>
+  <div class="search-panel">
+    <div class="search-input">
+      <lucide-icon [img]="Search" class="w-4 h-4"></lucide-icon>
+      <input
+        type="text"
+        [value]="query"
+        (input)="updateQuery($any($event.target).value)"
+        placeholder="Search commands and output..."
+      />
+      <button (click)="close.emit()">
+        <lucide-icon [img]="X" class="w-4 h-4"></lucide-icon>
+      </button>
+    </div>
+    <div class="search-results">
+      @for (result of results; track result) {
+        <button class="result-item" (click)="selectResult.emit(result)">
+          <span class="result-tag">{{ result.kind }}</span>
+          <span class="result-preview">{{ result.preview }}</span>
+        </button>
+      } @empty {
+        <div class="result-empty">No matches yet.</div>
+      }
+    </div>
+  </div>
+}

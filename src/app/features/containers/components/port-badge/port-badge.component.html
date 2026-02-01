@@ -1,0 +1,43 @@
+<div
+  class="inline-flex items-center gap-1.5 sm:gap-1 px-2.5 sm:px-2 py-1.5 sm:py-1 rounded bg-zinc-700 text-xs sm:text-xs"
+>
+  <!-- Port display (clickable when forwarded) -->
+  <button
+    [class.text-green-400]="isForwarded()"
+    [class.hover:text-green-300]="isForwarded()"
+    [class.cursor-pointer]="isForwarded()"
+    [class.cursor-default]="!isForwarded()"
+    [disabled]="!isForwarded()"
+    (click)="openInBrowser()"
+    class="flex items-center gap-1.5 sm:gap-1"
+    [title]="isForwarded() ? 'Click to open in browser' : 'Forward port to open'"
+  >
+    <lucide-icon
+      [img]="isForwarded() ? Link : ArrowLeftRight"
+      class="w-4 h-4 sm:w-3 sm:h-3"
+    ></lucide-icon>
+    <span>{{ port().hostPort }}:{{ port().containerPort }}/{{ port().protocol.toUpperCase() }}</span>
+  </button>
+
+  <!-- Forward/Stop button -->
+  <button
+    (click)="toggleForward()"
+    [disabled]="loading()"
+    class="p-1.5 sm:p-0.5 touch-target-sm sm:min-w-0 sm:min-h-0 rounded-full hover:bg-zinc-600 transition-colors ml-0.5 sm:ml-1"
+    [title]="isForwarded() ? 'Stop tunnel' : 'Create tunnel'"
+  >
+    @if (loading()) {
+      <lucide-icon
+        [img]="Loader2"
+        class="w-4 h-4 sm:w-3 sm:h-3 animate-spin text-zinc-400"
+      ></lucide-icon>
+    } @else if (isForwarded()) {
+      <lucide-icon [img]="X" class="w-4 h-4 sm:w-3 sm:h-3 text-red-400"></lucide-icon>
+    } @else {
+      <lucide-icon
+        [img]="Radio"
+        class="w-4 h-4 sm:w-3 sm:h-3 text-zinc-400 hover:text-green-400"
+      ></lucide-icon>
+    }
+  </button>
+</div>

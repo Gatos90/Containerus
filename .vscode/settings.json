@@ -1,0 +1,18 @@
+{
+    "rust-analyzer.linkedProjects": [
+        "./src-tauri/Cargo.toml",
+    ],
+    "rust-analyzer.workspace.symbol.search.scope": "workspace_and_dependencies",
+    "rust-analyzer.cargo.buildScripts.enable": true,
+    "rust-analyzer.procMacro.enable": true,
+    "files.watcherExclude": {
+        "**/target/**": true
+    },
+    "search.exclude": {
+        "**/target": true,
+        "**/Cargo.lock": true
+    },
+    "files.associations": {
+        "*.toml": "toml"
+    }
+}

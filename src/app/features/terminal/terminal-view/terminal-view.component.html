@@ -1,0 +1,167 @@
+<div class="relative flex flex-col h-full bg-zinc-950 overflow-hidden">
+  <!-- Terminal Header -->
+  <div class="flex-shrink-0 flex items-center justify-between px-2 sm:px-4 py-2 bg-zinc-900 border-b border-zinc-800 gap-2">
+    <!-- Left side: Status + System Name (minimal on mobile) -->
+    <div class="flex items-center gap-2 min-w-0 flex-1">
+      <!-- Connection Status Dot -->
+      <div
+        class="w-2 h-2 rounded-full flex-shrink-0"
+        [class.bg-green-500]="session"
+        [class.bg-yellow-500]="!session"
+        [class.animate-pulse]="!session"
+      ></div>
+
+      <!-- Runtime Icon - hidden on small screens -->
+      <lucide-icon
+        [img]="getRuntimeIcon()"
+        class="w-4 h-4 text-zinc-500 hidden sm:block flex-shrink-0"
+      ></lucide-icon>
+
+      <!-- System Name - truncated on mobile -->
+      <span class="text-sm font-medium truncate">
+        @if (session) {
+          {{ getSystemName() }}
+          @if (containerId) {
+            <span class="hidden sm:inline">/ {{ containerId.slice(0, 12) }}</span>
+          }
+        } @else {
+          Connecting...
+        }
+      </span>
+    </div>
+
+    <!-- Right side: Action Buttons -->
+    <div class="flex items-center gap-0.5 sm:gap-1 flex-shrink-0">
+      <!-- Commands button - icon only on mobile -->
+      <button
+        (click)="openCommandPalette()"
+        class="p-2 sm:px-2 sm:py-1 rounded bg-zinc-800 hover:bg-zinc-700 transition-colors text-xs text-zinc-400 hover:text-zinc-200 flex items-center gap-1.5"
+        title="Open Command Palette (Ctrl+K)"
+      >
+        <lucide-icon [img]="Command" class="w-4 h-4"></lucide-icon>
+        <span class="hidden sm:inline">Commands</span>
+        <kbd class="hidden md:inline px-1 py-0.5 text-[10px] bg-zinc-700 rounded">⌘K</kbd>
+      </button>
+      <!-- Search - hidden on mobile, accessible via keyboard -->
+      <button
+        (click)="openSearch()"
+        class="p-2 rounded hover:bg-zinc-800 transition-colors hidden sm:block"
+        title="Search (Ctrl+F)"
+      >
+        <lucide-icon [img]="Search" class="w-4 h-4"></lucide-icon>
+      </button>
+      <!-- Warp toggle - always visible -->
+      <button
+        (click)="toggleWarpTerminal()"
+        class="p-2 rounded hover:bg-zinc-800 transition-colors"
+        [class.bg-zinc-800]="showWarpTerminal()"
+        title="Toggle Warp-style terminal"
+      >
+        <lucide-icon [img]="Sparkles" class="w-4 h-4"></lucide-icon>
+      </button>
+      <!-- Pop out to dock - always visible (essential for mobile navigation) -->
+      <button
+        (click)="popOutToDock()"
+        class="p-2 rounded hover:bg-zinc-800 transition-colors"
+        title="Pop out to dock (keep terminal alive)"
+      >
+        <lucide-icon [img]="PanelBottomOpen" class="w-4 h-4"></lucide-icon>
+      </button>
+      <!-- Fullscreen - hidden on mobile -->
+      <button
+        (click)="toggleFullscreen()"
+        class="p-2 rounded hover:bg-zinc-800 transition-colors hidden sm:block"
+        title="Toggle Fullscreen"
+      >
+        <lucide-icon
+          [img]="isFullscreen ? Minimize2 : Maximize2"
+          class="w-4 h-4"
+        ></lucide-icon>
+      </button>
+      <!-- Close - always visible with good touch target -->
+      <button
+        (click)="close()"
+        class="p-2 rounded hover:bg-red-900/50 transition-colors text-zinc-400 hover:text-red-400"
+        title="Close Terminal"
+      >
+        <lucide-icon [img]="X" class="w-4 h-4"></lucide-icon>
+      </button>
+    </div>
+  </div>
+
+  <!-- Search Bar Overlay -->
+  @if (showSearchBar) {
+    <div class="absolute top-12 right-4 z-10 flex items-center gap-1 bg-zinc-900 border border-zinc-700 rounded-md shadow-lg p-1">
+      <input
+        #searchInput
+        type="text"
+        [(ngModel)]="searchQuery"
+        (input)="onSearchInput()"
+        (keydown.enter)="findNext()"
+        (keydown.shift.enter)="findPrevious()"
+        (keydown.escape)="closeSearch()"
+        placeholder="Search..."
+        class="w-48 px-2 py-1 text-sm bg-zinc-800 border-none rounded text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-600"
+      />
+      <button
+        (click)="findPrevious()"
+        class="p-1 rounded hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200"
+        title="Previous (Shift+Enter)"
+      >
+        <lucide-icon [img]="ChevronUp" class="w-4 h-4"></lucide-icon>
+      </button>
+      <button
+        (click)="findNext()"
+        class="p-1 rounded hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200"
+        title="Next (Enter)"
+      >
+        <lucide-icon [img]="ChevronDown" class="w-4 h-4"></lucide-icon>
+      </button>
+      <button
+        (click)="closeSearch()"
+        class="p-1 rounded hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200"
+        title="Close (Escape)"
+      >
+        <lucide-icon [img]="X" class="w-4 h-4"></lucide-icon>
+      </button>
+    </div>
+  }
+
+  <!-- Terminal Container -->
+  <div class="terminal-split">
+    <div #terminalContainer class="terminal-xterm"></div>
+    @if (showWarpTerminal()) {
+      <div class="terminal-warp">
+        <app-warp-terminal-view [terminalSessionId]="session?.id ?? null" [containerId]="containerId" [systemId]="systemId"></app-warp-terminal-view>
+      </div>
+    }
+  </div>
+
+  <!-- AI Input Bar - only show when NOT in warp mode (warp has its own composer-bar) -->
+  @if (!showWarpTerminal()) {
+    <app-ai-input-bar
+      [terminalContext]="getRecentOutput()"
+      (executeCommand)="executeCommand($event)"
+    />
+  }
+</div>
+
+<!-- Command Palette Overlay -->
+@if (showCommandPalette) {
+  <app-command-palette
+    [systemId]="systemId"
+    (close)="closeCommandPalette()"
+    (execute)="onCommandSelect($event)"
+  />
+}
+
+<!-- Variable Input Modal -->
+@if (showVariableInput && pendingTemplate && pendingCommand) {
+  <app-variable-input-modal
+    [systemId]="systemId"
+    [template]="pendingTemplate"
+    [command]="pendingCommand"
+    (execute)="executeCommand($event)"
+    (cancel)="closeVariableInput()"
+  />
+}

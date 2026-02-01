@@ -1,0 +1,380 @@
+<div class="space-y-4">
+  <!-- Container Information -->
+  <app-detail-section title="Container Information" icon="box">
+    <app-detail-field
+      label="ID"
+      [value]="container().id"
+      [copyable]="true"
+    />
+    <app-detail-field
+      label="Name"
+      [value]="container().name"
+      [copyable]="true"
+    />
+    <app-detail-field
+      label="Image"
+      [value]="container().image"
+      [copyable]="true"
+    />
+    <app-detail-field
+      label="Status"
+      [value]="getStatusText(container().status)"
+    />
+    @if (container().state.pid > 0) {
+      <app-detail-field
+        label="PID"
+        [value]="container().state.pid"
+      />
+    }
+    @if (container().status === 'exited') {
+      <app-detail-field
+        label="Exit Code"
+        [value]="container().state.exitCode"
+      />
+    }
+    @if (container().state.healthStatus) {
+      <app-detail-field
+        label="Health Status"
+        [value]="container().state.healthStatus"
+      />
+    }
+    <app-detail-field
+      label="Created"
+      [value]="formatDate(container().createdAt)"
+    />
+    @if (container().state.startedAt) {
+      <app-detail-field
+        label="Started At"
+        [value]="formatDate(container().state.startedAt!)"
+      />
+    }
+    @if (container().state.finishedAt && container().status !== 'running') {
+      <app-detail-field
+        label="Finished At"
+        [value]="formatDate(container().state.finishedAt!)"
+      />
+    }
+  </app-detail-section>
+
+  <!-- Command & Process -->
+  @if (hasCommandInfo()) {
+    <app-detail-section title="Command & Process" icon="terminal">
+      @if (container().config.entrypoint?.length) {
+        <app-detail-field
+          label="Entrypoint"
+          [value]="container().config.entrypoint!.join(' ')"
+          [copyable]="true"
+        />
+      }
+      @if (container().config.cmd?.length) {
+        <app-detail-field
+          label="Command"
+          [value]="container().config.cmd!.join(' ')"
+          [copyable]="true"
+        />
+      }
+      @if (container().config.workingDir) {
+        <app-detail-field
+          label="Working Directory"
+          [value]="container().config.workingDir"
+          [copyable]="true"
+        />
+      }
+      @if (container().config.user) {
+        <app-detail-field
+          label="User"
+          [value]="container().config.user"
+        />
+      }
+      @if (container().config.hostname) {
+        <app-detail-field
+          label="Hostname"
+          [value]="container().config.hostname"
+          [copyable]="true"
+        />
+      }
+    </app-detail-section>
+  }
+
+  <!-- Network & Ports -->
+  @if (networksArray().length || container().ports.length) {
+    <app-detail-section title="Network & Ports" icon="network">
+      @for (entry of networksArray(); track entry.name) {
+        <app-detail-field
+          [label]="'IP Address (' + entry.name + ')'"
+          [value]="entry.info.ipAddress || 'N/A'"
+          [copyable]="true"
+        />
+        <app-detail-field
+          label="Gateway"
+          [value]="entry.info.gateway || 'N/A'"
+          [copyable]="true"
+        />
+      }
+
+      @if (container().ports.length) {
+        <div class="mt-3 pt-3 border-t border-zinc-800">
+          <app-port-section
+            [ports]="container().ports"
+            [containerId]="container().id"
+            [systemId]="container().systemId"
+          />
+        </div>
+      }
+    </app-detail-section>
+  }
+
+  <!-- Resources -->
+  <app-detail-section title="Resources" icon="cpu">
+    <app-detail-field
+      label="Memory Limit"
+      [value]="formatMemory(container().resourceLimits.memory)"
+    />
+    <app-detail-field
+      label="CPU Shares"
+      [value]="container().resourceLimits.cpuShares ?? 'Not set'"
+    />
+    <app-detail-field
+      label="CPU Limit"
+      [value]="formatCpuLimit()"
+    />
+  </app-detail-section>
+
+  <!-- Environment Variables -->
+  @if (envVarsArray().length > 0) {
+    <app-detail-section
+      title="Environment Variables"
+      icon="variable"
+      [showCopyAll]="true"
+      [copyAllFn]="copyAllEnvVars"
+    >
+      <div class="max-h-48 overflow-auto">
+        @for (entry of envVarsArray(); track entry.key) {
+          <div
+            class="flex items-center justify-between py-1 px-1 rounded hover:bg-zinc-800/50 group"
+          >
+            <div class="text-xs font-mono truncate">
+              <span class="text-blue-400">{{ entry.key }}</span>=<span
+                class="text-zinc-400"
+                >{{ entry.value }}</span
+              >
+            </div>
+            <button
+              (click)="copyEnvVar(entry.key, entry.value)"
+              class="opacity-0 group-hover:opacity-100 p-1 text-zinc-400 hover:text-blue-400"
+              title="Copy"
+            >
+              <svg
+                class="w-3 h-3"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
+                />
+              </svg>
+            </button>
+          </div>
+        }
+      </div>
+    </app-detail-section>
+  }
+
+  <!-- Volumes & Mounts -->
+  @if (container().volumes.length) {
+    <app-detail-section title="Volumes & Mounts" icon="hard-drive">
+      <div class="space-y-2 max-h-48 overflow-auto">
+        @for (vol of container().volumes; track vol.destination) {
+          <div class="bg-zinc-800/50 rounded p-2 text-xs">
+            <div class="flex items-center justify-between">
+              <span class="text-zinc-300">{{ vol.mountType }}</span>
+              <span
+                [class.text-green-400]="vol.readWrite"
+                [class.text-yellow-400]="!vol.readWrite"
+              >
+                {{ vol.readWrite ? 'Read/Write' : 'Read Only' }}
+              </span>
+            </div>
+            <div class="mt-1 font-mono text-zinc-400 break-all">
+              {{ vol.source }} → {{ vol.destination }}
+            </div>
+          </div>
+        }
+      </div>
+    </app-detail-section>
+  }
+
+  <!-- System Information -->
+  <app-detail-section title="System Information" icon="server">
+    <app-detail-field
+      label="Runtime"
+      [value]="container().runtime"
+    />
+    <app-detail-field
+      label="System ID"
+      [value]="container().systemId"
+      [copyable]="true"
+    />
+    <app-detail-field
+      label="Labels"
+      [value]="labelCount()"
+    />
+    @if (container().state.error) {
+      <div class="flex items-center gap-2 py-1 text-red-400">
+        <lucide-icon [img]="AlertTriangle" class="w-4 h-4"></lucide-icon>
+        <span class="text-xs">{{ container().state.error }}</span>
+      </div>
+    }
+  </app-detail-section>
+
+  <!-- Runtime Configuration (collapsible) -->
+  <app-detail-section
+    title="Runtime Configuration"
+    icon="settings"
+    [collapsible]="true"
+  >
+    @if (container().hostConfig.networkMode) {
+      <app-detail-field
+        label="Network Mode"
+        [value]="container().hostConfig.networkMode"
+      />
+    }
+    @if (container().hostConfig.privileged) {
+      <div class="flex items-center gap-2 py-1 text-yellow-400">
+        <lucide-icon [img]="AlertTriangle" class="w-4 h-4"></lucide-icon>
+        <span class="text-xs font-medium">Privileged Mode Enabled</span>
+      </div>
+    }
+    @if (container().config.tty) {
+      <app-detail-field
+        label="TTY"
+        value="Allocated"
+      />
+    }
+    @if (container().config.stopSignal) {
+      <app-detail-field
+        label="Stop Signal"
+        [value]="container().config.stopSignal"
+      />
+    }
+    <app-detail-field
+      label="Restart Policy"
+      [value]="formatRestartPolicy()"
+    />
+  </app-detail-section>
+
+  <!-- Security & Capabilities (collapsible) -->
+  @if (hasSecurityInfo()) {
+    <app-detail-section
+      title="Security & Capabilities"
+      icon="shield"
+      [collapsible]="true"
+    >
+      @if (container().hostConfig.capAdd.length) {
+        <app-detail-field
+          label="Added Capabilities"
+          [value]="container().hostConfig.capAdd.join(', ')"
+        />
+      }
+      @if (container().hostConfig.capDrop.length) {
+        <app-detail-field
+          label="Dropped Capabilities"
+          [value]="container().hostConfig.capDrop.join(', ')"
+        />
+      }
+      @if (container().hostConfig.securityOpt.length) {
+        <div class="space-y-1">
+          <span class="text-xs text-zinc-500">Security Options</span>
+          @for (opt of container().hostConfig.securityOpt; track opt) {
+            <div class="text-xs font-mono text-zinc-400 bg-zinc-800/50 px-2 py-1 rounded">
+              {{ opt }}
+            </div>
+          }
+        </div>
+      }
+    </app-detail-section>
+  }
+
+  <!-- Devices & Storage (collapsible) -->
+  @if (hasDevicesInfo()) {
+    <app-detail-section
+      title="Devices & Storage"
+      icon="hard-drive"
+      [collapsible]="true"
+    >
+      @if (container().hostConfig.devices.length) {
+        <div class="space-y-1">
+          <span class="text-xs text-zinc-500">Device Mappings</span>
+          @for (dev of container().hostConfig.devices; track dev.hostPath) {
+            <div class="text-xs font-mono text-zinc-400 bg-zinc-800/50 px-2 py-1 rounded">
+              {{ dev.hostPath }} → {{ dev.containerPath }} ({{ dev.permissions }})
+            </div>
+          }
+        </div>
+      }
+      @if (container().hostConfig.shmSize) {
+        <app-detail-field
+          label="Shared Memory Size"
+          [value]="formatMemory(container().hostConfig.shmSize)"
+        />
+      }
+      @if (container().hostConfig.ulimits.length) {
+        <div class="space-y-1">
+          <span class="text-xs text-zinc-500">Ulimits</span>
+          @for (ulimit of container().hostConfig.ulimits; track ulimit.name) {
+            <div class="text-xs font-mono text-zinc-400 bg-zinc-800/50 px-2 py-1 rounded">
+              {{ ulimit.name }}: {{ ulimit.soft }} / {{ ulimit.hard }}
+            </div>
+          }
+        </div>
+      }
+    </app-detail-section>
+  }
+
+  <!-- Logging (collapsible) -->
+  @if (container().hostConfig.logConfig) {
+    <app-detail-section
+      title="Logging"
+      icon="file-text"
+      [collapsible]="true"
+    >
+      <app-detail-field
+        label="Log Driver"
+        [value]="container().hostConfig.logConfig!.logType"
+      />
+      @if (logConfigEntries().length) {
+        <div class="space-y-1 mt-2">
+          <span class="text-xs text-zinc-500">Log Config</span>
+          @for (entry of logConfigEntries(); track entry.key) {
+            <div class="text-xs font-mono text-zinc-400 bg-zinc-800/50 px-2 py-1 rounded">
+              {{ entry.key }}: {{ entry.value }}
+            </div>
+          }
+        </div>
+      }
+    </app-detail-section>
+  }
+
+  <!-- Labels (collapsible) -->
+  @if (labelsArray().length > 0) {
+    <app-detail-section
+      title="Labels"
+      icon="tag"
+      [collapsible]="true"
+      [showCopyAll]="true"
+      [copyAllFn]="copyAllLabels"
+    >
+      <div class="max-h-48 overflow-auto space-y-1">
+        @for (entry of labelsArray(); track entry.key) {
+          <div class="text-xs font-mono bg-zinc-800/50 px-2 py-1 rounded">
+            <span class="text-purple-400">{{ entry.key }}</span>=<span class="text-zinc-400">{{ entry.value }}</span>
+          </div>
+        }
+      </div>
+    </app-detail-section>
+  }
+</div>

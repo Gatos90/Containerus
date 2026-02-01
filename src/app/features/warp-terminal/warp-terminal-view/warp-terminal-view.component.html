@@ -1,0 +1,84 @@
+<div class="warp-terminal h-full flex flex-col">
+  <header class="terminal-header flex items-center justify-between">
+    <div class="flex items-center gap-3">
+      <div class="flex items-center gap-2 text-sm text-[var(--text-muted)]">
+        <lucide-icon [img]="Terminal" class="w-4 h-4"></lucide-icon>
+      </div>
+    </div>
+    <div class="flex items-center gap-2">
+      <button
+        class="icon-button"
+        (click)="clearTerminal()"
+        title="Clear terminal (Ctrl+L)"
+      >
+        <lucide-icon [img]="Trash2" class="w-4 h-4"></lucide-icon>
+      </button>
+      <button
+        class="icon-button"
+        (click)="toggleSearch(true)"
+        title="Search (Ctrl+F)"
+      >
+        <lucide-icon [img]="Search" class="w-4 h-4"></lucide-icon>
+      </button>
+      <button
+        class="icon-button"
+        (click)="toggleFollowMode()"
+        [class.active]="followMode()"
+        title="Follow output"
+      >
+        <lucide-icon [img]="ArrowDownToLine" class="w-4 h-4"></lucide-icon>
+      </button>
+      @if (isAiThinking()) {
+        <span class="mode-badge thinking" title="AI is processing...">
+          <lucide-icon [img]="Sparkles" class="w-4 h-4 animate-pulse"></lucide-icon>
+          Thinking...
+        </span>
+      } @else {
+        <button class="mode-badge" title="AI mediation">
+          <lucide-icon [img]="Sparkles" class="w-4 h-4"></lucide-icon>
+          AI ready
+        </button>
+      }
+    </div>
+  </header>
+
+  @if (aiError(); as error) {
+    <div class="ai-error-banner">
+      <div class="ai-error-content">
+        <lucide-icon [img]="Sparkles" class="w-4 h-4"></lucide-icon>
+        <span class="ai-error-message">{{ error.message }}</span>
+        @if (error.suggestion) {
+          <span class="ai-error-suggestion">{{ error.suggestion }}</span>
+        }
+      </div>
+      <button class="ai-error-dismiss" (click)="dismissAiError()">Dismiss</button>
+    </div>
+  }
+
+  <app-block-list
+    class="flex-1 min-h-0"
+    [blocks]="blocks()"
+    [selection]="selection()"
+    [followMode]="followMode()"
+    [highlightMap]="highlightMap()"
+    (selectBlock)="selectBlock($event)"
+    (textSelection)="setSelection($event)"
+    (copyCommand)="copyBlockCommand($event)"
+    (copyOutput)="copyBlockOutput($event)"
+    (rerun)="rerunBlock($event)"
+    (userScrolled)="handleUserScroll()"
+    (jumpToLatest)="scrollToLatest()"
+    (toggleCollapse)="toggleCollapse($event)"
+  ></app-block-list>
+
+  <app-composer-bar (submit)="submitCommand($event)"></app-composer-bar>
+
+  <app-search-overlay
+    [open]="searchOpen()"
+    [query]="searchQuery()"
+    [results]="searchResults()"
+    (close)="toggleSearch(false)"
+    (queryChange)="updateSearch($event)"
+    (selectResult)="selectSearchResult($event)"
+  ></app-search-overlay>
+</div>

@@ -1,0 +1,192 @@
+.command-block {
+  font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #fafafa;
+  background-color: rgba(24, 24, 27, 0.6);
+  border-radius: 6px;
+  border-left: 3px solid #3b82f6;
+  padding: 6px 8px;
+  margin: 4px 0;
+  transition: all 0.15s ease;
+}
+
+.command-block.success {
+  border-left-color: #22c55e;
+}
+
+.command-block.error {
+  border-left-color: #ef4444;
+}
+
+.command-block.running {
+  border-left-color: #3b82f6;
+}
+
+.command-block:hover {
+  background-color: rgba(24, 24, 27, 0.8);
+}
+
+/* Header row */
+.command-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 24px;
+}
+
+/* Collapse toggle button */
+.collapse-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  border-radius: 4px;
+  flex-shrink: 0;
+  transition: background-color 0.15s ease;
+}
+
+.collapse-toggle:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.collapse-toggle:focus-visible {
+  outline: 2px solid #3b82f6;
+  outline-offset: 1px;
+}
+
+/* Status indicator */
+.status-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+/* Command text */
+.command-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.command-text code {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #e4e4e7;
+}
+
+/* When not collapsed, allow wrapping */
+.command-block:not(.collapsed) .command-text code {
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+
+/* Action buttons */
+.action-buttons {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  flex-shrink: 0;
+}
+
+.command-block:hover .action-buttons,
+.command-block:focus-within .action-buttons {
+  opacity: 1;
+}
+
+.action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  border-radius: 4px;
+  color: #a1a1aa;
+  transition: all 0.15s ease;
+}
+
+.action-btn:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+  color: #fafafa;
+}
+
+.action-btn:focus-visible {
+  outline: 2px solid #3b82f6;
+  outline-offset: 1px;
+}
+
+/* Duration badge */
+.duration {
+  font-size: 11px;
+  color: #71717a;
+  padding: 2px 6px;
+  background-color: rgba(39, 39, 42, 0.8);
+  border-radius: 4px;
+}
+
+/* Expanded details section */
+.command-details {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(63, 63, 70, 0.5);
+}
+
+.detail-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  padding: 2px 0;
+}
+
+.detail-label {
+  color: #71717a;
+  min-width: 80px;
+}
+
+.detail-value {
+  color: #a1a1aa;
+}
+
+/* Spin animation for loading indicator */
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-spin {
+  animation: spin 1s linear infinite;
+}
+
+/* Text colors */
+.text-blue-400 {
+  color: #60a5fa;
+}
+
+.text-green-400 {
+  color: #4ade80;
+}
+
+.text-red-400 {
+  color: #f87171;
+}
+
+.text-zinc-500 {
+  color: #71717a;
+}

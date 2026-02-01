@@ -1,0 +1,31 @@
+<div
+  class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-zinc-700/50 border border-zinc-600 text-sm cursor-grab active:cursor-grabbing hover:bg-zinc-700 transition-colors"
+  [class.pr-1.5]="removable()"
+>
+  <!-- Status dot -->
+  <span class="w-2 h-2 rounded-full" [class]="statusDotClass()"></span>
+
+  <!-- Container name -->
+  <span class="truncate max-w-[120px]" [class.max-w-[80px]]="compact()">
+    {{ displayName() }}
+  </span>
+
+  <!-- Network count badge (if provided) -->
+  @if (networkCount() !== undefined && networkCount()! > 0) {
+    <span class="px-1.5 py-0.5 text-xs rounded-full bg-blue-500/20 text-blue-400 min-w-[18px] text-center">
+      {{ networkCount() }}
+    </span>
+  }
+
+  <!-- Remove button -->
+  @if (removable()) {
+    <button
+      type="button"
+      (click)="onRemove($event)"
+      class="p-0.5 rounded-full hover:bg-zinc-600 text-zinc-400 hover:text-white transition-colors"
+      title="Remove from network"
+    >
+      <lucide-icon [img]="X" class="w-3.5 h-3.5"></lucide-icon>
+    </button>
+  }
+</div>

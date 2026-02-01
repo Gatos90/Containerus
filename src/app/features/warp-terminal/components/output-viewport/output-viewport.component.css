@@ -1,0 +1,97 @@
+.output-viewport {
+  position: relative;
+  min-height: 40px;
+  /* No max-height - let content grow naturally */
+  overflow: visible;
+  padding: 8px 16px 12px;
+  font-family: "JetBrains Mono", "Cascadia Code", "SFMono-Regular", monospace;
+  font-size: 12px;
+  line-height: 20px;
+  color: var(--text-secondary);
+}
+
+.output-spacer {
+  width: 100%;
+}
+
+.output-lines {
+  position: relative;
+  /* No absolute positioning - flow naturally */
+}
+
+.output-line {
+  height: 20px;
+  white-space: pre;
+}
+
+.output-line.is-highlighted {
+  background: rgba(59, 130, 246, 0.15);
+  border-radius: 4px;
+}
+
+.new-lines-pill {
+  position: sticky;
+  bottom: 12px;
+  margin-left: auto;
+  display: inline-flex;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(59, 130, 246, 0.5);
+  background: rgba(22, 26, 40, 0.9);
+  color: var(--text-primary);
+  font-size: 11px;
+}
+
+/* ANSI Style Tokens */
+.ansi-bold { font-weight: bold; }
+.ansi-dim { opacity: 0.6; }
+.ansi-italic { font-style: italic; }
+.ansi-underline { text-decoration: underline; }
+.ansi-blink { animation: blink 1s step-end infinite; }
+.ansi-inverse { filter: invert(1); }
+.ansi-hidden { visibility: hidden; }
+.ansi-strikethrough { text-decoration: line-through; }
+
+@keyframes blink {
+  50% { opacity: 0; }
+}
+
+/* Standard foreground colors (30-37) */
+.ansi-fg-0 { color: #1e1e1e; } /* Black */
+.ansi-fg-1 { color: #e74c3c; } /* Red */
+.ansi-fg-2 { color: #2ecc71; } /* Green */
+.ansi-fg-3 { color: #f1c40f; } /* Yellow */
+.ansi-fg-4 { color: #3498db; } /* Blue */
+.ansi-fg-5 { color: #9b59b6; } /* Magenta */
+.ansi-fg-6 { color: #1abc9c; } /* Cyan */
+.ansi-fg-7 { color: #ecf0f1; } /* White */
+
+/* Bright foreground colors (90-97) */
+.ansi-fg-bright-0 { color: #636363; } /* Bright Black (Gray) */
+.ansi-fg-bright-1 { color: #ff6b6b; } /* Bright Red */
+.ansi-fg-bright-2 { color: #69f0ae; } /* Bright Green */
+.ansi-fg-bright-3 { color: #fff176; } /* Bright Yellow */
+.ansi-fg-bright-4 { color: #64b5f6; } /* Bright Blue */
+.ansi-fg-bright-5 { color: #ce93d8; } /* Bright Magenta */
+.ansi-fg-bright-6 { color: #4dd0e1; } /* Bright Cyan */
+.ansi-fg-bright-7 { color: #ffffff; } /* Bright White */
+
+/* Standard background colors (40-47) */
+.ansi-bg-0 { background-color: #1e1e1e; }
+.ansi-bg-1 { background-color: #e74c3c; }
+.ansi-bg-2 { background-color: #2ecc71; }
+.ansi-bg-3 { background-color: #f1c40f; }
+.ansi-bg-4 { background-color: #3498db; }
+.ansi-bg-5 { background-color: #9b59b6; }
+.ansi-bg-6 { background-color: #1abc9c; }
+.ansi-bg-7 { background-color: #ecf0f1; }
+
+/* Bright background colors (100-107) */
+.ansi-bg-bright-0 { background-color: #636363; }
+.ansi-bg-bright-1 { background-color: #ff6b6b; }
+.ansi-bg-bright-2 { background-color: #69f0ae; }
+.ansi-bg-bright-3 { background-color: #fff176; }
+.ansi-bg-bright-4 { background-color: #64b5f6; }
+.ansi-bg-bright-5 { background-color: #ce93d8; }
+.ansi-bg-bright-6 { background-color: #4dd0e1; }
+.ansi-bg-bright-7 { background-color: #ffffff; }

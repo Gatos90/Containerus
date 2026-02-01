@@ -1,0 +1,302 @@
+<!-- Main Content -->
+<div class="p-3 sm:p-4 md:p-6 space-y-3 sm:space-y-4 md:space-y-6"
+     [class.lg:pr-96]="commandState.selectedTemplate()">
+    <!-- Header -->
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+      <div class="flex items-center gap-4">
+        <div>
+          <h1 class="text-xl sm:text-2xl font-bold">Commands</h1>
+          <p class="text-xs sm:text-sm text-zinc-400 hidden sm:block">Manage frequently used container commands</p>
+        </div>
+        <!-- Compact colored stats -->
+        <div class="flex items-center gap-2 text-sm">
+          <span class="text-yellow-500 font-medium" title="Favorites">{{ commandState.stats().favorites }}</span>
+          <span class="text-zinc-600">/</span>
+          <span class="text-blue-500 font-medium" title="Built-in">{{ commandState.stats().builtIn }}</span>
+          <span class="text-zinc-600">/</span>
+          <span class="text-green-500 font-medium" title="Custom">{{ commandState.stats().custom }}</span>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-2 sm:gap-3">
+        <!-- Mobile Filter Sheet Trigger -->
+        <button
+          (click)="showMobileFilters.set(true)"
+          class="md:hidden p-2.5 rounded-lg border border-zinc-700 hover:bg-zinc-800 transition-colors"
+          title="Filters"
+        >
+          <lucide-icon [img]="SlidersHorizontal" class="w-4 h-4"></lucide-icon>
+        </button>
+
+        <!-- Create Command Button -->
+        <button
+          (click)="openCreateModal()"
+          class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 transition-colors text-sm"
+        >
+          <lucide-icon [img]="Plus" class="w-4 h-4"></lucide-icon>
+          <span class="hidden sm:inline">Create Command</span>
+        </button>
+
+        <!-- Refresh -->
+        <button
+          (click)="refresh()"
+          class="flex items-center p-2.5 sm:px-3 sm:py-1.5 rounded-lg border border-zinc-700 text-sm hover:bg-zinc-800 transition-colors"
+          [disabled]="refreshing"
+          title="Refresh"
+        >
+          <lucide-icon
+            [img]="RefreshCw"
+            class="w-4 h-4"
+            [class.animate-spin]="refreshing"
+          ></lucide-icon>
+          <span class="hidden sm:inline ml-2">Refresh</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Search and Filters Bar -->
+    <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+      <!-- Search -->
+      <div class="relative flex-1 sm:max-w-xs">
+        <lucide-icon
+          [img]="Search"
+          class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500"
+        ></lucide-icon>
+        <input
+          type="text"
+          placeholder="Search commands..."
+          [ngModel]="commandState.searchQuery()"
+          (ngModelChange)="commandState.setSearchQuery($event)"
+          class="w-full h-9 pl-10 pr-4 bg-zinc-800 border border-zinc-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+        />
+      </div>
+
+      <!-- Desktop Filters -->
+      <div class="hidden md:flex items-center gap-2">
+        <!-- Category/Favorites filter with counts -->
+        <select
+          [ngModel]="commandState.showFavoritesOnly() ? 'favorites' : (commandState.categoryFilter() ?? 'all')"
+          (ngModelChange)="onCategoryFilterChange($event)"
+          class="h-9 px-3 bg-zinc-800 border border-zinc-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+        >
+          <option value="all">All ({{ commandState.stats().total }})</option>
+          <option value="favorites">Favorites ({{ commandState.stats().favorites }})</option>
+          @for (category of categories(); track category.key) {
+            <option [value]="category.key">{{ category.label }} ({{ category.count }})</option>
+          }
+        </select>
+
+        <!-- Runtime filter -->
+        <select
+          [ngModel]="commandState.runtimeFilter()"
+          (ngModelChange)="commandState.setRuntimeFilter($event)"
+          class="h-9 px-3 bg-zinc-800 border border-zinc-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+        >
+          <option [ngValue]="null">All Runtimes</option>
+          <option value="docker">Docker</option>
+          <option value="podman">Podman</option>
+          <option value="apple">Apple</option>
+        </select>
+
+        <!-- Sort -->
+        <select
+          [ngModel]="commandState.sortOption()"
+          (ngModelChange)="commandState.setSortOption($event)"
+          class="h-9 px-3 bg-zinc-800 border border-zinc-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+        >
+          <option value="name">Sort: Name</option>
+          <option value="category">Sort: Category</option>
+          <option value="recent">Sort: Recent</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Favorites Section (when not filtered) -->
+    @if (!commandState.categoryFilter() && !commandState.showFavoritesOnly() && commandState.favorites().length > 0) {
+      <div class="space-y-3">
+        <div class="flex items-center gap-2">
+          <lucide-icon [img]="Star" class="w-4 h-4 text-yellow-500"></lucide-icon>
+          <h2 class="text-sm font-medium text-zinc-300">Quick Access</h2>
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+          @for (template of commandState.favorites(); track template.id) {
+            <app-command-card
+              [template]="template"
+              [selected]="commandState.selectedTemplateId() === template.id"
+              (click)="selectTemplate(template)"
+              (toggleFavorite)="onToggleFavorite($event)"
+              (duplicate)="onDuplicate($event)"
+              (delete)="onDelete($event)"
+              (edit)="openEditModal($event)"
+            />
+          }
+        </div>
+      </div>
+    }
+
+    <!-- Category Sections -->
+    @for (category of categories(); track category.key) {
+      @if ((commandState.templatesByCategory()[category.key] ?? []).length > 0) {
+        <div class="space-y-3">
+          <!-- Category Header -->
+          <button
+            (click)="toggleCategory(category.key)"
+            class="flex items-center gap-2 w-full text-left group"
+          >
+            <lucide-icon
+              [img]="category.collapsed ? ChevronRight : ChevronDown"
+              class="w-4 h-4 text-zinc-500 group-hover:text-zinc-300 transition-colors"
+            ></lucide-icon>
+            <lucide-icon [img]="category.icon" class="w-4 h-4 text-zinc-400"></lucide-icon>
+            <h2 class="text-sm font-medium text-zinc-300">{{ category.label }}</h2>
+            <span class="text-xs text-zinc-500">({{ (commandState.templatesByCategory()[category.key] ?? []).length }})</span>
+          </button>
+
+          <!-- Category Content -->
+          @if (!category.collapsed) {
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+              @for (template of commandState.templatesByCategory()[category.key]; track template.id) {
+                <app-command-card
+                  [template]="template"
+                  [selected]="commandState.selectedTemplateId() === template.id"
+                  (click)="selectTemplate(template)"
+                  (toggleFavorite)="onToggleFavorite($event)"
+                  (duplicate)="onDuplicate($event)"
+                  (delete)="onDelete($event)"
+                  (edit)="openEditModal($event)"
+                />
+              }
+            </div>
+          }
+        </div>
+      }
+    }
+
+    <!-- Empty State -->
+    @if (commandState.filteredTemplates().length === 0) {
+      <div class="text-center py-12 text-zinc-500">
+        @if (commandState.searchQuery()) {
+          <p>No commands match your search.</p>
+          <button
+            (click)="commandState.clearFilters()"
+            class="mt-2 text-blue-500 hover:text-blue-400"
+          >
+            Clear filters
+          </button>
+        } @else {
+          <lucide-icon [img]="Command" class="w-12 h-12 mx-auto mb-4 text-zinc-600"></lucide-icon>
+          <p class="mb-2">No commands yet.</p>
+          <button
+            (click)="openCreateModal()"
+            class="text-blue-500 hover:text-blue-400"
+          >
+            Create your first command
+          </button>
+        }
+      </div>
+    }
+</div>
+
+<!-- Detail Panel (Desktop) -->
+@if (commandState.selectedTemplate()) {
+  <div class="hidden lg:block fixed right-0 top-0 bottom-0 w-96 border-l border-zinc-800 bg-zinc-900 overflow-y-auto">
+    <app-command-detail-panel
+      [template]="commandState.selectedTemplate()!"
+      (close)="clearSelection()"
+      (edit)="openEditModal($event)"
+      (duplicate)="onDuplicate($event)"
+      (delete)="onDelete($event)"
+      (toggleFavorite)="onToggleFavorite($event)"
+    />
+  </div>
+}
+
+<!-- Mobile Filter Sheet -->
+@if (showMobileFilters()) {
+  <div class="fixed inset-0 bg-black/50 z-50 md:hidden" (click)="showMobileFilters.set(false)">
+    <div
+      class="absolute bottom-0 left-0 right-0 bg-zinc-900 rounded-t-2xl p-6 space-y-4 max-h-[80vh] overflow-y-auto"
+      (click)="$event.stopPropagation()"
+    >
+      <div class="flex items-center justify-between">
+        <h3 class="text-lg font-semibold">Filters</h3>
+        <button
+          (click)="showMobileFilters.set(false)"
+          class="p-2 rounded-lg hover:bg-zinc-800"
+        >
+          ✕
+        </button>
+      </div>
+
+      <div class="space-y-4">
+        <div>
+          <label class="block text-sm text-zinc-400 mb-2">Category</label>
+          <select
+            [ngModel]="commandState.categoryFilter()"
+            (ngModelChange)="commandState.setCategoryFilter($event)"
+            class="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg"
+          >
+            <option [ngValue]="null">All Categories</option>
+            @for (category of categories(); track category.key) {
+              <option [ngValue]="category.key">{{ category.label }}</option>
+            }
+          </select>
+        </div>
+
+        <div>
+          <label class="block text-sm text-zinc-400 mb-2">Runtime</label>
+          <select
+            [ngModel]="commandState.runtimeFilter()"
+            (ngModelChange)="commandState.setRuntimeFilter($event)"
+            class="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg"
+          >
+            <option [ngValue]="null">All Runtimes</option>
+            <option value="docker">Docker</option>
+            <option value="podman">Podman</option>
+            <option value="apple">Apple</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="block text-sm text-zinc-400 mb-2">Sort By</label>
+          <select
+            [ngModel]="commandState.sortOption()"
+            (ngModelChange)="commandState.setSortOption($event)"
+            class="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg"
+          >
+            <option value="name">Name</option>
+            <option value="category">Category</option>
+            <option value="recent">Recent</option>
+          </select>
+        </div>
+
+        <div class="flex items-center gap-2">
+          <input
+            type="checkbox"
+            id="favoritesOnly"
+            [ngModel]="commandState.showFavoritesOnly()"
+            (ngModelChange)="commandState.setShowFavoritesOnly($event)"
+            class="w-4 h-4 rounded border-zinc-600 bg-zinc-800 text-blue-600 focus:ring-blue-500"
+          />
+          <label for="favoritesOnly" class="text-sm text-zinc-400">Show favorites only</label>
+        </div>
+      </div>
+
+      <button
+        (click)="showMobileFilters.set(false)"
+        class="w-full py-3 bg-blue-600 hover:bg-blue-500 rounded-lg font-medium transition-colors"
+      >
+        Apply Filters
+      </button>
+    </div>
+  </div>
+}
+
+<!-- Create/Edit Modal -->
+@if (showCreateModal()) {
+  <app-command-form-modal
+    [template]="editingTemplate()"
+    (save)="closeModal()"
+    (cancel)="closeModal()"
+  />
+}

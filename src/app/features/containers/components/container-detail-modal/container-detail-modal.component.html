@@ -1,0 +1,97 @@
+<!-- Backdrop -->
+<div
+  class="fixed inset-0 bg-black/70 z-50 flex items-end sm:items-center justify-center sm:p-4"
+  (click)="onBackdropClick($event)"
+>
+  <!-- Modal - Full screen on mobile with proper viewport height -->
+  <div
+    class="bg-zinc-900 w-full h-[100dvh] sm:h-auto sm:rounded-xl sm:max-w-3xl sm:max-h-[90vh] overflow-hidden flex flex-col shadow-2xl"
+    (click)="$event.stopPropagation()"
+  >
+    <!-- Header -->
+    <div
+      class="flex items-start sm:items-center justify-between px-4 sm:px-6 py-3 sm:py-4 border-b border-zinc-800"
+    >
+      <div class="min-w-0 flex-1">
+        <div class="flex items-center gap-2 sm:gap-3">
+          <h2 class="text-lg sm:text-xl font-bold truncate">{{ getDisplayName(container()) }}</h2>
+          <!-- Status badge -->
+          <span
+            class="px-2 py-0.5 sm:py-1 rounded text-xs font-medium flex-shrink-0"
+            [class.bg-green-500/20]="container().status === 'running'"
+            [class.text-green-400]="container().status === 'running'"
+            [class.bg-red-500/20]="
+              container().status === 'exited' || container().status === 'dead'
+            "
+            [class.text-red-400]="
+              container().status === 'exited' || container().status === 'dead'
+            "
+            [class.bg-yellow-500/20]="container().status === 'paused'"
+            [class.text-yellow-400]="container().status === 'paused'"
+            [class.bg-zinc-500/20]="
+              container().status !== 'running' &&
+              container().status !== 'exited' &&
+              container().status !== 'dead' &&
+              container().status !== 'paused'
+            "
+            [class.text-zinc-400]="
+              container().status !== 'running' &&
+              container().status !== 'exited' &&
+              container().status !== 'dead' &&
+              container().status !== 'paused'
+            "
+          >
+            {{ getStatusText(container().status) }}
+          </span>
+        </div>
+        <p class="text-xs sm:text-sm text-zinc-400 truncate mt-0.5">{{ container().image }}</p>
+      </div>
+
+      <!-- Close button -->
+      <button
+        (click)="close.emit()"
+        class="p-2.5 sm:p-2 touch-target text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 rounded-lg transition-colors flex-shrink-0 ml-2"
+      >
+        <lucide-icon [img]="X" class="w-5 h-5"></lucide-icon>
+      </button>
+    </div>
+
+    <!-- Quick Actions Row - visible when running -->
+    @if (isRunning(container())) {
+      <div class="flex items-center gap-2 px-4 sm:px-6 py-2 border-b border-zinc-800 bg-zinc-800/30">
+        <a
+          [routerLink]="['/terminal', container().systemId, container().id]"
+          class="flex items-center gap-1.5 px-3 py-2 sm:py-1.5 text-sm bg-zinc-800 hover:bg-zinc-700 rounded-lg transition-colors touch-target-sm"
+          (click)="close.emit()"
+        >
+          <lucide-icon [img]="Terminal" class="w-4 h-4"></lucide-icon>
+          Terminal
+        </a>
+        <button
+          (click)="viewLogs.emit()"
+          class="flex items-center gap-1.5 px-3 py-2 sm:py-1.5 text-sm bg-zinc-800 hover:bg-zinc-700 rounded-lg transition-colors touch-target-sm"
+        >
+          <lucide-icon [img]="FileText" class="w-4 h-4"></lucide-icon>
+          Logs
+        </button>
+      </div>
+    }
+
+    <!-- Content - min-h-0 required for flex child to scroll -->
+    <div class="flex-1 min-h-0 overflow-auto p-4 sm:p-6">
+      <app-container-details [container]="container()" />
+    </div>
+
+    <!-- Footer with safe area padding -->
+    <div
+      class="flex items-center justify-end gap-3 px-4 sm:px-6 py-3 sm:py-4 border-t border-zinc-800 safe-bottom"
+    >
+      <button
+        (click)="close.emit()"
+        class="px-4 py-2.5 sm:py-2 text-sm bg-zinc-800 hover:bg-zinc-700 rounded-lg transition-colors"
+      >
+        Close
+      </button>
+    </div>
+  </div>
+</div>

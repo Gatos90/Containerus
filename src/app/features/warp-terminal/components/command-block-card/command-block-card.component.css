@@ -1,0 +1,139 @@
+.block-card {
+  /* Continuous log style - no card styling */
+  border-bottom: 1px solid var(--border-subtle);
+  background: transparent;
+  overflow: visible;
+}
+
+.block-card.is-selected {
+  background: rgba(59, 130, 246, 0.05);
+}
+
+.block-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  cursor: pointer;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+}
+
+.status-icon {
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+}
+
+.status-icon[data-tone='running'] {
+  color: var(--status-running);
+}
+
+.status-icon[data-tone='success'] {
+  color: var(--status-success);
+}
+
+.status-icon[data-tone='failure'] {
+  color: var(--status-failure);
+}
+
+.prompt {
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.command-text {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-primary);
+  font-size: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.meta-pill {
+  font-size: 11px;
+  color: var(--text-secondary);
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border-subtle);
+  background: rgba(30, 30, 36, 0.8);
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.meta {
+  white-space: nowrap;
+}
+
+.action-row {
+  display: inline-flex;
+  gap: 6px;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.block-card:hover .action-row,
+.block-card.is-selected .action-row {
+  opacity: 1;
+}
+
+.action-button {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  border: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  background: rgba(22, 22, 26, 0.8);
+}
+
+.action-button:hover {
+  color: var(--text-primary);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.block-divider {
+  display: none;
+  /* Hidden in continuous log style */
+}
+
+.collapsed-preview {
+  padding: 14px 18px 10px;
+  color: var(--text-muted);
+  font-family: "JetBrains Mono", "Cascadia Code", "SFMono-Regular", monospace;
+  font-size: 12px;
+}
+
+.preview-line {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.block-footer {
+  display: none;
+  /* Hidden in continuous log style - metrics shown inline if needed */
+}
+
+.exit-badge {
+  color: var(--text-error);
+}
