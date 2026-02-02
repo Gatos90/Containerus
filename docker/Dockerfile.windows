@@ -61,12 +61,5 @@ ENV XWIN_CACHE_DIR="/root/.cache/cargo-xwin"
 # Create working directory
 WORKDIR /app
 
-# Configure cargo for Windows cross-compilation
-RUN mkdir -p /root/.cargo && echo '\
-[target.x86_64-pc-windows-msvc]\n\
-linker = "lld-link"\n\
-rustflags = ["-C", "link-arg=-fuse-ld=lld"]\n\
-' >> /root/.cargo/config.toml
-
 # Set default command
 CMD ["bash"]

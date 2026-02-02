@@ -107,11 +107,11 @@ build_arch() {
 
     # Build with Tauri
     if [[ "$SKIP_SIGNING" == "true" ]]; then
-        pnpm tauri build --target "$TARGET"
+        pnpm tauri build --target "$TARGET" --bundles dmg
     else
         # Set up signing environment
         export APPLE_SIGNING_IDENTITY="$APPLE_SIGNING_IDENTITY"
-        pnpm tauri build --target "$TARGET"
+        pnpm tauri build --target "$TARGET" --bundles dmg
     fi
 
     # Find the built DMG
