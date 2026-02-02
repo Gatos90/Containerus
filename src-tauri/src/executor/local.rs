@@ -4,6 +4,13 @@ use std::time::{Duration, Instant};
 use tokio::process::Command;
 use tokio::time::timeout;
 
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
+
+// Windows flag to prevent console window from appearing
+#[cfg(target_os = "windows")]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+
 use super::{CommandExecutor, CommandResult};
 use crate::models::error::ContainerError;
 use crate::models::system::{ConnectionType, ContainerSystem};
@@ -65,19 +72,23 @@ impl LocalExecutor {
         let start = Instant::now();
         let (shell, shell_arg) = Self::get_shell_command();
 
-        let output = Command::new(shell)
-            .arg(shell_arg)
+        let mut cmd = Command::new(shell);
+        cmd.arg(shell_arg)
             .arg(command)
             .env("PATH", Self::get_path_env())
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output()
-            .await
-            .map_err(|e| ContainerError::CommandExecutionFailed {
+            .stderr(Stdio::piped());
+
+        #[cfg(target_os = "windows")]
+        cmd.creation_flags(CREATE_NO_WINDOW);
+
+        let output = cmd.output().await.map_err(|e| {
+            ContainerError::CommandExecutionFailed {
                 command: command.to_string(),
                 exit_code: -1,
                 stderr: e.to_string(),
-            })?;
+            }
+        })?;
 
         let execution_time_ms = start.elapsed().as_millis() as u64;
 
@@ -96,21 +107,25 @@ impl LocalExecutor {
         // Find PowerShell executable - try pwsh (PowerShell Core) first, then Windows PowerShell
         let powershell_path = Self::find_powershell();
 
-        let output = Command::new(&powershell_path)
-            .arg("-NoProfile")
+        let mut cmd = Command::new(&powershell_path);
+        cmd.arg("-NoProfile")
             .arg("-NonInteractive")
             .arg("-Command")
             .arg(command)
             .env("PATH", Self::get_path_env())
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output()
-            .await
-            .map_err(|e| ContainerError::CommandExecutionFailed {
+            .stderr(Stdio::piped());
+
+        #[cfg(target_os = "windows")]
+        cmd.creation_flags(CREATE_NO_WINDOW);
+
+        let output = cmd.output().await.map_err(|e| {
+            ContainerError::CommandExecutionFailed {
                 command: format!("powershell: {}", command),
                 exit_code: -1,
                 stderr: format!("Failed to run PowerShell ({}): {}", powershell_path, e),
-            })?;
+            }
+        })?;
 
         let execution_time_ms = start.elapsed().as_millis() as u64;
 

@@ -74,18 +74,18 @@ pnpm install --frozen-lockfile || pnpm install
 echo "[INFO] Building frontend..."
 pnpm build
 
-echo "[INFO] Building Tauri app for Windows..."
-# Use cargo-xwin for the Rust compilation
-cd /app/src-tauri
-cargo xwin build --release --target x86_64-pc-windows-msvc
+echo "[INFO] Building Tauri app for Windows with NSIS installer..."
+cd /app
 
-echo "[INFO] Rust build complete!"
-
-# The Windows build produces an exe in the target directory
-# For a full Tauri bundle with installer, additional NSIS configuration is needed
-ls -la /app/src-tauri/target/x86_64-pc-windows-msvc/release/
+# Use cargo tauri build with --runner cargo-xwin for cross-compilation
+# This handles Windows SDK setup and creates the full NSIS installer bundle
+cargo tauri build --runner cargo-xwin --target x86_64-pc-windows-msvc
 
 echo "[INFO] Build complete!"
+echo "[INFO] Checking for NSIS installer..."
+ls -la /app/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe 2>/dev/null || echo "No NSIS installer found"
+echo "[INFO] Checking for executable..."
+ls -la /app/src-tauri/target/x86_64-pc-windows-msvc/release/*.exe 2>/dev/null || echo "No exe found"
 BUILDSCRIPT
 )
 

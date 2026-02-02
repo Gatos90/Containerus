@@ -73,7 +73,7 @@ echo "[INFO] Building frontend..."
 pnpm build
 
 echo "[INFO] Building Tauri app for Linux..."
-cargo tauri build
+cargo tauri build --bundles deb,appimage
 
 echo "[INFO] Build complete!"
 ls -la /app/src-tauri/target/release/bundle/
