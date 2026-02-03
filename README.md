@@ -7,9 +7,9 @@
 ### Your containers. One interface. AI-powered.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Windows](https://img.shields.io/badge/Windows-0078D6?logo=windows&logoColor=white)](https://github.com/YOUR_USERNAME/Containerus/releases)
-[![macOS](https://img.shields.io/badge/macOS-000000?logo=apple&logoColor=white)](https://github.com/YOUR_USERNAME/Containerus/releases)
-[![Linux](https://img.shields.io/badge/Linux-FCC624?logo=linux&logoColor=black)](https://github.com/YOUR_USERNAME/Containerus/releases)
+[![Windows](https://img.shields.io/badge/Windows-0078D6?logo=windows&logoColor=white)](https://github.com/Gatos90/Containerus/releases)
+[![macOS](https://img.shields.io/badge/macOS-000000?logo=apple&logoColor=white)](https://github.com/Gatos90/Containerus/releases)
+[![Linux](https://img.shields.io/badge/Linux-FCC624?logo=linux&logoColor=black)](https://github.com/Gatos90/Containerus/releases)
 [![Rust](https://img.shields.io/badge/Rust-000000?logo=rust&logoColor=white)](https://www.rust-lang.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
 [![Docker](https://img.shields.io/badge/Docker-2496ED?logo=docker&logoColor=white)](https://www.docker.com)
@@ -94,15 +94,16 @@ Containerus includes a powerful AI terminal assistant that understands your cont
 
 ## Download
 
-Download the latest installers from the **[Releases Page](https://github.com/YOUR_USERNAME/Containerus/releases)**.
+Download the latest installers from the **[Releases Page](https://github.com/Gatos90/Containerus/releases)**.
 
-| Platform | Architecture | Download |
-|----------|--------------|----------|
-| Windows | x64 | [containerus_x.x.x_windows_x64.exe](https://github.com/YOUR_USERNAME/Containerus/releases) |
-| macOS | Apple Silicon | [containerus_x.x.x_macos_aarch64.dmg](https://github.com/YOUR_USERNAME/Containerus/releases) |
-| macOS | Intel | [containerus_x.x.x_macos_x64.dmg](https://github.com/YOUR_USERNAME/Containerus/releases) |
-| Linux | x64 | [containerus_x.x.x_linux_amd64.deb](https://github.com/YOUR_USERNAME/Containerus/releases) |
-| Linux | x64 | [containerus_x.x.x_linux_amd64.AppImage](https://github.com/YOUR_USERNAME/Containerus/releases) |
+| Platform | Architecture | Format |
+|----------|--------------|--------|
+| Windows | x64 | `.exe` (NSIS installer) |
+| macOS | Apple Silicon | `.dmg` |
+| macOS | Intel | `.dmg` |
+| Linux | x64 | `.deb`, `.AppImage` |
+
+> **[Download Latest Release](https://github.com/Gatos90/Containerus/releases/latest)**
 
 ---
 
@@ -179,7 +180,7 @@ Download the latest installers from the **[Releases Page](https://github.com/YOU
 ### Clone & Install
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/Containerus.git
+git clone https://github.com/Gatos90/Containerus.git
 cd Containerus
 pnpm install
 ```
@@ -197,7 +198,7 @@ pnpm tauri dev
 <summary><b>macOS</b></summary>
 
 ```bash
-./scripts/build-macos.sh 1.0.0
+./scripts/build-macos.sh <version>
 ```
 
 Output: `src-tauri/target/release/bundle/dmg/*.dmg`
@@ -208,7 +209,7 @@ Output: `src-tauri/target/release/bundle/dmg/*.dmg`
 <summary><b>Windows</b></summary>
 
 ```powershell
-./scripts/build-windows.sh 1.0.0
+./scripts/build-windows.sh <version>
 ```
 
 Output: `src-tauri/target/release/bundle/nsis/*.exe`
@@ -219,7 +220,7 @@ Output: `src-tauri/target/release/bundle/nsis/*.exe`
 <summary><b>Linux</b></summary>
 
 ```bash
-./scripts/build-linux.sh 1.0.0
+./scripts/build-linux.sh <version>
 ```
 
 Output:
