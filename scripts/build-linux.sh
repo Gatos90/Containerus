@@ -9,6 +9,22 @@ PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 VERSION="${1:-0.0.0}"
 DOCKER_IMAGE="containerus-linux-builder"
 
+# Convert Git Bash paths to Docker-compatible paths on Windows
+# /e/foo -> E:/foo
+convert_path_for_docker() {
+    local path="$1"
+    if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" ]]; then
+        # Convert /e/... to E:/...
+        echo "$path" | sed -E 's|^/([a-zA-Z])/|\U\1:/|'
+    else
+        echo "$path"
+    fi
+}
+
+DOCKER_PROJECT_DIR="$(convert_path_for_docker "$PROJECT_DIR")"
+DOCKER_CARGO_REGISTRY="$(convert_path_for_docker "$HOME/.cargo/registry")"
+DOCKER_CARGO_GIT="$(convert_path_for_docker "$HOME/.cargo/git")"
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -82,10 +98,11 @@ BUILDSCRIPT
 
 # Run the build inside Docker
 log_info "Running Linux build in Docker..."
+log_info "Docker mount path: $DOCKER_PROJECT_DIR"
 docker run --rm \
-    -v "$PROJECT_DIR:/app" \
-    -v "$HOME/.cargo/registry:/root/.cargo/registry" \
-    -v "$HOME/.cargo/git:/root/.cargo/git" \
+    -v "$DOCKER_PROJECT_DIR:/app" \
+    -v "$DOCKER_CARGO_REGISTRY:/root/.cargo/registry" \
+    -v "$DOCKER_CARGO_GIT:/root/.cargo/git" \
     -e VERSION="$VERSION" \
     -e CI=true \
     "$DOCKER_IMAGE" \
