@@ -53,7 +53,7 @@
       }
     },
     "macOS": {
-      "signingIdentity": null,
+      "signingIdentity": "-",
       "dmg": {
         "appPosition": {
           "x": 180,
