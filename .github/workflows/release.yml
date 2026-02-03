@@ -164,8 +164,14 @@ jobs:
           else
             VERSION="${GITHUB_REF#refs/tags/v}"
           fi
-          # Convert 1.0.0-beta.2 to 1.0.0.2 for MSI compatibility
-          MSI_VERSION=$(echo "$VERSION" | sed -E 's/-[a-zA-Z]+\.?/./g' | sed 's/\.\././g')
+          # Convert 1.0.0-beta.3 to 1.0.3 for MSI compatibility (valid semver + numeric)
+          if [[ "$VERSION" == *"-"* ]]; then
+            # Pre-release: 1.0.0-beta.3 -> 1.0.3
+            MSI_VERSION=$(echo "$VERSION" | sed -E 's/([0-9]+)\.([0-9]+)\.[0-9]+-[a-zA-Z]+\.([0-9]+)/\1.\2.\3/')
+          else
+            # Stable: 1.0.0 -> 1.0.0
+            MSI_VERSION="$VERSION"
+          fi
           echo "version=$MSI_VERSION" >> $GITHUB_OUTPUT
           echo "Original: $VERSION -> MSI: $MSI_VERSION"
 
