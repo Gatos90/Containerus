@@ -169,15 +169,11 @@ jobs:
           echo "version=$MSI_VERSION" >> $GITHUB_OUTPUT
           echo "Original: $VERSION -> MSI: $MSI_VERSION"
 
-      - name: Update version for MSI
+      - name: Build Tauri (Windows)
         shell: bash
         run: |
-          # Update tauri.conf.json with MSI-compatible version
-          sed -i 's/"version": "[^"]*"/"version": "${{ steps.msi_version.outputs.version }}"/' src-tauri/tauri.conf.json
-          cat src-tauri/tauri.conf.json | grep version
-
-      - name: Build Tauri (Windows)
-        run: pnpm tauri build --bundles msi,nsis
+          # Use --config to override version for MSI without modifying tauri.conf.json
+          pnpm tauri build --bundles msi,nsis --config "{\"version\":\"${{ steps.msi_version.outputs.version }}\"}"
 
       - name: Upload Windows artifacts
         uses: actions/upload-artifact@v4
