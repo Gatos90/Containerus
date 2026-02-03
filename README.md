@@ -166,6 +166,8 @@ Download the latest installers from the **[Releases Page](https://github.com/Gat
 
 ## Building from Source
 
+> **Note:** Automated builds run via **GitHub Actions**. Release artifacts for all platforms are built and published automatically when a new version tag is pushed.
+
 ### Prerequisites
 
 | Requirement | Windows | macOS | Linux | Notes |
