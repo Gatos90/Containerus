@@ -1,0 +1,35 @@
+FROM ubuntu:22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install desktop environment and VNC
+RUN apt-get update && apt-get install -y \
+    xfce4 \
+    xfce4-goodies \
+    tigervnc-standalone-server \
+    tigervnc-common \
+    novnc \
+    websockify \
+    dbus-x11 \
+    x11-xserver-utils \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install webkit and GTK dependencies for Tauri app
+RUN apt-get update && apt-get install -y \
+    libwebkit2gtk-4.1-0 \
+    libgtk-3-0 \
+    libayatana-appindicator3-1 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Setup VNC
+RUN mkdir -p /root/.vnc && \
+    echo "startxfce4" > /root/.vnc/xstartup && \
+    chmod +x /root/.vnc/xstartup && \
+    echo "password" | vncpasswd -f > /root/.vnc/passwd && \
+    chmod 600 /root/.vnc/passwd
+
+EXPOSE 5901 6080
+
+# Start VNC and noVNC
+CMD vncserver :1 -geometry 1280x800 -depth 24 && \
+    websockify --web /usr/share/novnc 6080 localhost:5901
