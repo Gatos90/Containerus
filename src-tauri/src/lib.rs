@@ -75,6 +75,11 @@ pub fn run() {
             commands::get_ssh_credentials,
             commands::import_ssh_key_from_file,
             commands::get_extended_system_info,
+            commands::has_ssh_config,
+            commands::list_ssh_config_hosts,
+            commands::get_ssh_host_config,
+            commands::get_app_settings,
+            commands::update_app_settings,
             // Container commands
             commands::list_containers,
             commands::perform_container_action,

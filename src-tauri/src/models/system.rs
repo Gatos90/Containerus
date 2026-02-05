@@ -39,6 +39,25 @@ pub struct SshConfig {
     /// PEM-encoded private key content (for mobile/imported keys)
     pub private_key_content: Option<String>,
     pub connection_timeout: u64,
+    /// ProxyCommand for tunneling through an external command
+    #[serde(default)]
+    pub proxy_command: Option<String>,
+    /// ProxyJump hosts for multi-hop SSH connections
+    #[serde(default)]
+    pub proxy_jump: Option<Vec<JumpHost>>,
+    /// Reference to the original SSH config host name (if imported from ~/.ssh/config)
+    #[serde(default)]
+    pub ssh_config_host: Option<String>,
+}
+
+/// Configuration for a jump host in a ProxyJump chain
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct JumpHost {
+    pub hostname: String,
+    pub port: u16,
+    pub username: String,
+    pub identity_file: Option<String>,
 }
 
 impl Default for SshConfig {
@@ -50,6 +69,9 @@ impl Default for SshConfig {
             private_key_path: None,
             private_key_content: None,
             connection_timeout: 30,
+            proxy_command: None,
+            proxy_jump: None,
+            ssh_config_host: None,
         }
     }
 }

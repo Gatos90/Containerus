@@ -2,10 +2,12 @@ import { Injectable } from '@angular/core';
 import { open } from '@tauri-apps/plugin-dialog';
 import { ContainerRuntime } from '../models/container.model';
 import {
+  AppSettings,
   ConnectionState,
   ContainerSystem,
   ExtendedSystemInfo,
   NewSystemRequest,
+  SshHostEntry,
   UpdateSystemRequest,
 } from '../models/system.model';
 import { TauriService } from './tauri.service';
@@ -115,5 +117,49 @@ export class SystemService {
     return this.tauri.invoke<ExtendedSystemInfo>('get_extended_system_info', {
       systemId,
     });
+  }
+
+  // ========================================================================
+  // SSH Config Methods (for importing hosts from ~/.ssh/config)
+  // ========================================================================
+
+  /**
+   * Check if any SSH config file exists
+   */
+  hasSshConfig(configPaths?: string[]): Promise<boolean> {
+    return this.tauri.invoke<boolean>('has_ssh_config', {
+      configPaths: configPaths?.length ? configPaths : null,
+    });
+  }
+
+  /**
+   * List all SSH hosts from config files (excludes wildcard patterns)
+   */
+  listSshConfigHosts(configPaths?: string[]): Promise<SshHostEntry[]> {
+    return this.tauri.invoke<SshHostEntry[]>('list_ssh_config_hosts', {
+      configPaths: configPaths?.length ? configPaths : null,
+    });
+  }
+
+  /**
+   * Get resolved SSH configuration for a specific host from config files
+   */
+  getSshHostConfig(host: string, configPaths?: string[]): Promise<SshHostEntry> {
+    return this.tauri.invoke<SshHostEntry>('get_ssh_host_config', {
+      host,
+      configPaths: configPaths?.length ? configPaths : null,
+    });
+  }
+
+  // ========================================================================
+  // App Settings Methods
+  // ========================================================================
+
+  getAppSettings(): Promise<AppSettings> {
+    return this.tauri.invoke<AppSettings>('get_app_settings');
+  }
+
+  updateAppSettings(settings: AppSettings): Promise<void> {
+    return this.tauri.invoke<void>('update_app_settings', { settings });
   }
 }

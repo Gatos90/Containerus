@@ -748,6 +748,7 @@ dependencies = [
  "dirs 5.0.1",
  "futures",
  "futures-util",
+ "glob",
  "keyring",
  "once_cell",
  "open",

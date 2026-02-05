@@ -806,6 +806,15 @@ impl OutputParser {
             }
         }
 
+        // Deduplicate IPv4/IPv6 bindings for the same port
+        // Docker returns both 0.0.0.0 and :: for each mapping; keep IPv4 only
+        ports.sort_by(|a, b| a.container_port.cmp(&b.container_port));
+        ports.dedup_by(|a, b| {
+            a.container_port == b.container_port
+                && a.host_port == b.host_port
+                && a.protocol == b.protocol
+        });
+
         ports
     }
 

@@ -1,421 +1,577 @@
 <div class="p-6 max-w-2xl mx-auto">
   <!-- Header -->
-  <div class="flex items-center gap-3 mb-8">
+  <div class="flex items-center gap-3 mb-6">
     <lucide-icon [img]="Settings" class="w-8 h-8 text-zinc-400"></lucide-icon>
     <div>
       <h1 class="text-2xl font-bold text-zinc-100">Settings</h1>
-      <p class="text-sm text-zinc-400">Configure your AI assistant</p>
+      <p class="text-sm text-zinc-400">Configure your application</p>
     </div>
   </div>
 
-  <!-- AI Provider Section -->
-  <div class="bg-zinc-900 rounded-lg border border-zinc-800 p-6 mb-6">
-    <h2 class="text-lg font-semibold text-zinc-100 mb-4 flex items-center gap-2">
-      <lucide-icon [img]="Bot" class="w-5 h-5"></lucide-icon>
-      AI Provider
-    </h2>
+  <!-- Tab Bar -->
+  <div class="flex border-b border-zinc-800 mb-6">
+    <button
+      type="button"
+      (click)="activeTab.set('ai')"
+      class="px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px"
+      [class]="activeTab() === 'ai'
+        ? 'border-blue-500 text-blue-500'
+        : 'border-transparent text-zinc-400 hover:text-zinc-300'"
+    >
+      <lucide-icon [img]="Bot" class="w-4 h-4 inline mr-1.5"></lucide-icon>
+      AI
+    </button>
+    <button
+      type="button"
+      (click)="activeTab.set('ssh')"
+      class="px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px"
+      [class]="activeTab() === 'ssh'
+        ? 'border-blue-500 text-blue-500'
+        : 'border-transparent text-zinc-400 hover:text-zinc-300'"
+    >
+      <lucide-icon [img]="Link" class="w-4 h-4 inline mr-1.5"></lucide-icon>
+      SSH
+    </button>
+  </div>
 
-    <!-- Provider Selection -->
-    <div class="mb-4">
-      <label class="block text-sm font-medium text-zinc-300 mb-2">Provider</label>
-      <div class="grid grid-cols-3 gap-3">
-        @for (provider of providers; track provider.id) {
-          <button
-            type="button"
-            (click)="onProviderChange(provider.id)"
-            class="p-4 rounded-lg border text-left transition-all"
-            [class]="selectedProvider() === provider.id
-              ? 'border-blue-500 bg-blue-500/10'
-              : 'border-zinc-700 hover:border-zinc-600 bg-zinc-800/50'"
-          >
-            <div class="font-medium text-zinc-100">{{ provider.name }}</div>
-            <div class="text-xs text-zinc-400 mt-1">{{ provider.description }}</div>
-          </button>
-        }
-      </div>
-    </div>
+  <!-- ================================================================ -->
+  <!-- AI Tab -->
+  <!-- ================================================================ -->
+  @if (activeTab() === 'ai') {
+    <!-- AI Provider Section -->
+    <div class="bg-zinc-900 rounded-lg border border-zinc-800 p-6 mb-6">
+      <h2 class="text-lg font-semibold text-zinc-100 mb-4 flex items-center gap-2">
+        <lucide-icon [img]="Bot" class="w-5 h-5"></lucide-icon>
+        AI Provider
+      </h2>
 
-    <!-- API Key (for cloud providers) -->
-    @if (currentProviderInfo.requiresApiKey) {
+      <!-- Provider Selection -->
       <div class="mb-4">
-        <label class="block text-sm font-medium text-zinc-300 mb-2">
-          <lucide-icon [img]="Key" class="w-4 h-4 inline mr-1"></lucide-icon>
-          API Key
-        </label>
-        <input
-          type="password"
-          [ngModel]="apiKey()"
-          (ngModelChange)="apiKey.set($event)"
-          placeholder="Enter your API key"
-          class="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-zinc-500"
-        />
-        <p class="text-xs text-zinc-500 mt-1">
-          Your API key is stored locally and never sent to third parties.
-        </p>
+        <label class="block text-sm font-medium text-zinc-300 mb-2">Provider</label>
+        <div class="grid grid-cols-4 gap-3">
+          @for (provider of providers; track provider.id) {
+            <button
+              type="button"
+              (click)="onProviderChange(provider.id)"
+              class="p-4 rounded-lg border text-left transition-all"
+              [class]="selectedProvider() === provider.id
+                ? 'border-blue-500 bg-blue-500/10'
+                : 'border-zinc-700 hover:border-zinc-600 bg-zinc-800/50'"
+            >
+              <div class="font-medium text-zinc-100">{{ provider.name }}</div>
+              <div class="text-xs text-zinc-400 mt-1">{{ provider.description }}</div>
+            </button>
+          }
+        </div>
       </div>
-    }
 
-    <!-- Endpoint URL (for Ollama and OpenAI) -->
-    @if (selectedProvider() === 'ollama' || selectedProvider() === 'openai') {
+      <!-- API Key (for cloud providers) -->
+      @if (currentProviderInfo.requiresApiKey) {
+        <div class="mb-4">
+          <label class="block text-sm font-medium text-zinc-300 mb-2">
+            <lucide-icon [img]="Key" class="w-4 h-4 inline mr-1"></lucide-icon>
+            API Key
+          </label>
+          <input
+            type="password"
+            [ngModel]="apiKey()"
+            (ngModelChange)="apiKey.set($event)"
+            placeholder="Enter your API key"
+            class="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-zinc-500"
+          />
+          <p class="text-xs text-zinc-500 mt-1">
+            Your API key is stored locally and never sent to third parties.
+          </p>
+        </div>
+      }
+
+      <!-- Endpoint URL -->
       <div class="mb-4">
         <label class="block text-sm font-medium text-zinc-300 mb-2">
           <lucide-icon [img]="Server" class="w-4 h-4 inline mr-1"></lucide-icon>
-          Endpoint URL
+          @if (selectedProvider() === 'azure_openai') {
+            Azure Endpoint
+          } @else {
+            Endpoint URL
+          }
         </label>
         <input
           type="text"
           [ngModel]="endpointUrl()"
           (ngModelChange)="endpointUrl.set($event)"
-          [placeholder]="currentProviderInfo.defaultEndpoint || 'http://localhost:11434'"
+          [placeholder]="selectedProvider() === 'azure_openai'
+            ? 'https://your-resource.openai.azure.com'
+            : (currentProviderInfo.defaultEndpoint || 'http://localhost:11434')"
           class="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-zinc-500"
         />
-        @if (selectedProvider() === 'openai') {
+        @if (selectedProvider() === 'azure_openai') {
+          <p class="text-xs text-zinc-500 mt-1">
+            Your Azure resource endpoint, e.g. https://my-resource.openai.azure.com
+          </p>
+        } @else if (selectedProvider() === 'openai') {
           <p class="text-xs text-zinc-500 mt-1">
             Use a custom endpoint for OpenAI-compatible APIs (LLMStudio, LocalAI, etc.)
           </p>
         }
       </div>
-    }
 
-    <!-- Test Connection -->
-    <div class="flex items-center gap-3">
-      <button
-        type="button"
-        (click)="testConnection()"
-        [disabled]="isTesting()"
-        class="flex items-center gap-2 px-4 py-2 bg-zinc-700 hover:bg-zinc-600 disabled:opacity-50 rounded-lg text-sm font-medium transition-colors"
-      >
-        @if (isTesting()) {
-          <lucide-icon [img]="Loader2" class="w-4 h-4 animate-spin"></lucide-icon>
-          Testing...
-        } @else {
-          <lucide-icon [img]="RefreshCw" class="w-4 h-4"></lucide-icon>
-          Test Connection
-        }
-      </button>
-
-      @if (testResult()) {
-        <div class="flex items-center gap-2 text-sm">
-          @if (testResult() === 'success') {
-            <lucide-icon [img]="CheckCircle2" class="w-4 h-4 text-green-500"></lucide-icon>
-            <span class="text-green-500">{{ testMessage() }}</span>
-          } @else {
-            <lucide-icon [img]="XCircle" class="w-4 h-4 text-red-500"></lucide-icon>
-            <span class="text-red-500">{{ testMessage() }}</span>
-          }
-        </div>
-      }
-    </div>
-  </div>
-
-  <!-- Conversation Memory Section -->
-  <div class="bg-zinc-900 rounded-lg border border-zinc-800 p-6 mb-6">
-    <h2 class="text-lg font-semibold text-zinc-100 mb-4 flex items-center gap-2">
-      <lucide-icon [img]="Brain" class="w-5 h-5"></lucide-icon>
-      Conversation Memory
-    </h2>
-
-    <p class="text-sm text-zinc-400 mb-4">
-      When enabled, the AI assistant remembers what you asked about in previous exchanges,
-      allowing it to understand follow-up questions like "and what about redis?" without losing context.
-    </p>
-
-    <!-- Memory Enable Toggle -->
-    <div class="mb-4">
-      <label class="flex items-center gap-3 cursor-pointer">
-        <input
-          type="checkbox"
-          [checked]="memoryEnabled()"
-          (change)="memoryEnabled.set($any($event.target).checked)"
-          class="w-5 h-5 rounded border-zinc-600 bg-zinc-800 text-blue-500 focus:ring-blue-500 focus:ring-offset-zinc-900"
-        />
-        <span class="text-sm font-medium text-zinc-300">Enable conversation memory</span>
-      </label>
-      <p class="text-xs text-zinc-500 mt-1 ml-8">
-        Uses a smaller model to summarize your inputs for context retention.
-      </p>
-    </div>
-
-    <!-- Summary Model (only shown when memory enabled) -->
-    @if (memoryEnabled()) {
-      <div class="mb-4">
-        <label class="block text-sm font-medium text-zinc-300 mb-2">
-          <lucide-icon [img]="MessageSquare" class="w-4 h-4 inline mr-1"></lucide-icon>
-          Summary Model
-        </label>
-        <select
-          [ngModel]="summaryModel()"
-          (ngModelChange)="summaryModel.set($event)"
-          class="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-100 focus:outline-none focus:border-zinc-500"
-        >
-          <option value="">Use default ({{ currentProviderInfo.defaultSummaryModel }})</option>
-          @for (model of availableModels(); track model.id) {
-            <option [value]="model.id">{{ model.name }}</option>
-          }
-        </select>
-        <p class="text-xs text-zinc-500 mt-1">
-          A smaller model used to summarize your inputs. The default is optimized for speed and cost.
-        </p>
-      </div>
-
-      <!-- Summary Max Tokens -->
-      <div class="mb-4">
-        <label class="block text-sm font-medium text-zinc-300 mb-2">
-          Max Summary Length: {{ summaryMaxTokens() }} tokens
-        </label>
-        <input
-          type="range"
-          [ngModel]="summaryMaxTokens()"
-          (ngModelChange)="summaryMaxTokens.set($event)"
-          min="50"
-          max="300"
-          step="10"
-          class="w-full h-2 bg-zinc-700 rounded-lg appearance-none cursor-pointer"
-        />
-        <div class="flex justify-between text-xs text-zinc-500 mt-1">
-          <span>50 (brief)</span>
-          <span>300 (detailed)</span>
-        </div>
-      </div>
-    }
-  </div>
-
-  <!-- Model Settings Section -->
-  <div class="bg-zinc-900 rounded-lg border border-zinc-800 p-6 mb-6">
-    <h2 class="text-lg font-semibold text-zinc-100 mb-4">Model Settings</h2>
-
-    <!-- Custom Model Input (for OpenAI-compatible endpoints) -->
-    @if (selectedProvider() === 'openai') {
-      <div class="mb-4">
-        <label class="block text-sm font-medium text-zinc-300 mb-2">Add Custom Model</label>
-        <div class="flex items-center gap-2">
+      <!-- API Version (Azure only) -->
+      @if (selectedProvider() === 'azure_openai') {
+        <div class="mb-4">
+          <label class="block text-sm font-medium text-zinc-300 mb-2">
+            API Version
+          </label>
           <input
             type="text"
-            [ngModel]="customModelName()"
-            (ngModelChange)="customModelName.set($event)"
-            placeholder="e.g., my-local-model"
-            class="flex-1 px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-zinc-500"
-            (keydown.enter)="addCustomModel()"
+            [ngModel]="apiVersion()"
+            (ngModelChange)="apiVersion.set($event)"
+            placeholder="2024-10-21"
+            class="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-zinc-500"
           />
-          <button
-            type="button"
-            (click)="addCustomModel()"
-            [disabled]="!customModelName().trim()"
-            class="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 rounded-lg text-sm font-medium transition-colors"
-          >
-            <lucide-icon [img]="Plus" class="w-4 h-4"></lucide-icon>
-            Add
-          </button>
+          <p class="text-xs text-zinc-500 mt-1">
+            Azure API version, e.g. "2024-10-21" (GA) or "2024-12-01-preview" (preview features)
+          </p>
         </div>
-        <p class="text-xs text-zinc-500 mt-1">
-          Add custom model names for OpenAI-compatible APIs (LLMStudio, LocalAI, etc.)
-        </p>
-      </div>
-    }
+      }
 
-    <!-- Model Selection -->
-    <div class="mb-4">
-      <label class="block text-sm font-medium text-zinc-300 mb-2">Model</label>
-      <div class="flex items-center gap-2">
-        <select
-          [ngModel]="modelName()"
-          (ngModelChange)="onModelChange($event)"
-          class="flex-1 px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-100 focus:outline-none focus:border-zinc-500"
-        >
-          @if (availableModels().length === 0) {
-            <option [value]="modelName()">{{ modelName() }}</option>
-          }
-          @for (model of availableModels(); track model.id) {
-            <option [value]="model.id">{{ model.name }}</option>
-          }
-        </select>
+      <!-- Test Connection -->
+      <div class="flex items-center gap-3">
         <button
           type="button"
-          (click)="loadModels()"
-          [disabled]="isLoadingModels()"
-          class="p-2 bg-zinc-700 hover:bg-zinc-600 disabled:opacity-50 rounded-lg transition-colors"
-          title="Refresh models"
+          (click)="testConnection()"
+          [disabled]="isTesting()"
+          class="flex items-center gap-2 px-4 py-2 bg-zinc-700 hover:bg-zinc-600 disabled:opacity-50 rounded-lg text-sm font-medium transition-colors"
         >
-          <lucide-icon
-            [img]="RefreshCw"
-            class="w-4 h-4"
-            [class.animate-spin]="isLoadingModels()"
-          ></lucide-icon>
+          @if (isTesting()) {
+            <lucide-icon [img]="Loader2" class="w-4 h-4 animate-spin"></lucide-icon>
+            Testing...
+          } @else {
+            <lucide-icon [img]="RefreshCw" class="w-4 h-4"></lucide-icon>
+            Test Connection
+          }
         </button>
-      </div>
-      @if (isLoadingModels()) {
-        <p class="text-xs text-zinc-500 mt-1">Loading available models...</p>
-      }
 
-      <!-- Model Info Badges -->
-      @if (selectedModel(); as model) {
-        <div class="flex flex-wrap gap-2 mt-2">
-          @if (model.parameterSize) {
-            <span class="inline-flex items-center px-2 py-1 rounded-md bg-zinc-800 text-xs text-zinc-400 border border-zinc-700">
-              {{ model.parameterSize }}
-            </span>
-          }
-          @if (model.quantizationLevel) {
-            <span class="inline-flex items-center px-2 py-1 rounded-md bg-zinc-800 text-xs text-zinc-400 border border-zinc-700">
-              {{ model.quantizationLevel }}
-            </span>
-          }
-          @if (model.contextWindow) {
-            <span class="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-blue-500/10 text-xs text-blue-400 border border-blue-500/30">
-              <lucide-icon [img]="Info" class="w-3 h-3"></lucide-icon>
-              {{ formatContextWindow(model.contextWindow) }} context
-            </span>
-          }
-        </div>
-      }
-    </div>
-
-    <!-- Temperature -->
-    <div class="mb-4">
-      <label class="block text-sm font-medium text-zinc-300 mb-2">
-        <lucide-icon [img]="Thermometer" class="w-4 h-4 inline mr-1"></lucide-icon>
-        Temperature: {{ temperature() }}
-      </label>
-      <input
-        type="range"
-        [ngModel]="temperature()"
-        (ngModelChange)="temperature.set($event)"
-        min="0"
-        max="1"
-        step="0.1"
-        class="w-full h-2 bg-zinc-700 rounded-lg appearance-none cursor-pointer"
-      />
-      <div class="flex justify-between text-xs text-zinc-500 mt-1">
-        <span>More focused</span>
-        <span>More creative</span>
-      </div>
-    </div>
-
-    <!-- Max Tokens -->
-    <div class="mb-4">
-      <label class="block text-sm font-medium text-zinc-300 mb-2">
-        <lucide-icon [img]="Hash" class="w-4 h-4 inline mr-1"></lucide-icon>
-        Max Tokens: {{ maxTokens() }}
-      </label>
-      <input
-        type="range"
-        [ngModel]="maxTokens()"
-        (ngModelChange)="maxTokens.set($event)"
-        min="256"
-        [max]="maxTokensLimit()"
-        [step]="maxTokensLimit() > 100000 ? 1000 : 256"
-        class="w-full h-2 bg-zinc-700 rounded-lg appearance-none cursor-pointer"
-      />
-      <div class="flex justify-between text-xs text-zinc-500 mt-1">
-        <span>256 (shorter)</span>
-        <span>{{ formatContextWindow(maxTokensLimit()) }} (longer)</span>
-      </div>
-    </div>
-  </div>
-
-  <!-- Ollama Model Management Section -->
-  @if (selectedProvider() === 'ollama') {
-    <div class="bg-zinc-900 rounded-lg border border-zinc-800 p-6 mb-6">
-      <h2 class="text-lg font-semibold text-zinc-100 mb-4 flex items-center gap-2">
-        <lucide-icon [img]="Download" class="w-5 h-5"></lucide-icon>
-        Manage Ollama Models
-      </h2>
-
-      <!-- Pull New Model -->
-      <div class="mb-4">
-        <label class="block text-sm font-medium text-zinc-300 mb-2">Download New Model</label>
-        <div class="flex items-center gap-2">
-          <input
-            type="text"
-            [ngModel]="newModelName()"
-            (ngModelChange)="newModelName.set($event)"
-            placeholder="e.g., llama3.2, mistral, codellama"
-            [disabled]="isPullingModel()"
-            class="flex-1 px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-zinc-500 disabled:opacity-50"
-            (keydown.enter)="pullModel()"
-          />
-          <button
-            type="button"
-            (click)="pullModel()"
-            [disabled]="isPullingModel() || !newModelName().trim()"
-            class="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 rounded-lg text-sm font-medium transition-colors"
-          >
-            @if (isPullingModel()) {
-              <lucide-icon [img]="Loader2" class="w-4 h-4 animate-spin"></lucide-icon>
-              Pulling...
+        @if (testResult()) {
+          <div class="flex items-center gap-2 text-sm">
+            @if (testResult() === 'success') {
+              <lucide-icon [img]="CheckCircle2" class="w-4 h-4 text-green-500"></lucide-icon>
+              <span class="text-green-500">{{ testMessage() }}</span>
             } @else {
-              <lucide-icon [img]="Plus" class="w-4 h-4"></lucide-icon>
-              Pull
+              <lucide-icon [img]="XCircle" class="w-4 h-4 text-red-500"></lucide-icon>
+              <span class="text-red-500">{{ testMessage() }}</span>
             }
-          </button>
-        </div>
-        <p class="text-xs text-zinc-500 mt-1">
-          Enter a model name from <a href="https://ollama.com/library" target="_blank" class="text-blue-400 hover:underline">ollama.com/library</a>
-        </p>
-        @if (pullMessage()) {
-          <p class="text-sm mt-2" [class]="pullMessage().includes('Successfully') ? 'text-green-500' : 'text-amber-400'">
-            {{ pullMessage() }}
-          </p>
+          </div>
         }
       </div>
+    </div>
 
-      <!-- Installed Models List -->
-      @if (availableModels().length > 0) {
-        <div>
-          <label class="block text-sm font-medium text-zinc-300 mb-2">Installed Models</label>
-          <div class="space-y-2 max-h-64 overflow-y-auto">
+    <!-- Conversation Memory Section -->
+    <div class="bg-zinc-900 rounded-lg border border-zinc-800 p-6 mb-6">
+      <h2 class="text-lg font-semibold text-zinc-100 mb-4 flex items-center gap-2">
+        <lucide-icon [img]="Brain" class="w-5 h-5"></lucide-icon>
+        Conversation Memory
+      </h2>
+
+      <p class="text-sm text-zinc-400 mb-4">
+        When enabled, the AI assistant remembers what you asked about in previous exchanges,
+        allowing it to understand follow-up questions like "and what about redis?" without losing context.
+      </p>
+
+      <!-- Memory Enable Toggle -->
+      <div class="mb-4">
+        <label class="flex items-center gap-3 cursor-pointer">
+          <input
+            type="checkbox"
+            [checked]="memoryEnabled()"
+            (change)="memoryEnabled.set($any($event.target).checked)"
+            class="w-5 h-5 rounded border-zinc-600 bg-zinc-800 text-blue-500 focus:ring-blue-500 focus:ring-offset-zinc-900"
+          />
+          <span class="text-sm font-medium text-zinc-300">Enable conversation memory</span>
+        </label>
+        <p class="text-xs text-zinc-500 mt-1 ml-8">
+          Uses a smaller model to summarize your inputs for context retention.
+        </p>
+      </div>
+
+      <!-- Summary Model (only shown when memory enabled) -->
+      @if (memoryEnabled()) {
+        <div class="mb-4">
+          <label class="block text-sm font-medium text-zinc-300 mb-2">
+            <lucide-icon [img]="MessageSquare" class="w-4 h-4 inline mr-1"></lucide-icon>
+            Summary Model
+          </label>
+          <select
+            [ngModel]="summaryModel()"
+            (ngModelChange)="summaryModel.set($event)"
+            class="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-100 focus:outline-none focus:border-zinc-500"
+          >
+            <option value="">Use default ({{ currentProviderInfo.defaultSummaryModel }})</option>
             @for (model of availableModels(); track model.id) {
-              <div class="flex items-center justify-between p-3 bg-zinc-800/50 rounded-lg border border-zinc-700">
-                <div class="flex-1 min-w-0">
-                  <div class="font-medium text-zinc-100 truncate">{{ model.name }}</div>
-                  <div class="flex flex-wrap gap-1 mt-1">
-                    @if (model.parameterSize) {
-                      <span class="text-xs px-1.5 py-0.5 bg-zinc-700 rounded text-zinc-400">{{ model.parameterSize }}</span>
-                    }
-                    @if (model.quantizationLevel) {
-                      <span class="text-xs px-1.5 py-0.5 bg-zinc-700 rounded text-zinc-400">{{ model.quantizationLevel }}</span>
-                    }
-                    @if (model.contextWindow) {
-                      <span class="text-xs px-1.5 py-0.5 bg-blue-500/20 rounded text-blue-400">{{ formatContextWindow(model.contextWindow) }}</span>
-                    }
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  (click)="deleteModel(model.id)"
-                  [disabled]="isDeletingModel() === model.id"
-                  class="ml-2 p-2 text-zinc-500 hover:text-red-500 hover:bg-red-500/10 disabled:opacity-50 rounded-lg transition-colors"
-                  title="Delete model"
-                >
-                  @if (isDeletingModel() === model.id) {
-                    <lucide-icon [img]="Loader2" class="w-4 h-4 animate-spin"></lucide-icon>
-                  } @else {
-                    <lucide-icon [img]="Trash2" class="w-4 h-4"></lucide-icon>
-                  }
-                </button>
-              </div>
+              <option [value]="model.id">{{ model.name }}</option>
             }
+          </select>
+          <p class="text-xs text-zinc-500 mt-1">
+            A smaller model used to summarize your inputs. The default is optimized for speed and cost.
+          </p>
+        </div>
+
+        <!-- Summary Max Tokens -->
+        <div class="mb-4">
+          <label class="block text-sm font-medium text-zinc-300 mb-2">
+            Max Summary Length: {{ summaryMaxTokens() }} tokens
+          </label>
+          <input
+            type="range"
+            [ngModel]="summaryMaxTokens()"
+            (ngModelChange)="summaryMaxTokens.set($event)"
+            min="50"
+            max="300"
+            step="10"
+            class="w-full h-2 bg-zinc-700 rounded-lg appearance-none cursor-pointer"
+          />
+          <div class="flex justify-between text-xs text-zinc-500 mt-1">
+            <span>50 (brief)</span>
+            <span>300 (detailed)</span>
           </div>
         </div>
       }
     </div>
+
+    <!-- Model Settings Section -->
+    <div class="bg-zinc-900 rounded-lg border border-zinc-800 p-6 mb-6">
+      <h2 class="text-lg font-semibold text-zinc-100 mb-4">Model Settings</h2>
+
+      <!-- Custom Model Input (for OpenAI-compatible endpoints and Azure deployments) -->
+      @if (selectedProvider() === 'openai' || selectedProvider() === 'azure_openai') {
+        <div class="mb-4">
+          <label class="block text-sm font-medium text-zinc-300 mb-2">
+            @if (selectedProvider() === 'azure_openai') {
+              Add Deployment
+            } @else {
+              Add Custom Model
+            }
+          </label>
+          <div class="flex items-center gap-2">
+            <input
+              type="text"
+              [ngModel]="customModelName()"
+              (ngModelChange)="customModelName.set($event)"
+              [placeholder]="selectedProvider() === 'azure_openai' ? 'e.g., my-gpt4o-deployment' : 'e.g., my-local-model'"
+              class="flex-1 px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-zinc-500"
+              (keydown.enter)="addCustomModel()"
+            />
+            <button
+              type="button"
+              (click)="addCustomModel()"
+              [disabled]="!customModelName().trim()"
+              class="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 rounded-lg text-sm font-medium transition-colors"
+            >
+              <lucide-icon [img]="Plus" class="w-4 h-4"></lucide-icon>
+              Add
+            </button>
+          </div>
+          <p class="text-xs text-zinc-500 mt-1">
+            @if (selectedProvider() === 'azure_openai') {
+              Enter your Azure OpenAI deployment name
+            } @else {
+              Add custom model names for OpenAI-compatible APIs (LLMStudio, LocalAI, etc.)
+            }
+          </p>
+        </div>
+      }
+
+      <!-- Model Selection -->
+      <div class="mb-4">
+        <label class="block text-sm font-medium text-zinc-300 mb-2">
+          @if (selectedProvider() === 'azure_openai') {
+            Deployment Name
+          } @else {
+            Model
+          }
+        </label>
+        <div class="flex items-center gap-2">
+          <select
+            [ngModel]="modelName()"
+            (ngModelChange)="onModelChange($event)"
+            class="flex-1 px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-100 focus:outline-none focus:border-zinc-500"
+          >
+            @if (availableModels().length === 0) {
+              <option [value]="modelName()">{{ modelName() }}</option>
+            }
+            @for (model of availableModels(); track model.id) {
+              <option [value]="model.id">{{ model.name }}</option>
+            }
+          </select>
+          <button
+            type="button"
+            (click)="loadModels()"
+            [disabled]="isLoadingModels()"
+            class="p-2 bg-zinc-700 hover:bg-zinc-600 disabled:opacity-50 rounded-lg transition-colors"
+            title="Refresh models"
+          >
+            <lucide-icon
+              [img]="RefreshCw"
+              class="w-4 h-4"
+              [class.animate-spin]="isLoadingModels()"
+            ></lucide-icon>
+          </button>
+        </div>
+        @if (isLoadingModels()) {
+          <p class="text-xs text-zinc-500 mt-1">Loading available models...</p>
+        }
+
+        <!-- Model Info Badges -->
+        @if (selectedModel(); as model) {
+          <div class="flex flex-wrap gap-2 mt-2">
+            @if (model.parameterSize) {
+              <span class="inline-flex items-center px-2 py-1 rounded-md bg-zinc-800 text-xs text-zinc-400 border border-zinc-700">
+                {{ model.parameterSize }}
+              </span>
+            }
+            @if (model.quantizationLevel) {
+              <span class="inline-flex items-center px-2 py-1 rounded-md bg-zinc-800 text-xs text-zinc-400 border border-zinc-700">
+                {{ model.quantizationLevel }}
+              </span>
+            }
+            @if (model.contextWindow) {
+              <span class="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-blue-500/10 text-xs text-blue-400 border border-blue-500/30">
+                <lucide-icon [img]="Info" class="w-3 h-3"></lucide-icon>
+                {{ formatContextWindow(model.contextWindow) }} context
+              </span>
+            }
+          </div>
+        }
+      </div>
+
+      <!-- Temperature -->
+      <div class="mb-4">
+        <label class="block text-sm font-medium text-zinc-300 mb-2">
+          <lucide-icon [img]="Thermometer" class="w-4 h-4 inline mr-1"></lucide-icon>
+          Temperature: {{ temperature() }}
+        </label>
+        <input
+          type="range"
+          [ngModel]="temperature()"
+          (ngModelChange)="temperature.set($event)"
+          min="0"
+          max="1"
+          step="0.1"
+          class="w-full h-2 bg-zinc-700 rounded-lg appearance-none cursor-pointer"
+        />
+        <div class="flex justify-between text-xs text-zinc-500 mt-1">
+          <span>More focused</span>
+          <span>More creative</span>
+        </div>
+      </div>
+
+      <!-- Max Tokens -->
+      <div class="mb-4">
+        <label class="block text-sm font-medium text-zinc-300 mb-2">
+          <lucide-icon [img]="Hash" class="w-4 h-4 inline mr-1"></lucide-icon>
+          Max Tokens: {{ maxTokens() }}
+        </label>
+        <input
+          type="range"
+          [ngModel]="maxTokens()"
+          (ngModelChange)="maxTokens.set($event)"
+          min="256"
+          [max]="maxTokensLimit()"
+          [step]="maxTokensLimit() > 100000 ? 1000 : 256"
+          class="w-full h-2 bg-zinc-700 rounded-lg appearance-none cursor-pointer"
+        />
+        <div class="flex justify-between text-xs text-zinc-500 mt-1">
+          <span>256 (shorter)</span>
+          <span>{{ formatContextWindow(maxTokensLimit()) }} (longer)</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Ollama Model Management Section -->
+    @if (selectedProvider() === 'ollama') {
+      <div class="bg-zinc-900 rounded-lg border border-zinc-800 p-6 mb-6">
+        <h2 class="text-lg font-semibold text-zinc-100 mb-4 flex items-center gap-2">
+          <lucide-icon [img]="Download" class="w-5 h-5"></lucide-icon>
+          Manage Ollama Models
+        </h2>
+
+        <!-- Pull New Model -->
+        <div class="mb-4">
+          <label class="block text-sm font-medium text-zinc-300 mb-2">Download New Model</label>
+          <div class="flex items-center gap-2">
+            <input
+              type="text"
+              [ngModel]="newModelName()"
+              (ngModelChange)="newModelName.set($event)"
+              placeholder="e.g., llama3.2, mistral, codellama"
+              [disabled]="isPullingModel()"
+              class="flex-1 px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-zinc-500 disabled:opacity-50"
+              (keydown.enter)="pullModel()"
+            />
+            <button
+              type="button"
+              (click)="pullModel()"
+              [disabled]="isPullingModel() || !newModelName().trim()"
+              class="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 rounded-lg text-sm font-medium transition-colors"
+            >
+              @if (isPullingModel()) {
+                <lucide-icon [img]="Loader2" class="w-4 h-4 animate-spin"></lucide-icon>
+                Pulling...
+              } @else {
+                <lucide-icon [img]="Plus" class="w-4 h-4"></lucide-icon>
+                Pull
+              }
+            </button>
+          </div>
+          <p class="text-xs text-zinc-500 mt-1">
+            Enter a model name from <a href="https://ollama.com/library" target="_blank" class="text-blue-400 hover:underline">ollama.com/library</a>
+          </p>
+          @if (pullMessage()) {
+            <p class="text-sm mt-2" [class]="pullMessage().includes('Successfully') ? 'text-green-500' : 'text-amber-400'">
+              {{ pullMessage() }}
+            </p>
+          }
+        </div>
+
+        <!-- Installed Models List -->
+        @if (availableModels().length > 0) {
+          <div>
+            <label class="block text-sm font-medium text-zinc-300 mb-2">Installed Models</label>
+            <div class="space-y-2 max-h-64 overflow-y-auto">
+              @for (model of availableModels(); track model.id) {
+                <div class="flex items-center justify-between p-3 bg-zinc-800/50 rounded-lg border border-zinc-700">
+                  <div class="flex-1 min-w-0">
+                    <div class="font-medium text-zinc-100 truncate">{{ model.name }}</div>
+                    <div class="flex flex-wrap gap-1 mt-1">
+                      @if (model.parameterSize) {
+                        <span class="text-xs px-1.5 py-0.5 bg-zinc-700 rounded text-zinc-400">{{ model.parameterSize }}</span>
+                      }
+                      @if (model.quantizationLevel) {
+                        <span class="text-xs px-1.5 py-0.5 bg-zinc-700 rounded text-zinc-400">{{ model.quantizationLevel }}</span>
+                      }
+                      @if (model.contextWindow) {
+                        <span class="text-xs px-1.5 py-0.5 bg-blue-500/20 rounded text-blue-400">{{ formatContextWindow(model.contextWindow) }}</span>
+                      }
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    (click)="deleteModel(model.id)"
+                    [disabled]="isDeletingModel() === model.id"
+                    class="ml-2 p-2 text-zinc-500 hover:text-red-500 hover:bg-red-500/10 disabled:opacity-50 rounded-lg transition-colors"
+                    title="Delete model"
+                  >
+                    @if (isDeletingModel() === model.id) {
+                      <lucide-icon [img]="Loader2" class="w-4 h-4 animate-spin"></lucide-icon>
+                    } @else {
+                      <lucide-icon [img]="Trash2" class="w-4 h-4"></lucide-icon>
+                    }
+                  </button>
+                </div>
+              }
+            </div>
+          </div>
+        }
+      </div>
+    }
+
+    <!-- Save Button -->
+    <div class="flex items-center justify-between">
+      <div class="text-sm text-green-500">{{ saveMessage() }}</div>
+      <button
+        type="button"
+        (click)="saveSettings()"
+        [disabled]="isSaving()"
+        class="flex items-center gap-2 px-6 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 rounded-lg font-medium transition-colors"
+      >
+        @if (isSaving()) {
+          <lucide-icon [img]="Loader2" class="w-4 h-4 animate-spin"></lucide-icon>
+          Saving...
+        } @else {
+          Save Settings
+        }
+      </button>
+    </div>
   }
 
-  <!-- Save Button -->
-  <div class="flex items-center justify-between">
-    <div class="text-sm text-green-500">{{ saveMessage() }}</div>
-    <button
-      type="button"
-      (click)="saveSettings()"
-      [disabled]="isSaving()"
-      class="flex items-center gap-2 px-6 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 rounded-lg font-medium transition-colors"
-    >
-      @if (isSaving()) {
-        <lucide-icon [img]="Loader2" class="w-4 h-4 animate-spin"></lucide-icon>
-        Saving...
-      } @else {
-        Save Settings
-      }
-    </button>
-  </div>
+  <!-- ================================================================ -->
+  <!-- SSH Tab -->
+  <!-- ================================================================ -->
+  @if (activeTab() === 'ssh') {
+    <div class="bg-zinc-900 rounded-lg border border-zinc-800 p-6 mb-6">
+      <h2 class="text-lg font-semibold text-zinc-100 mb-4 flex items-center gap-2">
+        <lucide-icon [img]="Link" class="w-5 h-5"></lucide-icon>
+        SSH Config Files
+      </h2>
+
+      <p class="text-sm text-zinc-400 mb-4">
+        Configure which SSH config files to read. Hosts from all files are merged (first definition wins).
+        Leave empty to use the default ~/.ssh/config.
+      </p>
+
+      <!-- Config Paths List -->
+      <div class="space-y-2 mb-4">
+        @for (path of sshConfigPaths(); track $index; let i = $index) {
+          <div class="flex gap-2 items-center">
+            <input
+              type="text"
+              [ngModel]="path"
+              (ngModelChange)="updateSshConfigPath(i, $event)"
+              placeholder="~/.ssh/config"
+              class="flex-1 px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-zinc-500"
+            />
+            <button
+              type="button"
+              (click)="browseSshConfigPath(i)"
+              class="px-3 py-2 bg-zinc-700 hover:bg-zinc-600 rounded-lg transition-colors"
+              title="Browse for SSH config file"
+            >
+              <lucide-icon [img]="FolderOpen" class="w-4 h-4"></lucide-icon>
+            </button>
+            <button
+              type="button"
+              (click)="removeSshConfigPath(i)"
+              class="px-3 py-2 text-zinc-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
+              title="Remove path"
+            >
+              <lucide-icon [img]="Minus" class="w-4 h-4"></lucide-icon>
+            </button>
+          </div>
+        }
+
+        @if (sshConfigPaths().length === 0) {
+          <div class="text-sm text-zinc-500 py-2">
+            No custom paths configured. Using default ~/.ssh/config.
+          </div>
+        }
+      </div>
+
+      <!-- Add Path Button -->
+      <button
+        type="button"
+        (click)="addSshConfigPath()"
+        class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg text-sm text-zinc-300 transition-colors mb-6"
+      >
+        <lucide-icon [img]="Plus" class="w-4 h-4"></lucide-icon>
+        Add Config Path
+      </button>
+
+      <!-- SSH Save Button -->
+      <div class="flex items-center justify-between">
+        <div class="text-sm text-green-500">{{ sshSaveMessage() }}</div>
+        <button
+          type="button"
+          (click)="saveSshSettings()"
+          [disabled]="isSavingSsh()"
+          class="flex items-center gap-2 px-6 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 rounded-lg font-medium transition-colors"
+        >
+          @if (isSavingSsh()) {
+            <lucide-icon [img]="Loader2" class="w-4 h-4 animate-spin"></lucide-icon>
+            Saving...
+          } @else {
+            Save SSH Settings
+          }
+        </button>
+      </div>
+    </div>
+  }
 </div>

@@ -3,12 +3,15 @@ use russh::client::{self, Config, Handle};
 use russh::keys::key;
 use russh::ChannelMsg;
 use russh_keys::{decode_secret_key, load_secret_key};
+use std::pin::Pin;
 use std::sync::Arc;
+use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
+use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 
 use crate::executor::CommandResult;
 use crate::models::error::ContainerError;
-use crate::models::system::{ContainerSystem, SshAuthMethod, SshConfig};
+use crate::models::system::{ContainerSystem, JumpHost, SshAuthMethod, SshConfig};
 
 /// SSH connection handler
 pub struct SshHandler;
@@ -27,10 +30,56 @@ impl client::Handler for SshHandler {
     }
 }
 
+/// A stream wrapping a child process stdin/stdout for ProxyCommand
+pub struct ProxyStream {
+    reader: tokio::process::ChildStdout,
+    writer: tokio::process::ChildStdin,
+}
+
+impl AsyncRead for ProxyStream {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<std::io::Result<()>> {
+        Pin::new(&mut self.reader).poll_read(cx, buf)
+    }
+}
+
+impl AsyncWrite for ProxyStream {
+    fn poll_write(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<std::io::Result<usize>> {
+        Pin::new(&mut self.writer).poll_write(cx, buf)
+    }
+
+    fn poll_flush(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<std::io::Result<()>> {
+        Pin::new(&mut self.writer).poll_flush(cx)
+    }
+
+    fn poll_shutdown(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<std::io::Result<()>> {
+        Pin::new(&mut self.writer).poll_shutdown(cx)
+    }
+}
+
+impl Unpin for ProxyStream {}
+
 /// SSH client for a single connection
 pub struct SshClient {
     /// SSH session handle - pub(crate) to allow port forwarding access
     pub(crate) session: Handle<SshHandler>,
+    /// Jump host sessions that must stay alive to maintain the tunnel
+    _jump_sessions: Vec<Handle<SshHandler>>,
+    /// ProxyCommand child process (kept alive for the duration of the connection)
+    _proxy_child: Option<tokio::process::Child>,
     system_id: String,
     created_at: Instant,
     last_used: Instant,
@@ -81,10 +130,303 @@ impl SshClient {
 
         Ok(Self {
             session,
+            _jump_sessions: Vec::new(),
+            _proxy_child: None,
             system_id: system.id.0.clone(),
             created_at: Instant::now(),
             last_used: Instant::now(),
         })
+    }
+
+    /// Connect to a system via ProxyJump (SSH-over-SSH tunneling)
+    /// Each jump host in the chain is connected sequentially, with the final
+    /// connection tunneled through the chain.
+    pub async fn connect_via_jump(
+        system: &ContainerSystem,
+        jump_hosts: &[JumpHost],
+        password: Option<&str>,
+        passphrase: Option<&str>,
+        private_key_content: Option<&str>,
+    ) -> Result<Self, ContainerError> {
+        let ssh_config = system
+            .ssh_config
+            .as_ref()
+            .ok_or_else(|| ContainerError::InvalidConfiguration(
+                "SSH configuration required for remote system".to_string(),
+            ))?;
+
+        if jump_hosts.is_empty() {
+            return Self::connect(system, password, passphrase, private_key_content).await;
+        }
+
+        let timeout_duration = Duration::from_secs(ssh_config.connection_timeout);
+        let mut jump_sessions: Vec<Handle<SshHandler>> = Vec::new();
+
+        // Step 1: Connect to the first jump host via TCP
+        let first_jump = &jump_hosts[0];
+        let first_addr = format!("{}:{}", first_jump.hostname, first_jump.port);
+        tracing::info!("ProxyJump: connecting to first jump host at {}", first_addr);
+
+        let config = Config::default();
+        let mut current_session = tokio::time::timeout(
+            timeout_duration,
+            client::connect(Arc::new(config), &first_addr, SshHandler),
+        )
+        .await
+        .map_err(|_| ContainerError::NetworkTimeout(format!(
+            "Connection to jump host {} timed out", first_jump.hostname
+        )))?
+        .map_err(|e| ContainerError::ConnectionFailed(
+            first_jump.hostname.clone(),
+            e.to_string(),
+        ))?;
+
+        // Authenticate on the first jump host
+        Self::authenticate_jump_host(&mut current_session, first_jump, password, passphrase).await?;
+
+        // Step 2: Chain through remaining jump hosts (if any)
+        for (i, jump) in jump_hosts.iter().enumerate().skip(1) {
+            tracing::info!("ProxyJump: opening tunnel through jump host {} to {}:{}", i, jump.hostname, jump.port);
+
+            // Open direct-tcpip channel to the next hop
+            let channel = current_session
+                .channel_open_direct_tcpip(
+                    jump.hostname.clone(),
+                    jump.port as u32,
+                    "127.0.0.1",
+                    0u32,
+                )
+                .await
+                .map_err(|e| ContainerError::ConnectionFailed(
+                    jump.hostname.clone(),
+                    format!("Failed to open tunnel: {}", e),
+                ))?;
+
+            let stream = channel.into_stream();
+
+            // Keep the previous session alive
+            jump_sessions.push(current_session);
+
+            // Connect SSH over the tunnel
+            let config = Config::default();
+            current_session = tokio::time::timeout(
+                timeout_duration,
+                client::connect_stream(Arc::new(config), stream, SshHandler),
+            )
+            .await
+            .map_err(|_| ContainerError::NetworkTimeout(format!(
+                "Connection to jump host {} timed out", jump.hostname
+            )))?
+            .map_err(|e| ContainerError::ConnectionFailed(
+                jump.hostname.clone(),
+                e.to_string(),
+            ))?;
+
+            // Authenticate on this jump host
+            Self::authenticate_jump_host(&mut current_session, jump, password, passphrase).await?;
+        }
+
+        // Step 3: Open tunnel from last jump host to the target
+        let target_host = &system.hostname;
+        let target_port = ssh_config.port;
+        tracing::info!("ProxyJump: opening final tunnel to {}:{}", target_host, target_port);
+
+        let channel = current_session
+            .channel_open_direct_tcpip(
+                target_host.clone(),
+                target_port as u32,
+                "127.0.0.1",
+                0u32,
+            )
+            .await
+            .map_err(|e| ContainerError::ConnectionFailed(
+                target_host.clone(),
+                format!("Failed to open tunnel to target: {}", e),
+            ))?;
+
+        let stream = channel.into_stream();
+        jump_sessions.push(current_session);
+
+        // Step 4: Connect SSH to the target over the tunnel
+        let config = Config::default();
+        let mut target_session = tokio::time::timeout(
+            timeout_duration,
+            client::connect_stream(Arc::new(config), stream, SshHandler),
+        )
+        .await
+        .map_err(|_| ContainerError::NetworkTimeout(format!(
+            "SSH connection to {} timed out", target_host
+        )))?
+        .map_err(|e| ContainerError::ConnectionFailed(
+            target_host.clone(),
+            e.to_string(),
+        ))?;
+
+        // Authenticate on the target
+        Self::authenticate(&mut target_session, ssh_config, target_host, password, passphrase, private_key_content).await?;
+
+        tracing::info!("ProxyJump: successfully connected to {} via {} jump host(s)", target_host, jump_hosts.len());
+
+        Ok(Self {
+            session: target_session,
+            _jump_sessions: jump_sessions,
+            _proxy_child: None,
+            system_id: system.id.0.clone(),
+            created_at: Instant::now(),
+            last_used: Instant::now(),
+        })
+    }
+
+    /// Connect to a system via ProxyCommand (external process providing transport)
+    pub async fn connect_via_proxy_command(
+        system: &ContainerSystem,
+        proxy_command: &str,
+        password: Option<&str>,
+        passphrase: Option<&str>,
+        private_key_content: Option<&str>,
+    ) -> Result<Self, ContainerError> {
+        let ssh_config = system
+            .ssh_config
+            .as_ref()
+            .ok_or_else(|| ContainerError::InvalidConfiguration(
+                "SSH configuration required for remote system".to_string(),
+            ))?;
+
+        // Expand tokens in the proxy command
+        let expanded_cmd = crate::ssh::config::expand_proxy_command_tokens(
+            proxy_command,
+            &system.hostname,
+            ssh_config.port,
+            &ssh_config.username,
+        );
+
+        tracing::info!("ProxyCommand: spawning '{}'", expanded_cmd);
+
+        let timeout_duration = Duration::from_secs(ssh_config.connection_timeout);
+
+        // Spawn the proxy command process
+        let mut child = tokio::process::Command::new("sh")
+            .arg("-c")
+            .arg(&expanded_cmd)
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .map_err(|e| ContainerError::ConnectionFailed(
+                system.hostname.clone(),
+                format!("Failed to spawn ProxyCommand '{}': {}", expanded_cmd, e),
+            ))?;
+
+        let stdout = child.stdout.take().ok_or_else(|| {
+            ContainerError::ConnectionFailed(
+                system.hostname.clone(),
+                "Failed to capture ProxyCommand stdout".to_string(),
+            )
+        })?;
+        let stdin = child.stdin.take().ok_or_else(|| {
+            ContainerError::ConnectionFailed(
+                system.hostname.clone(),
+                "Failed to capture ProxyCommand stdin".to_string(),
+            )
+        })?;
+
+        let stream = ProxyStream {
+            reader: stdout,
+            writer: stdin,
+        };
+
+        // Connect SSH over the proxy stream
+        let config = Config::default();
+        let mut session = tokio::time::timeout(
+            timeout_duration,
+            client::connect_stream(Arc::new(config), stream, SshHandler),
+        )
+        .await
+        .map_err(|_| ContainerError::NetworkTimeout(format!(
+            "SSH connection via ProxyCommand to {} timed out", system.hostname
+        )))?
+        .map_err(|e| ContainerError::ConnectionFailed(
+            system.hostname.clone(),
+            format!("SSH over ProxyCommand failed: {}", e),
+        ))?;
+
+        // Authenticate on the target
+        Self::authenticate(&mut session, ssh_config, &system.hostname, password, passphrase, private_key_content).await?;
+
+        tracing::info!("ProxyCommand: successfully connected to {}", system.hostname);
+
+        Ok(Self {
+            session,
+            _jump_sessions: Vec::new(),
+            _proxy_child: Some(child),
+            system_id: system.id.0.clone(),
+            created_at: Instant::now(),
+            last_used: Instant::now(),
+        })
+    }
+
+    /// Authenticate on a jump host using its identity file (public key auth only)
+    async fn authenticate_jump_host(
+        session: &mut Handle<SshHandler>,
+        jump: &JumpHost,
+        _password: Option<&str>,
+        passphrase: Option<&str>,
+    ) -> Result<(), ContainerError> {
+        if jump.username.is_empty() {
+            return Err(ContainerError::InvalidConfiguration(
+                format!("Jump host {} has no username configured", jump.hostname),
+            ));
+        }
+
+        // Try to load identity file for the jump host
+        if let Some(key_path) = &jump.identity_file {
+            tracing::debug!("Authenticating on jump host {} with key {}", jump.hostname, key_path);
+
+            let expanded_path = if key_path.starts_with("~") {
+                let home = dirs::home_dir()
+                    .ok_or_else(|| ContainerError::InvalidConfiguration(
+                        "Could not determine home directory".to_string(),
+                    ))?;
+                key_path.replacen("~", &home.to_string_lossy(), 1)
+            } else {
+                key_path.clone()
+            };
+
+            // Try passphrase from keyring first, then from parameter
+            let effective_passphrase = if let Some(pp) = passphrase {
+                Some(pp.to_string())
+            } else {
+                get_key_passphrase(&expanded_path)?
+            };
+
+            let key = load_secret_key(&expanded_path, effective_passphrase.as_deref())
+                .map_err(|e| ContainerError::CredentialError(format!(
+                    "Failed to load jump host key from {}: {}", expanded_path, e
+                )))?;
+
+            let auth_result = session
+                .authenticate_publickey(&jump.username, Arc::new(key))
+                .await
+                .map_err(|e| ContainerError::SshAuthenticationFailed(format!(
+                    "Jump host {} auth error: {}", jump.hostname, e
+                )))?;
+
+            if !auth_result {
+                return Err(ContainerError::SshAuthenticationFailed(format!(
+                    "Public key authentication failed on jump host {}", jump.hostname
+                )));
+            }
+        } else {
+            // No identity file - try agent or password auth
+            // For now, return an error since we don't have credentials for the jump host
+            return Err(ContainerError::InvalidConfiguration(format!(
+                "Jump host {} has no identity file configured. ProxyJump requires key-based authentication on jump hosts.",
+                jump.hostname
+            )));
+        }
+
+        tracing::info!("Authenticated on jump host {}", jump.hostname);
+        Ok(())
     }
 
     /// Authenticate with the SSH server

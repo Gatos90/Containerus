@@ -558,3 +558,52 @@ pub async fn import_ssh_key_from_file(file_path: String) -> Result<String, Conta
     tracing::info!("Successfully imported SSH key from {}", file_path);
     Ok(content)
 }
+
+// ========================================================================
+// SSH Config Commands (for importing hosts from ~/.ssh/config)
+// ========================================================================
+
+/// Check if any SSH config file exists
+#[tauri::command]
+pub fn has_ssh_config(config_paths: Option<Vec<String>>) -> bool {
+    let paths = config_paths.unwrap_or_default();
+    if paths.is_empty() {
+        crate::ssh::has_ssh_config(None)
+    } else {
+        paths.iter().any(|p| crate::ssh::has_ssh_config(Some(p.as_str())))
+    }
+}
+
+/// List all SSH hosts from config files (excludes wildcard patterns)
+#[tauri::command]
+pub fn list_ssh_config_hosts(config_paths: Option<Vec<String>>) -> Result<Vec<crate::ssh::SshHostEntry>, ContainerError> {
+    let paths = config_paths.unwrap_or_default();
+    crate::ssh::list_hosts_multi(&paths)
+}
+
+/// Get resolved SSH configuration for a specific host from config files
+#[tauri::command]
+pub fn get_ssh_host_config(host: String, config_paths: Option<Vec<String>>) -> Result<crate::ssh::SshHostEntry, ContainerError> {
+    let paths = config_paths.unwrap_or_default();
+    crate::ssh::resolve_host_multi(&host, &paths)
+}
+
+// ========================================================================
+// App Settings Commands
+// ========================================================================
+
+/// Get app settings (SSH config path, etc.)
+#[tauri::command]
+pub fn get_app_settings(state: State<'_, AppState>) -> Result<crate::database::AppSettings, ContainerError> {
+    let conn = state.db.lock().map_err(|e| ContainerError::Internal(e.to_string()))?;
+    crate::database::get_app_settings(&conn)
+        .map_err(|e| ContainerError::Internal(format!("Failed to get app settings: {}", e)))
+}
+
+/// Update app settings
+#[tauri::command]
+pub fn update_app_settings(state: State<'_, AppState>, settings: crate::database::AppSettings) -> Result<(), ContainerError> {
+    let conn = state.db.lock().map_err(|e| ContainerError::Internal(e.to_string()))?;
+    crate::database::upsert_app_settings(&conn, &settings)
+        .map_err(|e| ContainerError::Internal(format!("Failed to update app settings: {}", e)))
+}

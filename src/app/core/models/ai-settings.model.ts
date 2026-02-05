@@ -1,7 +1,7 @@
 /**
  * AI Provider type
  */
-export type AiProviderType = 'ollama' | 'openai' | 'anthropic';
+export type AiProviderType = 'ollama' | 'openai' | 'anthropic' | 'azure_openai' | 'groq' | 'gemini' | 'deepseek' | 'mistral';
 
 /**
  * AI settings stored in the database
@@ -19,6 +19,8 @@ export interface AiSettings {
   summaryModel?: string;
   /** Max tokens for each summary (default: 100) */
   summaryMaxTokens: number;
+  /** API version for Azure OpenAI (e.g., "2024-10-21") */
+  apiVersion?: string;
 }
 
 /**
@@ -77,6 +79,7 @@ export interface UpdateAiSettingsRequest {
   memory_enabled: boolean;
   summary_model?: string;
   summary_max_tokens: number;
+  api_version?: string;
 }
 
 /**
@@ -123,5 +126,50 @@ export const AI_PROVIDERS: ProviderInfo[] = [
     defaultEndpoint: 'https://api.anthropic.com',
     defaultModel: 'claude-3-5-haiku-20241022',
     defaultSummaryModel: 'claude-3-haiku-20240307',
+  },
+  {
+    id: 'azure_openai',
+    name: 'Azure OpenAI',
+    description: 'OpenAI models via Azure deployments',
+    requiresApiKey: true,
+    defaultEndpoint: '',
+    defaultModel: 'gpt-4o',
+    defaultSummaryModel: 'gpt-4o-mini',
+  },
+  {
+    id: 'groq',
+    name: 'Groq',
+    description: 'Ultra-fast inference with open models',
+    requiresApiKey: true,
+    defaultEndpoint: 'https://api.groq.com/openai',
+    defaultModel: 'llama-3.3-70b-versatile',
+    defaultSummaryModel: 'llama-3.1-8b-instant',
+  },
+  {
+    id: 'gemini',
+    name: 'Google Gemini',
+    description: 'Gemini models from Google',
+    requiresApiKey: true,
+    defaultEndpoint: 'https://generativelanguage.googleapis.com',
+    defaultModel: 'gemini-2.0-flash',
+    defaultSummaryModel: 'gemini-2.0-flash-lite',
+  },
+  {
+    id: 'deepseek',
+    name: 'DeepSeek',
+    description: 'DeepSeek Chat and Reasoner models',
+    requiresApiKey: true,
+    defaultEndpoint: 'https://api.deepseek.com',
+    defaultModel: 'deepseek-chat',
+    defaultSummaryModel: 'deepseek-chat',
+  },
+  {
+    id: 'mistral',
+    name: 'Mistral',
+    description: 'Mistral and Codestral models',
+    requiresApiKey: true,
+    defaultEndpoint: 'https://api.mistral.ai',
+    defaultModel: 'mistral-large-latest',
+    defaultSummaryModel: 'mistral-small-latest',
   },
 ];

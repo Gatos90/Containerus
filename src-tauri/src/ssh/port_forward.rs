@@ -78,14 +78,31 @@ impl PortForwardManager {
 
         // For remote systems, create actual TCP tunnel
         let listener = if let Some(port) = local_port {
-            TcpListener::bind(format!("127.0.0.1:{}", port))
-                .await
-                .map_err(|e| {
-                    ContainerError::Internal(format!(
-                        "Failed to bind to port {}: {}",
-                        port, e
-                    ))
-                })?
+            // Try requested port, then increment up to 20 times if taken
+            let mut bound = None;
+            for offset in 0..20u16 {
+                let try_port = port.saturating_add(offset);
+                match TcpListener::bind(format!("127.0.0.1:{}", try_port)).await {
+                    Ok(l) => {
+                        if offset > 0 {
+                            tracing::info!(
+                                "Port {} was taken, bound to {} instead",
+                                port, try_port
+                            );
+                        }
+                        bound = Some(l);
+                        break;
+                    }
+                    Err(_) if offset < 19 => continue,
+                    Err(e) => {
+                        return Err(ContainerError::Internal(format!(
+                            "Failed to bind to ports {}-{}: {}",
+                            port, try_port, e
+                        )));
+                    }
+                }
+            }
+            bound.unwrap()
         } else {
             // Auto-assign port
             TcpListener::bind("127.0.0.1:0")

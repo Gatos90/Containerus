@@ -68,8 +68,25 @@ impl SshConnectionPool {
             return Ok(());
         }
 
-        // Create new connection
-        let client = SshClient::connect(system, password, passphrase, private_key_content).await?;
+        // Create new connection - route through proxy methods if configured
+        let client = if let Some(ssh_config) = &system.ssh_config {
+            if let Some(ref jump_hosts) = ssh_config.proxy_jump {
+                if !jump_hosts.is_empty() {
+                    tracing::info!("Connecting via ProxyJump ({} hop(s)) for system {}", jump_hosts.len(), system_id);
+                    SshClient::connect_via_jump(system, jump_hosts, password, passphrase, private_key_content).await?
+                } else {
+                    SshClient::connect(system, password, passphrase, private_key_content).await?
+                }
+            } else if let Some(ref proxy_command) = ssh_config.proxy_command {
+                tracing::info!("Connecting via ProxyCommand for system {}", system_id);
+                SshClient::connect_via_proxy_command(system, proxy_command, password, passphrase, private_key_content).await?
+            } else {
+                SshClient::connect(system, password, passphrase, private_key_content).await?
+            }
+        } else {
+            SshClient::connect(system, password, passphrase, private_key_content).await?
+        };
+
         self.connections
             .insert(system_id.clone(), Arc::new(Mutex::new(client)));
 

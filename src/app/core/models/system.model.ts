@@ -12,6 +12,46 @@ export interface SshConfig {
   /** PEM-encoded private key content (for mobile/imported keys) */
   privateKeyContent?: string | null;
   connectionTimeout: number;
+  /** ProxyCommand for tunneling through an external command */
+  proxyCommand?: string | null;
+  /** ProxyJump hosts for multi-hop SSH connections */
+  proxyJump?: JumpHost[] | null;
+  /** Reference to the original SSH config host name (if imported from ~/.ssh/config) */
+  sshConfigHost?: string | null;
+}
+
+/** Configuration for a jump host in a ProxyJump chain */
+export interface JumpHost {
+  hostname: string;
+  port: number;
+  username: string;
+  identityFile?: string | null;
+}
+
+/** A parsed SSH host entry from ~/.ssh/config */
+export interface SshHostEntry {
+  /** Host alias (the name used in SSH config) */
+  host: string;
+  /** Actual hostname or IP address */
+  hostname?: string | null;
+  /** SSH username */
+  user?: string | null;
+  /** SSH port */
+  port?: number | null;
+  /** Path to identity file (private key) */
+  identityFile?: string | null;
+  /** Whether to use only the specified identity file */
+  identitiesOnly?: boolean | null;
+  /** ProxyCommand for tunneling */
+  proxyCommand?: string | null;
+  /** ProxyJump hosts (comma-separated) */
+  proxyJump?: string | null;
+}
+
+/** App-wide settings */
+export interface AppSettings {
+  /** Multiple SSH config file paths (empty = use default ~/.ssh/config) */
+  sshConfigPaths?: string[];
 }
 
 export interface ContainerSystem {

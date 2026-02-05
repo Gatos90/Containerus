@@ -25,6 +25,7 @@ import {
   Maximize2,
   SlidersHorizontal,
   X,
+  Link,
 } from 'lucide-angular';
 import {
   Container,
@@ -41,6 +42,7 @@ import { ContainerState, SortOption } from '../../../state/container.state';
 import { SystemState } from '../../../state/system.state';
 import { PortForwardState } from '../../../state/port-forward.state';
 import { PortSectionComponent } from '../components/port-section/port-section.component';
+import { PortBadgeComponent } from '../components/port-badge/port-badge.component';
 import { ContainerDetailsComponent } from '../components/container-details/container-details.component';
 import { ContainerDetailModalComponent } from '../components/container-detail-modal/container-detail-modal.component';
 import { LogsViewerModalComponent } from '../components/logs-viewer-modal/logs-viewer-modal.component';
@@ -53,6 +55,7 @@ import { LogsViewerModalComponent } from '../components/logs-viewer-modal/logs-v
     RouterLink,
     LucideAngularModule,
     PortSectionComponent,
+    PortBadgeComponent,
     ContainerDetailsComponent,
     ContainerDetailModalComponent,
     LogsViewerModalComponent,
@@ -85,6 +88,7 @@ export class ContainerListComponent implements OnInit {
   readonly Maximize2 = Maximize2;
   readonly SlidersHorizontal = SlidersHorizontal;
   readonly X = X;
+  readonly Link = Link;
 
   // Helper functions
   readonly getDisplayName = getDisplayName;
@@ -94,6 +98,15 @@ export class ContainerListComponent implements OnInit {
   readonly formatPort = formatPort;
   readonly getAvailableActions = getAvailableActions;
   readonly isRunning = isRunning;
+
+  // Containers with active port forwards (for top section)
+  readonly containersWithForwards = computed(() => {
+    const activeForwards = this.portForwardState.activeForwards();
+    if (activeForwards.length === 0) return [];
+    const containerIds = new Set(activeForwards.map(f => f.containerId));
+    return this.containerState.filteredContainers()
+      .filter(c => containerIds.has(c.id));
+  });
 
   // Component state
   private refreshing = false;

@@ -9,6 +9,20 @@ use crate::ai::{
 use crate::database::{get_ai_settings, upsert_ai_settings};
 use crate::AppState;
 
+/// Get the default endpoint URL for a provider
+fn default_endpoint(provider: AiProviderType) -> String {
+    match provider {
+        AiProviderType::Ollama => "http://localhost:11434".to_string(),
+        AiProviderType::OpenAi => "https://api.openai.com".to_string(),
+        AiProviderType::Anthropic => "https://api.anthropic.com".to_string(),
+        AiProviderType::AzureOpenAi => String::new(), // user must provide
+        AiProviderType::Groq => "https://api.groq.com/openai".to_string(),
+        AiProviderType::Gemini => "https://generativelanguage.googleapis.com".to_string(),
+        AiProviderType::DeepSeek => "https://api.deepseek.com".to_string(),
+        AiProviderType::Mistral => "https://api.mistral.ai".to_string(),
+    }
+}
+
 /// Response for AI settings
 #[derive(Debug, Serialize)]
 pub struct AiSettingsResponse {
@@ -21,6 +35,7 @@ pub struct AiSettingsResponse {
     pub memory_enabled: bool,
     pub summary_model: Option<String>,
     pub summary_max_tokens: i32,
+    pub api_version: Option<String>,
 }
 
 impl From<AiSettings> for AiSettingsResponse {
@@ -35,6 +50,7 @@ impl From<AiSettings> for AiSettingsResponse {
             memory_enabled: settings.memory_enabled,
             summary_model: settings.summary_model,
             summary_max_tokens: settings.summary_max_tokens,
+            api_version: settings.api_version,
         }
     }
 }
@@ -51,6 +67,7 @@ pub struct UpdateAiSettingsRequest {
     pub memory_enabled: bool,
     pub summary_model: Option<String>,
     pub summary_max_tokens: i32,
+    pub api_version: Option<String>,
 }
 
 impl From<UpdateAiSettingsRequest> for AiSettings {
@@ -65,6 +82,7 @@ impl From<UpdateAiSettingsRequest> for AiSettings {
             memory_enabled: req.memory_enabled,
             summary_model: req.summary_model,
             summary_max_tokens: req.summary_max_tokens,
+            api_version: req.api_version,
         }
     }
 }
@@ -119,6 +137,7 @@ pub async fn list_models_for_provider(
     provider_type: String,
     api_key: Option<String>,
     endpoint_url: Option<String>,
+    api_version: Option<String>,
 ) -> Result<Vec<AiModel>, String> {
     let provider_enum = AiSettings::str_to_provider(&provider_type);
 
@@ -126,16 +145,13 @@ pub async fn list_models_for_provider(
         provider: provider_enum,
         api_key,
         model_name: String::new(),
-        endpoint_url: endpoint_url.unwrap_or_else(|| match provider_enum {
-            AiProviderType::OpenAi => "https://api.openai.com".to_string(),
-            AiProviderType::Anthropic => "https://api.anthropic.com".to_string(),
-            AiProviderType::Ollama => "http://localhost:11434".to_string(),
-        }),
+        endpoint_url: endpoint_url.unwrap_or_else(|| default_endpoint(provider_enum)),
         temperature: 0.3,
         max_tokens: 256,
         memory_enabled: true,
         summary_model: None,
         summary_max_tokens: 100,
+        api_version,
     };
 
     let provider = create_provider(&settings);
@@ -162,6 +178,7 @@ pub async fn test_ai_connection_with_settings(
     provider_type: String,
     api_key: Option<String>,
     endpoint_url: Option<String>,
+    api_version: Option<String>,
 ) -> Result<(), String> {
     let provider_enum = AiSettings::str_to_provider(&provider_type);
 
@@ -171,16 +188,13 @@ pub async fn test_ai_connection_with_settings(
         provider: provider_enum,
         api_key,
         model_name: String::new(),
-        endpoint_url: endpoint_url.unwrap_or_else(|| match provider_enum {
-            AiProviderType::OpenAi => "https://api.openai.com".to_string(),
-            AiProviderType::Anthropic => "https://api.anthropic.com".to_string(),
-            AiProviderType::Ollama => "http://localhost:11434".to_string(),
-        }),
+        endpoint_url: endpoint_url.unwrap_or_else(|| default_endpoint(provider_enum)),
         temperature: 0.3,
         max_tokens: 256,
         memory_enabled: true,
         summary_model: None,
         summary_max_tokens: 100,
+        api_version,
     };
 
     let provider = create_provider(&settings);

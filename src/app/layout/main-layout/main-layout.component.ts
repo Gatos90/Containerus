@@ -4,6 +4,7 @@ import { NavigationEnd, Router, RouterOutlet } from '@angular/router';
 import { filter } from 'rxjs';
 import { SidebarComponent } from '../sidebar/sidebar.component';
 import { AppState } from '../../state/app.state';
+import { AiSettingsState } from '../../state/ai-settings.state';
 import { TerminalState } from '../../state/terminal.state';
 import { TerminalWorkspaceComponent } from '../../shared/components/terminal-workspace/terminal-workspace.component';
 
@@ -14,6 +15,7 @@ import { TerminalWorkspaceComponent } from '../../shared/components/terminal-wor
 })
 export class MainLayoutComponent implements OnInit {
   readonly appState = inject(AppState);
+  private aiSettingsState = inject(AiSettingsState);
   readonly terminalState = inject(TerminalState);
   private router = inject(Router);
 
@@ -36,6 +38,9 @@ export class MainLayoutComponent implements OnInit {
   }
 
   async ngOnInit(): Promise<void> {
-    await this.appState.initialize();
+    await Promise.all([
+      this.appState.initialize(),
+      this.aiSettingsState.init(),
+    ]);
   }
 }

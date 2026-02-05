@@ -23,7 +23,6 @@ import { SystemState } from '../../../state/system.state';
 import { TerminalState, DockedTerminal, DEFAULT_TERMINAL_OPTIONS } from '../../../state/terminal.state';
 import { CommandPaletteComponent } from '../../../shared/components/command-palette/command-palette.component';
 import { VariableInputModalComponent } from '../../../shared/components/variable-input-modal/variable-input-modal.component';
-import { AiInputBarComponent } from '../components/ai-input-bar/ai-input-bar.component';
 import { CommandTemplate, parseVariables } from '../../../core/models/command-template.model';
 import { ContainerRuntime } from '../../../core/models/container.model';
 import { WarpTerminalViewComponent } from '../../warp-terminal/warp-terminal-view/warp-terminal-view.component';
@@ -33,7 +32,7 @@ import { TerminalEventBus } from '../../warp-terminal/state/warp-terminal.bus';
 @Component({
   selector: 'app-terminal-view',
   standalone: true,
-  imports: [CommonModule, FormsModule, LucideAngularModule, CommandPaletteComponent, VariableInputModalComponent, AiInputBarComponent, WarpTerminalViewComponent],
+  imports: [CommonModule, FormsModule, LucideAngularModule, CommandPaletteComponent, VariableInputModalComponent, WarpTerminalViewComponent],
   templateUrl: './terminal-view.component.html',
   styleUrl: './terminal-view.component.css',
 })

@@ -28,7 +28,7 @@ import {
   Activity,
 } from 'lucide-angular';
 import { ContainerRuntime } from '../../../core/models/container.model';
-import { ContainerSystem, ExtendedSystemInfo, LiveSystemMetrics, NewSystemRequest, OsType, SshAuthMethod, UpdateSystemRequest } from '../../../core/models/system.model';
+import { ContainerSystem, ExtendedSystemInfo, JumpHost, LiveSystemMetrics, NewSystemRequest, OsType, SshAuthMethod, SshHostEntry, UpdateSystemRequest } from '../../../core/models/system.model';
 
 export interface LoadLevelInfo {
   level: 'unknown' | 'low' | 'medium' | 'high' | 'critical';
@@ -86,6 +86,14 @@ export class SystemListComponent implements OnInit {
   isMobile = signal(false);
   addingSystem = signal(false);
 
+  // SSH Config host selection
+  sshHosts = signal<SshHostEntry[]>([]);
+  loadingSshHosts = signal(false);
+  selectedSshHost = '';
+  selectedHostProxyCommand: string | null = null;
+  selectedHostProxyJump: string | null = null;
+  private sshConfigPaths: string[] = [];
+
   addForm = {
     name: '',
     hostname: '',
@@ -129,6 +137,82 @@ export class SystemListComponent implements OnInit {
       this.addForm.connectionType = 'remote'; // Default to remote on mobile
     }
     await this.refresh();
+
+    // Load SSH hosts on desktop
+    if (!mobile) {
+      await this.loadSshHosts();
+    }
+  }
+
+  /**
+   * Load SSH hosts from ~/.ssh/config
+   */
+  async loadSshHosts(): Promise<void> {
+    this.loadingSshHosts.set(true);
+    try {
+      // Load custom SSH config paths from app settings
+      const appSettings = await this.systemService.getAppSettings();
+      this.sshConfigPaths = appSettings.sshConfigPaths ?? [];
+
+      const hosts = await this.systemService.listSshConfigHosts(this.sshConfigPaths);
+      this.sshHosts.set(hosts);
+    } catch (err) {
+      console.warn('Could not load SSH config:', err);
+      // Non-fatal - just means no SSH config available
+    } finally {
+      this.loadingSshHosts.set(false);
+    }
+  }
+
+  /**
+   * Handle SSH host selection from dropdown
+   */
+  async onSshHostSelected(hostName: string): Promise<void> {
+    this.selectedSshHost = hostName;
+    this.selectedHostProxyCommand = null;
+    this.selectedHostProxyJump = null;
+
+    if (!hostName) {
+      // Reset to manual mode - don't clear fields
+      return;
+    }
+
+    try {
+      const config = await this.systemService.getSshHostConfig(hostName, this.sshConfigPaths);
+
+      // Auto-fill form fields
+      if (config.hostname) {
+        this.addForm.hostname = config.hostname;
+      } else {
+        this.addForm.hostname = hostName;
+      }
+
+      if (config.user) {
+        this.addForm.sshUsername = config.user;
+      }
+
+      if (config.port) {
+        this.addForm.sshPort = config.port;
+      }
+
+      if (config.identityFile) {
+        this.addForm.sshAuthMethod = 'publicKey';
+        this.addForm.sshKeyPath = config.identityFile;
+        this.addForm.sshKeyImportMethod = 'file';
+      }
+
+      // Capture proxy settings
+      this.selectedHostProxyCommand = config.proxyCommand ?? null;
+      this.selectedHostProxyJump = config.proxyJump ?? null;
+
+      // Auto-fill system name if empty
+      if (!this.addForm.name) {
+        this.addForm.name = hostName;
+      }
+    } catch (err) {
+      console.error('Failed to get SSH host config:', err);
+      this.systemState.setError('Failed to load SSH host configuration');
+    }
   }
 
   async refresh(): Promise<void> {
@@ -297,6 +381,11 @@ export class SystemListComponent implements OnInit {
                     ? this.addForm.sshKeyContent
                     : null,
                 connectionTimeout: 30,
+                proxyCommand: this.selectedHostProxyCommand ?? null,
+                proxyJump: this.selectedHostProxyJump
+                  ? this.parseJumpHosts(this.selectedHostProxyJump)
+                  : null,
+                sshConfigHost: this.selectedSshHost || null,
               }
             : null,
       };
@@ -365,7 +454,57 @@ export class SystemListComponent implements OnInit {
     }
   }
 
+  /**
+   * Parse a ProxyJump string into JumpHost entries.
+   * Resolves host aliases against loaded SSH config hosts.
+   */
+  private parseJumpHosts(proxyJumpStr: string): JumpHost[] {
+    const hosts = this.sshHosts();
+    return proxyJumpStr.split(',').map(entry => {
+      const trimmed = entry.trim();
+
+      // Check if it's a known host alias
+      const knownHost = hosts.find(h => h.host === trimmed);
+      if (knownHost) {
+        return {
+          hostname: knownHost.hostname ?? trimmed,
+          port: knownHost.port ?? 22,
+          username: knownHost.user ?? 'root',
+          identityFile: knownHost.identityFile ?? null,
+        };
+      }
+
+      // Parse explicit user@host:port format
+      let username = 'root';
+      let hostname = trimmed;
+      let port = 22;
+
+      // Extract user@
+      const atIdx = hostname.indexOf('@');
+      if (atIdx !== -1) {
+        username = hostname.substring(0, atIdx);
+        hostname = hostname.substring(atIdx + 1);
+      }
+
+      // Extract :port
+      const colonIdx = hostname.lastIndexOf(':');
+      if (colonIdx !== -1) {
+        const portStr = hostname.substring(colonIdx + 1);
+        const parsed = parseInt(portStr, 10);
+        if (!isNaN(parsed)) {
+          port = parsed;
+          hostname = hostname.substring(0, colonIdx);
+        }
+      }
+
+      return { hostname, port, username, identityFile: null };
+    });
+  }
+
   private resetForm(): void {
+    this.selectedSshHost = '';
+    this.selectedHostProxyCommand = null;
+    this.selectedHostProxyJump = null;
     this.addForm = {
       name: '',
       hostname: '',
