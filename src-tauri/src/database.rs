@@ -772,7 +772,14 @@ pub fn get_ssh_credentials(conn: &Connection, system_id: &str) -> SqliteResult<S
     }
 }
 
-/// Delete SSH credentials for a system
+/// Removes any SSH credential record associated with the given system id.
+///
+/// # Examples
+///
+/// ```no_run
+/// // `conn` is an open rusqlite::Connection
+/// delete_ssh_credentials(&conn, "system-1").unwrap();
+/// ```
 pub fn delete_ssh_credentials(conn: &Connection, system_id: &str) -> SqliteResult<()> {
     conn.execute("DELETE FROM ssh_credentials WHERE system_id = ?1", [system_id])?;
     Ok(())
@@ -783,6 +790,20 @@ mod db_tests {
     use super::*;
     use std::collections::HashSet;
 
+    /// Creates and returns a Connection to a temporary SQLite database for use in tests.
+    ///
+    /// The temporary directory containing the database file is intentionally leaked so the
+    /// database file remains available for the lifetime of the test.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// let conn = setup_db();
+    /// conn.execute_batch("CREATE TABLE foo (id INTEGER PRIMARY KEY, name TEXT);").unwrap();
+    /// conn.execute("INSERT INTO foo (name) VALUES (?1)", ["alice"]).unwrap();
+    /// let count: i64 = conn.query_row("SELECT COUNT(*) FROM foo", [], |r| r.get(0)).unwrap();
+    /// assert_eq!(count, 1);
+    /// ```
     fn setup_db() -> Connection {
         let dir = tempfile::tempdir().unwrap();
         let db_path = dir.path().join("test.db");

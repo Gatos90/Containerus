@@ -24,6 +24,16 @@ mod tests {
     use super::*;
     use std::collections::HashMap;
 
+    /// Creates a sample `Network` populated with typical fields for tests.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// let net = make_network();
+    /// assert_eq!(net.id, "net-abc123");
+    /// assert_eq!(net.name, "my-network");
+    /// assert_eq!(net.labels.get("env").map(String::as_str), Some("dev"));
+    /// ```
     fn make_network() -> Network {
         Network {
             id: "net-abc123".to_string(),
@@ -39,6 +49,22 @@ mod tests {
         }
     }
 
+    /// Verifies that a `Network` serializes to JSON and deserializes back preserving core fields.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// let network = make_network();
+    /// let json = serde_json::to_string(&network).unwrap();
+    /// let deserialized: Network = serde_json::from_str(&json).unwrap();
+    ///
+    /// assert_eq!(deserialized.id, "net-abc123");
+    /// assert_eq!(deserialized.name, "my-network");
+    /// assert_eq!(deserialized.driver, "bridge");
+    /// assert_eq!(deserialized.scope, "local");
+    /// assert!(!deserialized.internal);
+    /// assert!(deserialized.attachable);
+    /// ```
     #[test]
     fn test_network_serialization_roundtrip() {
         let network = make_network();
@@ -74,6 +100,20 @@ mod tests {
         assert!(deserialized.internal);
     }
 
+    /// Verifies that a `Network` with `created_at` set to `None` remains `None` after JSON round-trip.
+    ///
+    /// Serializes a `Network` where the `created_at` field is `None`, deserializes it, and asserts the
+    /// deserialized value's `created_at` is still `None`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// let mut network = make_network();
+    /// network.created_at = None;
+    /// let json = serde_json::to_string(&network).unwrap();
+    /// let deserialized: Network = serde_json::from_str(&json).unwrap();
+    /// assert!(deserialized.created_at.is_none());
+    /// ```
     #[test]
     fn test_network_with_no_created_at() {
         let mut network = make_network();

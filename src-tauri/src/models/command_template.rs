@@ -1509,7 +1509,19 @@ pub fn category_to_str(cat: CommandCategory) -> &'static str {
     }
 }
 
-/// Helper to convert string to category enum
+/// Map a storage string to the corresponding command category.
+///
+/// Recognizes the following storage strings: `"container-management"`, `"debugging"`,
+/// `"networking"`, `"images"`, `"volumes"`, `"system"`, and `"pods"`. Any other value
+/// maps to the `Custom` category.
+///
+/// # Examples
+///
+/// ```
+/// assert_eq!(str_to_category("images"), CommandCategory::Images);
+/// assert_eq!(str_to_category("container-management"), CommandCategory::ContainerManagement);
+/// assert_eq!(str_to_category("unknown-value"), CommandCategory::Custom);
+/// ```
 pub fn str_to_category(s: &str) -> CommandCategory {
     match s {
         "container-management" => CommandCategory::ContainerManagement,
@@ -1681,6 +1693,32 @@ mod tests {
         assert_ne!(tpl1.id, tpl2.id);
     }
 
+    /// Verifies that `CommandTemplate::new_built_in` creates a built-in template with expected defaults and deterministic ID generation.
+    ///
+    /// Checks:
+    /// - `is_built_in` is `true` and `is_favorite` is `false`.
+    /// - Generated ID is normalized from the name and prefixed with `builtin-`.
+    /// - Provided tags are preserved.
+    /// - Default compatibility includes the two runtimes (Docker and Podman).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// let tpl = CommandTemplate::new_built_in(
+    ///     "Start Container",
+    ///     "Start a stopped container",
+    ///     "docker start ${CONTAINER_NAME}",
+    ///     CommandCategory::ContainerManagement,
+    ///     vec!["docker", "start"],
+    ///     vec![],
+    /// );
+    ///
+    /// assert!(tpl.is_built_in);
+    /// assert!(!tpl.is_favorite);
+    /// assert_eq!(tpl.id, "builtin-start-container");
+    /// assert_eq!(tpl.tags, vec!["docker", "start"]);
+    /// assert_eq!(tpl.compatibility.runtimes.len(), 2);
+    /// ```
     #[test]
     fn test_new_built_in() {
         let tpl = CommandTemplate::new_built_in(
@@ -1845,6 +1883,24 @@ mod tests {
         assert!(has_pods);
     }
 
+    /// Ensures built-in command templates for the Apple container runtime exist and are restricted to that runtime.
+    ///
+    /// This test asserts that at least one built-in template declares compatibility with the Apple runtime,
+    /// and that every template which lists Apple in its compatibility runtimes lists only Apple.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// let templates = get_built_in_templates();
+    /// let apple_templates: Vec<_> = templates.iter()
+    ///     .filter(|t| t.compatibility.runtimes.contains(&ContainerRuntime::Apple))
+    ///     .collect();
+    ///
+    /// assert!(!apple_templates.is_empty());
+    /// for tpl in &apple_templates {
+    ///     assert_eq!(tpl.compatibility.runtimes, vec![ContainerRuntime::Apple]);
+    /// }
+    /// ```
     #[test]
     fn test_built_in_templates_include_apple_runtime() {
         let templates = get_built_in_templates();
@@ -1859,6 +1915,10 @@ mod tests {
         }
     }
 
+    /// Verifies presence of built-in templates that are Podman-only and ensures they are categorized as Pods.
+    ///
+    /// Confirms at least one built-in template has `compatibility.runtimes == [ContainerRuntime::Podman]`
+    /// and asserts every such template has `category == CommandCategory::Pods`.
     #[test]
     fn test_built_in_templates_include_podman_only() {
         let templates = get_built_in_templates();

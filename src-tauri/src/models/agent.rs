@@ -112,6 +112,16 @@ pub enum AgentError {
 
 // Implement conversion from AgentError to String for Tauri
 impl From<AgentError> for String {
+    /// Convert an `AgentError` into its human-readable string representation.
+    ///
+    /// The produced string contains the variant-specific display message for the error.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// let s: String = AgentError::Internal("oops".into()).into();
+    /// assert_eq!(s, "Internal error: oops");
+    /// ```
     fn from(err: AgentError) -> Self {
         err.to_string()
     }
@@ -154,6 +164,21 @@ mod tests {
         assert_eq!(deserialized.dangerous_command_patterns.len(), 1);
     }
 
+    /// Verifies the `Display` output for several `AgentError` variants.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// assert_eq!(
+    ///     AgentError::SessionNotFound("s1".to_string()).to_string(),
+    ///     "Session not found: s1"
+    /// );
+    /// assert_eq!(AgentError::QueryCancelled.to_string(), "Query cancelled");
+    /// assert_eq!(AgentError::RateLimited.to_string(), "Rate limited");
+    /// assert_eq!(AgentError::ContextTooLarge.to_string(), "Context too large");
+    /// assert_eq!(AgentError::ConfirmationTimeout.to_string(), "Confirmation timeout");
+    /// assert_eq!(AgentError::ConfirmationRejected.to_string(), "Confirmation rejected");
+    /// ```
     #[test]
     fn test_agent_error_display() {
         assert_eq!(

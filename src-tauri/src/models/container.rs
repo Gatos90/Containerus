@@ -366,7 +366,23 @@ mod tests {
         assert_eq!(details.resource_limits.memory, container.resource_limits.memory);
     }
 
-    #[test]
+    /// Verifies that `PortMapping` serializes to JSON using camelCase field names and includes numeric port values.
+    ///
+    /// This test checks that the serialized JSON contains the `hostIp` key (camelCase) and the host port value.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// let pm = PortMapping {
+    ///     host_ip: "0.0.0.0".to_string(),
+    ///     host_port: 8080,
+    ///     container_port: 80,
+    ///     protocol: "tcp".to_string(),
+    /// };
+    /// let json = serde_json::to_string(&pm).unwrap();
+    /// assert!(json.contains("hostIp"));
+    /// assert!(json.contains("8080"));
+    /// ```
     fn test_port_mapping_serialization() {
         let pm = PortMapping {
             host_ip: "0.0.0.0".to_string(),
@@ -381,6 +397,20 @@ mod tests {
 }
 
 impl From<&Container> for ContainerDetails {
+    /// Creates a ContainerDetails by copying full-detail fields from a Container.
+    ///
+    /// Copies the detailed inspection fields (environment_variables, volumes,
+    /// network_settings, resource_limits, labels, restart_policy, health_check,
+    /// state, config, host_config) from the provided `Container` into a new
+    /// `ContainerDetails`.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// // Given a `Container` value `c`:
+    /// let details = ContainerDetails::from(&c);
+    /// // `details` now contains the detailed fields from `c`.
+    /// ```
     fn from(c: &Container) -> Self {
         Self {
             environment_variables: c.environment_variables.clone(),

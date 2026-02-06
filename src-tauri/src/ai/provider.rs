@@ -104,7 +104,28 @@ pub const SHELL_COMMAND_JSON_SCHEMA: &str = r#"{
   "required": ["command", "explanation", "is_dangerous", "requires_sudo", "affects_files", "alternatives"]
 }"#;
 
-/// Get the system prompt for shell command suggestions
+/// Generate a system prompt used to request shell command suggestions tailored to a target OS and shell.
+///
+/// When `json_mode` is `true`, the prompt instructs the model to return a single valid JSON object that conforms to the embedded shell command JSON schema (including fields such as `command`, `explanation`, `is_dangerous`, `requires_sudo`, `affects_files`, `alternatives`, and `warning`). When `json_mode` is `false`, the prompt instructs the model to output only the raw shell command (no markdown, code fences, or explanations) and provides rules for formatting and dangerous-command warnings.
+///
+/// # Parameters
+///
+/// - `os`: Target operating system name (for example, `"macOS"`).
+/// - `shell`: Shell name or environment (for example, `"zsh"`).
+/// - `json_mode`: If `true`, include the JSON schema and require JSON-formatted output; if `false`, require plain raw command output.
+///
+/// # Returns
+///
+/// A prompt string tailored to the provided `os`, `shell`, and `json_mode` that can be sent as a system prompt to an LLM to request shell command suggestions.
+///
+/// # Examples
+///
+/// ```
+/// let prompt = get_shell_system_prompt("macOS", "zsh", true);
+/// assert!(prompt.contains("You MUST respond with valid JSON"));
+/// let plain = get_shell_system_prompt("linux", "bash", false);
+/// assert!(plain.contains("Output ONLY the raw command"));
+/// ```
 pub fn get_shell_system_prompt(os: &str, shell: &str, json_mode: bool) -> String {
     if json_mode {
         format!(
@@ -321,7 +342,22 @@ mod tests {
     }
 }
 
-/// Strip markdown formatting from AI output
+/// Remove surrounding Markdown code fences or inline backticks and trim surrounding whitespace.
+///
+/// This function:
+/// - If the input is surrounded by a fenced code block (```...```), returns the inner content,
+///   skipping an optional language specifier line and trimming surrounding whitespace.
+/// - If the input is enclosed in single backticks and contains more than one character, removes those backticks.
+/// - Otherwise returns the input trimmed of leading and trailing whitespace.
+///
+/// # Examples
+///
+/// ```
+/// assert_eq!(strip_markdown("  `ls -la`  "), "ls -la");
+/// assert_eq!(strip_markdown("```bash\nls -la\n```"), "ls -la");
+/// // single backtick is preserved when length <= 2
+/// assert_eq!(strip_markdown("`"), "`");
+/// ```
 pub fn strip_markdown(text: &str) -> String {
     let mut result = text.trim().to_string();
 

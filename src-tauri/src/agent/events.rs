@@ -363,6 +363,17 @@ mod tests {
 
     // === ChunkType serialization ===
 
+    /// Verifies that each `ChunkType` variant serializes to the expected snake_case JSON string.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// assert_eq!(serde_json::to_value(ChunkType::Thinking).unwrap(), "thinking");
+    /// assert_eq!(serde_json::to_value(ChunkType::Text).unwrap(), "text");
+    /// assert_eq!(serde_json::to_value(ChunkType::Command).unwrap(), "command");
+    /// assert_eq!(serde_json::to_value(ChunkType::Explanation).unwrap(), "explanation");
+    /// assert_eq!(serde_json::to_value(ChunkType::Warning).unwrap(), "warning");
+    /// ```
     #[test]
     fn test_chunk_type_serialization() {
         assert_eq!(serde_json::to_value(ChunkType::Thinking).unwrap(), "thinking");
@@ -401,6 +412,23 @@ mod tests {
 
     // === AgentCommand deserialization ===
 
+    /// Verifies that a `userPrompt` JSON payload deserializes into `AgentCommand::UserPrompt` with the correct fields.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use serde_json::from_str;
+    /// let json = r#"{"type":"userPrompt","session_id":"s1","text":"help me"}"#;
+    /// let cmd: crate::AgentCommand = from_str(json).unwrap();
+    /// match cmd {
+    ///     crate::AgentCommand::UserPrompt { session_id, text, attached_blocks } => {
+    ///         assert_eq!(session_id, "s1");
+    ///         assert_eq!(text, "help me");
+    ///         assert!(attached_blocks.is_none());
+    ///     }
+    ///     _ => panic!("Expected UserPrompt"),
+    /// }
+    /// ```
     #[test]
     fn test_agent_command_user_prompt_deserialization() {
         let json = r#"{"type":"userPrompt","session_id":"s1","text":"help me"}"#;
@@ -470,6 +498,17 @@ mod tests {
 
     // === ConfirmationResponse deserialization ===
 
+    /// Verifies that a `ConfirmationResponse` is deserialized correctly from camelCase JSON.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// let json = r#"{"confirmationId":"c1","action":"approve"}"#;
+    /// let resp: crate::ConfirmationResponse = serde_json::from_str(json).unwrap();
+    /// assert_eq!(resp.confirmation_id, "c1");
+    /// assert!(matches!(resp.action, crate::ConfirmationAction::Approve));
+    /// assert!(resp.use_alternative.is_none());
+    /// ```
     #[test]
     fn test_confirmation_response_deserialization() {
         // ConfirmationResponse is a struct with rename_all = "camelCase"

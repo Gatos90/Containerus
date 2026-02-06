@@ -29,6 +29,18 @@ impl ContainerImage {
         }
     }
 
+    /// Formats the image size into a human-readable string using binary units (GB, MB, KB, B).
+    ///
+    /// - Values are scaled using powers of 1024.
+    /// - Sizes in GB, MB, and KB are shown with two decimal places; bytes are shown as integer `B`.
+    ///
+    /// # Examples
+    ///
+    /// ```ignore
+    /// // Given an image with 5 * 1024 bytes:
+    /// let image = /* ContainerImage with size = 5 * 1024 */ ;
+    /// assert_eq!(image.size_human(), "5.00 KB");
+    /// ```
     pub fn size_human(&self) -> String {
         const KB: i64 = 1024;
         const MB: i64 = KB * 1024;

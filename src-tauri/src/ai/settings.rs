@@ -108,9 +108,26 @@ impl AiSettings {
         }
     }
 
-    /// Get the effective summary model name
-    /// Returns the configured summary_model if set, otherwise returns a default
-    /// smaller/cheaper model for the current provider
+    /// Get the configured summary model or a provider-specific default.
+    ///
+    /// If `summary_model` is `Some`, that value is returned. Otherwise a smaller,
+    /// provider-appropriate default model name is returned to be used for
+    /// conversation summarization.
+    ///
+    /// # Returns
+    ///
+    /// The model name to use for summarization.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// let mut settings = crate::AiSettings::default();
+    /// // default provider is Ollama, so default summary model is "llama3.2:1b"
+    /// assert_eq!(settings.get_effective_summary_model(), "llama3.2:1b");
+    ///
+    /// settings.summary_model = Some("custom-summary-model".to_string());
+    /// assert_eq!(settings.get_effective_summary_model(), "custom-summary-model");
+    /// ```
     pub fn get_effective_summary_model(&self) -> String {
         if let Some(ref model) = self.summary_model {
             return model.clone();
@@ -267,6 +284,33 @@ mod tests {
         assert_eq!(provider, AiProviderType::AzureOpenAi);
     }
 
+    /// Verifies that `AiSettings` serializes to JSON and deserializes back, preserving configured fields.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// let settings = AiSettings {
+    ///     provider: AiProviderType::OpenAi,
+    ///     api_key: Some("sk-test-key".to_string()),
+    ///     model_name: "gpt-4o".to_string(),
+    ///     endpoint_url: "https://api.openai.com".to_string(),
+    ///     temperature: 0.7,
+    ///     max_tokens: 1024,
+    ///     memory_enabled: true,
+    ///     summary_model: Some("gpt-4o-mini".to_string()),
+    ///     summary_max_tokens: 200,
+    ///     api_version: None,
+    /// };
+    ///
+    /// let json = serde_json::to_string(&settings).unwrap();
+    /// let deserialized: AiSettings = serde_json::from_str(&json).unwrap();
+    ///
+    /// assert_eq!(deserialized.provider, settings.provider);
+    /// assert_eq!(deserialized.api_key.as_deref(), settings.api_key.as_deref());
+    /// assert_eq!(deserialized.model_name, settings.model_name);
+    /// assert_eq!(deserialized.max_tokens, settings.max_tokens);
+    /// assert!(deserialized.memory_enabled);
+    /// ```
     #[test]
     fn test_settings_serialization_roundtrip() {
         let settings = AiSettings {

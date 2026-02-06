@@ -751,7 +751,26 @@ impl AgentSessionManager {
             .map(|s| s.event_tx.clone())
     }
 
-    /// Get the shared context for a session (for use in agentic loop)
+    /// Retrieve the shared TerminalContext for the given agent session ID.
+    ///
+    /// Returns `Some(Arc<RwLock<TerminalContext>>)` if the session exists, or `None` if no session
+    /// with the provided ID is present.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # use std::sync::Arc;
+    /// # use tokio::sync::RwLock;
+    /// # // `manager` is an instance of `AgentSessionManager` with a session "sess" created.
+    /// # async fn example(manager: &crate::agent::session::AgentSessionManager) {
+    /// let ctx = manager.get_context("sess").await;
+    /// if let Some(ctx_arc) = ctx {
+    ///     let ctx = ctx_arc.read().await;
+    ///     // use `ctx` (TerminalContext) here
+    ///     let _cwd = &ctx.cwd;
+    /// }
+    /// # }
+    /// ```
     pub async fn get_context(
         &self,
         session_id: &str,
@@ -768,6 +787,20 @@ impl AgentSessionManager {
 mod tests {
     use super::*;
 
+    /// Creates a CommandHistoryEntry recording a command, its output, and exit code.
+    ///
+    /// The returned entry is populated with a new UUID `id`, the provided `command` and `output`,
+    /// the given `exit_code` wrapped in `Some(...)`, the current UTC timestamp in milliseconds,
+    /// and a default `duration_ms` of `100`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// let entry = make_command_entry("echo hello", "hello\n", 0);
+    /// assert_eq!(entry.command, "echo hello");
+    /// assert_eq!(entry.output, "hello\n");
+    /// assert_eq!(entry.exit_code, Some(0));
+    /// ```
     fn make_command_entry(command: &str, output: &str, exit_code: i32) -> CommandHistoryEntry {
         CommandHistoryEntry {
             id: Uuid::new_v4().to_string(),
@@ -779,6 +812,20 @@ mod tests {
         }
     }
 
+    /// Create an InputSummary from a text snippet, recording its content, creation time, and original length.
+    ///
+    /// The `timestamp` is the number of milliseconds since the Unix epoch (UTC). `original_length` is the
+    /// length of the provided `summary` in bytes (UTF-8 encoded).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// let s = "hello";
+    /// let summary = make_input_summary(s);
+    /// assert_eq!(summary.summary, "hello");
+    /// assert!(summary.timestamp > 0);
+    /// assert_eq!(summary.original_length, s.len());
+    /// ```
     fn make_input_summary(summary: &str) -> InputSummary {
         InputSummary {
             summary: summary.to_string(),
@@ -787,6 +834,21 @@ mod tests {
         }
     }
 
+    /// Create a ConversationTurn representing a user turn with the given input.
+    ///
+    /// The returned turn contains the provided `input` as `user_input`, an empty `tool_calls`
+    /// list, `ai_response` set to `None`, and a `timestamp` set to the current UTC time in milliseconds.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// let turn = make_conversation_turn("list files");
+    /// assert_eq!(turn.user_input, "list files");
+    /// assert!(turn.tool_calls.is_empty());
+    /// assert!(turn.ai_response.is_none());
+    /// // timestamp is set to a recent UTC milliseconds value
+    /// assert!(turn.timestamp > 0);
+    /// ```
     fn make_conversation_turn(input: &str) -> ConversationTurn {
         ConversationTurn {
             user_input: input.to_string(),
@@ -1358,6 +1420,19 @@ mod tests {
         assert_eq!(deserialized.content, "hello");
     }
 
+    /// Verifies that a `CommandHistoryEntry` serializes to JSON with expected field names and round-trips correctly.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// let entry = make_command_entry("ls -la", "total 42", 0);
+    /// let json = serde_json::to_string(&entry).unwrap();
+    /// assert!(json.contains("\"exitCode\""));
+    /// assert!(json.contains("\"durationMs\""));
+    ///
+    /// let deserialized: CommandHistoryEntry = serde_json::from_str(&json).unwrap();
+    /// assert_eq!(deserialized.command, "ls -la");
+    /// ```
     #[test]
     fn test_command_history_entry_serialization() {
         let entry = make_command_entry("ls -la", "total 42", 0);

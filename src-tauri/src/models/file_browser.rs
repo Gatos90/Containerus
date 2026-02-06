@@ -133,6 +133,26 @@ mod tests {
         assert!(!deserialized.is_binary);
     }
 
+    /// Verifies that a `FileEntry` marked as hidden sets the `is_hidden` flag.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// let entry = FileEntry {
+    ///     name: ".gitignore".to_string(),
+    ///     path: "/home/user/.gitignore".to_string(),
+    ///     file_type: FileType::File,
+    ///     size: 100,
+    ///     permissions: "-rw-r--r--".to_string(),
+    ///     owner: "user".to_string(),
+    ///     group: "staff".to_string(),
+    ///     modified: "2024-01-01T00:00:00Z".to_string(),
+    ///     symlink_target: None,
+    ///     is_hidden: true,
+    /// };
+    ///
+    /// assert!(entry.is_hidden);
+    /// ```
     #[test]
     fn test_hidden_file_entry() {
         let entry = FileEntry {
