@@ -1,11 +1,12 @@
 import { CommonModule } from '@angular/common';
-import { Component, computed, ElementRef, inject, OnDestroy, OnInit, signal, viewChild } from '@angular/core';
+import { Component, computed, inject, OnDestroy, OnInit, signal } from '@angular/core';
 import { NavigationEnd, Router, RouterOutlet } from '@angular/router';
 import { filter } from 'rxjs';
 import { SidebarComponent } from '../sidebar/sidebar.component';
 import { AppState } from '../../state/app.state';
 import { AiSettingsState } from '../../state/ai-settings.state';
 import { TerminalState } from '../../state/terminal.state';
+import { UpdateState } from '../../state/update.state';
 import { TerminalWorkspaceComponent } from '../../shared/components/terminal-workspace/terminal-workspace.component';
 
 @Component({
@@ -17,6 +18,7 @@ export class MainLayoutComponent implements OnInit, OnDestroy {
   readonly appState = inject(AppState);
   private aiSettingsState = inject(AiSettingsState);
   readonly terminalState = inject(TerminalState);
+  readonly updateState = inject(UpdateState);
   private router = inject(Router);
 
   private currentUrl = signal(this.router.url);
@@ -52,6 +54,8 @@ export class MainLayoutComponent implements OnInit, OnDestroy {
       this.appState.initialize(),
       this.aiSettingsState.init(),
     ]);
+    // Check for updates after app is initialized (non-blocking)
+    this.updateState.checkForUpdate();
   }
 
   ngOnDestroy(): void {

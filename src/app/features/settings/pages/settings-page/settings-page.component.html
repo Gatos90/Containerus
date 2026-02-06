@@ -12,6 +12,17 @@
   <div class="flex border-b border-zinc-800 mb-6">
     <button
       type="button"
+      (click)="activeTab.set('general')"
+      class="px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px"
+      [class]="activeTab() === 'general'
+        ? 'border-blue-500 text-blue-500'
+        : 'border-transparent text-zinc-400 hover:text-zinc-300'"
+    >
+      <lucide-icon [img]="Info" class="w-4 h-4 inline mr-1.5"></lucide-icon>
+      General
+    </button>
+    <button
+      type="button"
       (click)="activeTab.set('ai')"
       class="px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px"
       [class]="activeTab() === 'ai'
@@ -33,6 +44,63 @@
       SSH
     </button>
   </div>
+
+  <!-- ================================================================ -->
+  <!-- General Tab -->
+  <!-- ================================================================ -->
+  @if (activeTab() === 'general') {
+    <!-- Version & Updates -->
+    <div class="bg-zinc-900 rounded-lg border border-zinc-800 p-6 mb-6">
+      <h2 class="text-lg font-semibold text-zinc-100 mb-4 flex items-center gap-2">
+        <lucide-icon [img]="Info" class="w-5 h-5"></lucide-icon>
+        About
+      </h2>
+
+      <div class="space-y-4">
+        <!-- Current Version -->
+        <div class="flex items-center justify-between">
+          <div>
+            <span class="text-sm text-zinc-400">Version</span>
+            <p class="text-zinc-100 font-mono">{{ appVersion() || '...' }}</p>
+          </div>
+          <button
+            type="button"
+            (click)="updateState.checkForUpdate()"
+            class="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm border border-zinc-700 hover:bg-zinc-800 transition-colors"
+          >
+            <lucide-icon [img]="RefreshCw" class="w-3.5 h-3.5"></lucide-icon>
+            Check for Updates
+          </button>
+        </div>
+
+        <!-- Update Status -->
+        @if (updateState.updateAvailable()) {
+          <div class="flex items-center justify-between bg-blue-900/30 border border-blue-800/50 rounded-lg px-4 py-3">
+            <div>
+              <p class="text-sm text-blue-200">New version available</p>
+              <p class="text-blue-100 font-mono font-medium">v{{ updateState.updateVersion() }}</p>
+            </div>
+            @if (updateState.downloading()) {
+              <span class="text-sm text-blue-300 animate-pulse">Downloading...</span>
+            } @else {
+              <button
+                type="button"
+                (click)="updateState.downloadAndInstall()"
+                class="px-4 py-1.5 rounded-lg text-sm bg-blue-600 hover:bg-blue-500 text-white transition-colors"
+              >
+                Update Now
+              </button>
+            }
+          </div>
+        } @else {
+          <div class="flex items-center gap-2 text-sm text-zinc-500">
+            <lucide-icon [img]="CheckCircle2" class="w-4 h-4 text-green-500"></lucide-icon>
+            You're on the latest version
+          </div>
+        }
+      </div>
+    </div>
+  }
 
   <!-- ================================================================ -->
   <!-- AI Tab -->

@@ -34,6 +34,7 @@ import { open } from '@tauri-apps/plugin-dialog';
 import { AiService } from '../../../../core/services/ai.service';
 import { SystemService } from '../../../../core/services/system.service';
 import { AiSettingsState } from '../../../../state/ai-settings.state';
+import { UpdateState } from '../../../../state/update.state';
 import {
   AI_PROVIDERS,
   AiModel,
@@ -52,6 +53,7 @@ export class SettingsPageComponent implements OnInit {
   private aiState = inject(AiSettingsState);
   private aiService = inject(AiService);
   private systemService = inject(SystemService);
+  readonly updateState = inject(UpdateState);
 
   // Icons
   readonly Settings = Settings;
@@ -75,7 +77,10 @@ export class SettingsPageComponent implements OnInit {
   readonly Minus = Minus;
 
   // Tab state
-  activeTab = signal<'ai' | 'ssh'>('ai');
+  activeTab = signal<'ai' | 'ssh' | 'general'>('ai');
+
+  // App version
+  appVersion = signal<string>('');
 
   // Available providers
   readonly providers = AI_PROVIDERS;
@@ -177,6 +182,16 @@ export class SettingsPageComponent implements OnInit {
   ngOnInit(): void {
     this.loadSettings();
     this.loadSshSettings();
+    this.loadVersion();
+  }
+
+  private async loadVersion(): Promise<void> {
+    try {
+      const { getVersion } = await import('@tauri-apps/api/app');
+      this.appVersion.set(await getVersion());
+    } catch {
+      this.appVersion.set('unknown');
+    }
   }
 
   async loadSettings(): Promise<void> {
