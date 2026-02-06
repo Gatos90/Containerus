@@ -291,6 +291,14 @@
                 <lucide-icon [img]="Terminal" class="w-3.5 h-3.5"></lucide-icon>
                 Terminal
               </a>
+              <a
+                [routerLink]="['/files', container.systemId, container.id]"
+                [queryParams]="{ runtime: container.runtime }"
+                class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-zinc-600 text-zinc-300 text-sm hover:bg-zinc-700 transition-colors"
+              >
+                <lucide-icon [img]="FolderOpen" class="w-3.5 h-3.5"></lucide-icon>
+                Files
+              </a>
             } @else {
               <button
                 (click)="performAction(container, 'start')"

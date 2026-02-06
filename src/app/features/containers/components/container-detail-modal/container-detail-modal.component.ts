@@ -10,6 +10,7 @@ import {
   X,
   Terminal,
   FileText,
+  FolderOpen,
 } from 'lucide-angular';
 import {
   Container,
@@ -34,6 +35,7 @@ export class ContainerDetailModalComponent {
   readonly X = X;
   readonly Terminal = Terminal;
   readonly FileText = FileText;
+  readonly FolderOpen = FolderOpen;
 
   readonly getDisplayName = getDisplayName;
   readonly getStatusText = getStatusText;

@@ -45,6 +45,27 @@ export const routes: Routes = [
       ),
   },
   {
+    path: 'files',
+    loadComponent: () =>
+      import('./features/file-browser/file-browser-view/file-browser-view.component').then(
+        (m) => m.FileBrowserViewComponent
+      ),
+  },
+  {
+    path: 'files/:systemId',
+    loadComponent: () =>
+      import('./features/file-browser/file-browser-view/file-browser-view.component').then(
+        (m) => m.FileBrowserViewComponent
+      ),
+  },
+  {
+    path: 'files/:systemId/:containerId',
+    loadComponent: () =>
+      import('./features/file-browser/file-browser-view/file-browser-view.component').then(
+        (m) => m.FileBrowserViewComponent
+      ),
+  },
+  {
     path: 'terminal',
     loadComponent: () =>
       import('./features/terminal/terminal-view/terminal-view.component').then(

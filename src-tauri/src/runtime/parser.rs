@@ -2005,6 +2005,126 @@ impl OutputParser {
         }
     }
 
+    // ========================================================================
+    // File Browser Parsing
+    // ========================================================================
+
+    /// Parse `ls -la` output into structured file entries.
+    /// Handles both GNU (--time-style=long-iso) and BSD formats.
+    pub fn parse_directory_listing(
+        output: &str,
+        base_path: &str,
+    ) -> Result<Vec<crate::models::file_browser::FileEntry>, ContainerError> {
+        use crate::models::file_browser::{FileEntry, FileType};
+
+        let mut entries = Vec::new();
+        let base = if base_path.ends_with('/') {
+            base_path.trim_end_matches('/')
+        } else {
+            base_path
+        };
+
+        for line in output.lines() {
+            let trimmed = line.trim();
+            // Skip empty lines, "total" line
+            if trimmed.is_empty() || trimmed.starts_with("total ") {
+                continue;
+            }
+
+            // Minimum valid ls -la line must start with a permission char
+            let first_char = match trimmed.chars().next() {
+                Some(c) if "dlcbps-".contains(c) => c,
+                _ => continue,
+            };
+
+            let file_type = match first_char {
+                'd' => FileType::Directory,
+                'l' => FileType::Symlink,
+                '-' => FileType::File,
+                _ => FileType::Other,
+            };
+
+            // Use split_whitespace to correctly handle multiple consecutive spaces
+            let parts: Vec<&str> = trimmed.split_whitespace().collect();
+
+            // Need at least: perms links owner group size date time name (GNU = 8 parts)
+            if parts.len() < 8 {
+                continue;
+            }
+
+            let permissions = if parts[0].len() > 1 {
+                parts[0][1..].to_string()
+            } else {
+                continue;
+            };
+            let owner = parts[2].to_string();
+            let group = parts[3].to_string();
+            let size: u64 = parts[4].parse().unwrap_or(0);
+
+            // Determine GNU vs BSD format and extract date + name
+            //
+            // GNU --time-style=long-iso:
+            //   parts[5]="2024-01-15" parts[6]="10:30" parts[7..]="name"
+            //
+            // BSD ls -laT (macOS):
+            //   parts[5]="Jul" parts[6]="20" parts[7]="09:19:46" parts[8]="2025" parts[9..]="name"
+            //
+            // BSD ls -la (no -T, older files show year instead of time):
+            //   parts[5]="Aug" parts[6]="6" parts[7]="2023" parts[8..]="name"
+            //   OR with time: parts[5]="Jan" parts[6]="15" parts[7]="10:30" parts[8..]="name"
+            let (modified, name_start_idx) = if parts[5].contains('-') && parts[5].len() == 10 {
+                // GNU format: date + time, name starts at index 7
+                (format!("{} {}", parts[5], parts[6]), 7)
+            } else if parts.len() >= 10 && parts[7].contains(':') && parts[8].chars().all(|c| c.is_ascii_digit()) {
+                // BSD -T format: month day time year, name starts at index 9
+                (format!("{} {} {} {}", parts[5], parts[6], parts[7], parts[8]), 9)
+            } else {
+                // BSD without -T: month day (time|year), name starts at index 8
+                (format!("{} {} {}", parts[5], parts[6], parts[7]), 8)
+            };
+
+            if name_start_idx >= parts.len() {
+                continue;
+            }
+
+            let name_raw = parts[name_start_idx..].join(" ");
+
+            // Handle symlinks: "name -> target"
+            let (name, symlink_target) = if file_type == FileType::Symlink {
+                if let Some(idx) = name_raw.find(" -> ") {
+                    (name_raw[..idx].to_string(), Some(name_raw[idx + 4..].to_string()))
+                } else {
+                    (name_raw, None)
+                }
+            } else {
+                (name_raw, None)
+            };
+
+            // Skip . and ..
+            if name == "." || name == ".." {
+                continue;
+            }
+
+            let is_hidden = name.starts_with('.');
+            let path = format!("{}/{}", base, name);
+
+            entries.push(FileEntry {
+                name,
+                path,
+                file_type,
+                size,
+                permissions,
+                owner,
+                group,
+                modified,
+                symlink_target,
+                is_hidden,
+            });
+        }
+
+        Ok(entries)
+    }
+
     /// Format bytes to human-readable string (e.g., "8.5G")
     fn format_bytes(bytes: u64) -> String {
         const KB: u64 = 1024;
@@ -2060,5 +2180,64 @@ mod tests {
         assert_eq!(OutputParser::parse_size_string("1.5GB"), Some(1610612736));
         assert_eq!(OutputParser::parse_size_string("100MB"), Some(104857600));
         assert_eq!(OutputParser::parse_size_string("1024KB"), Some(1048576));
+    }
+
+    #[test]
+    fn test_parse_directory_listing_bsd() {
+        // macOS ls -laT format
+        let output = r#"total 11
+drwxr-xr-x  22 root  wheel   704 Jul 20 09:19:46 2025 .
+drwxr-xr-x  22 root  wheel   704 Jul 20 09:19:46 2025 ..
+lrwxr-xr-x   1 root  admin    36 Jul 20 09:19:46 2025 .VolumeIcon.icns -> System/Volumes/Data/.VolumeIcon.icns
+----------   1 root  admin     0 Jul 20 09:19:46 2025 .file
+drwxrwxr-x  29 root  admin   928 Feb  3 22:39:50 2026 Applications
+drwxr-xr-x@ 10 root  wheel   320 Jul 20 09:19:46 2025 System
+drwxr-xr-x   5 root  admin   160 Aug  1 18:36:16 2025 Users
+lrwxr-xr-x@  1 root  wheel    11 Jul 20 09:19:46 2025 etc -> private/etc"#;
+
+        let entries = OutputParser::parse_directory_listing(output, "/").unwrap();
+        // . and .. are skipped, so we expect 6 entries
+        assert_eq!(entries.len(), 6);
+
+        // Check .VolumeIcon.icns (symlink, hidden)
+        let vi = entries.iter().find(|e| e.name == ".VolumeIcon.icns").unwrap();
+        assert_eq!(vi.file_type, crate::models::file_browser::FileType::Symlink);
+        assert!(vi.is_hidden);
+        assert_eq!(vi.symlink_target.as_deref(), Some("System/Volumes/Data/.VolumeIcon.icns"));
+
+        // Check Applications (directory)
+        let apps = entries.iter().find(|e| e.name == "Applications").unwrap();
+        assert_eq!(apps.file_type, crate::models::file_browser::FileType::Directory);
+        assert_eq!(apps.size, 928);
+        assert_eq!(apps.owner, "root");
+        assert_eq!(apps.path, "/Applications");
+        assert!(!apps.is_hidden);
+
+        // Check etc (symlink)
+        let etc = entries.iter().find(|e| e.name == "etc").unwrap();
+        assert_eq!(etc.symlink_target.as_deref(), Some("private/etc"));
+    }
+
+    #[test]
+    fn test_parse_directory_listing_gnu() {
+        // GNU ls --time-style=long-iso format
+        let output = r#"total 48
+drwxr-xr-x  5 user group  4096 2024-01-15 10:30 .
+drwxr-xr-x 12 user group  4096 2024-01-15 09:00 ..
+-rw-r--r--  1 user group  1234 2024-01-15 10:30 readme.md
+drwxr-xr-x  2 user group  4096 2024-01-10 08:15 src
+lrwxrwxrwx  1 user group     6 2024-01-15 10:30 link -> target"#;
+
+        let entries = OutputParser::parse_directory_listing(output, "/home/user").unwrap();
+        assert_eq!(entries.len(), 3);
+
+        let readme = entries.iter().find(|e| e.name == "readme.md").unwrap();
+        assert_eq!(readme.file_type, crate::models::file_browser::FileType::File);
+        assert_eq!(readme.size, 1234);
+        assert_eq!(readme.path, "/home/user/readme.md");
+        assert_eq!(readme.modified, "2024-01-15 10:30");
+
+        let link = entries.iter().find(|e| e.name == "link").unwrap();
+        assert_eq!(link.symlink_target.as_deref(), Some("target"));
     }
 }

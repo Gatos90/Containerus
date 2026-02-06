@@ -26,6 +26,7 @@ import {
   SlidersHorizontal,
   X,
   Link,
+  FolderOpen,
 } from 'lucide-angular';
 import {
   Container,
@@ -76,6 +77,7 @@ export class ContainerListComponent implements OnInit {
   readonly Trash2 = Trash2;
   readonly Terminal = Terminal;
   readonly FileText = FileText;
+  readonly FolderOpen = FolderOpen;
   readonly Search = Search;
   readonly RefreshCw = RefreshCw;
   readonly Info = Info;

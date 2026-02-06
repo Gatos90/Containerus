@@ -1,7 +1,14 @@
+:host {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
 .terminal-workspace {
   display: flex;
   flex-direction: column;
-  height: 100%;
+  flex: 1;
+  min-height: 0;
   background: #09090b;
 }
 
@@ -11,7 +18,8 @@
   flex: 1;
   gap: 2px;
   background: #27272a;
-  min-height: 200px;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .workspace-grid.single {
@@ -73,6 +81,21 @@
 }
 
 .warp-overlay app-warp-terminal-view {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+}
+
+/* File browser in a slot */
+.file-browser-slot-content {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.file-browser-slot-content app-file-browser-view {
   flex: 1;
   min-height: 0;
   height: 100%;

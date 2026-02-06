@@ -22,20 +22,22 @@ import {
   Maximize2,
   Minimize2,
   Sparkles,
+  FolderOpen,
 } from 'lucide-angular';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { SearchAddon } from '@xterm/addon-search';
 import { WebLinksAddon } from '@xterm/addon-web-links';
-import { TerminalState, DockedTerminal, LayoutMode } from '../../../state/terminal.state';
+import { TerminalState, DockedTerminal, DockedFileBrowser, LayoutMode } from '../../../state/terminal.state';
 import { TerminalService } from '../../../core/services/terminal.service';
 import { WarpTerminalViewComponent } from '../../../features/warp-terminal/warp-terminal-view/warp-terminal-view.component';
+import { FileBrowserViewComponent } from '../../../features/file-browser/file-browser-view/file-browser-view.component';
 
 @Component({
   selector: 'app-terminal-workspace',
   templateUrl: './terminal-workspace.component.html',
   styleUrl: './terminal-workspace.component.css',
-  imports: [CommonModule, LucideAngularModule, WarpTerminalViewComponent],
+  imports: [CommonModule, LucideAngularModule, WarpTerminalViewComponent, FileBrowserViewComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class TerminalWorkspaceComponent implements AfterViewInit, OnDestroy {
@@ -54,6 +56,7 @@ export class TerminalWorkspaceComponent implements AfterViewInit, OnDestroy {
   readonly Maximize2 = Maximize2;
   readonly Minimize2 = Minimize2;
   readonly Sparkles = Sparkles;
+  readonly FolderOpen = FolderOpen;
 
   private resizeObservers = new Map<number, ResizeObserver>();
   private attachedTerminals = new Map<string, number>();
@@ -72,7 +75,7 @@ export class TerminalWorkspaceComponent implements AfterViewInit, OnDestroy {
 
       // Extract just the IDs and slot assignments to detect structural changes
       const currentIds = new Set(terminals.map(t => t.id));
-      const currentSlotAssignments = slots.map(s => s.terminalId ?? '');
+      const currentSlotAssignments = slots.map(s => `${s.contentType}:${s.contentId ?? ''}`);
 
       // Detect structural changes only
       const terminalCountChanged = currentIds.size !== this.lastTerminalIds.size;
@@ -120,24 +123,35 @@ export class TerminalWorkspaceComponent implements AfterViewInit, OnDestroy {
     const hosts = this.terminalHosts.toArray();
     const slots = this.terminalState.slots();
 
-    slots.forEach((slot, index) => {
-      if (!slot.terminalId || !hosts[index]) return;
+    // Build a map of slotIndex -> host element using data attribute
+    // (indices may not match when file browsers occupy some slots)
+    const hostMap = new Map<number, ElementRef<HTMLDivElement>>();
+    for (const host of hosts) {
+      const slotAttr = host.nativeElement.getAttribute('data-slot-index');
+      if (slotAttr !== null) {
+        hostMap.set(parseInt(slotAttr, 10), host);
+      }
+    }
 
-      const terminal = this.terminalState.getTerminalById(slot.terminalId);
+    slots.forEach((slot, index) => {
+      if (slot.contentType !== 'terminal' || !slot.contentId) return;
+
+      const host = hostMap.get(index);
+      if (!host) return;
+
+      const terminal = this.terminalState.getTerminalById(slot.contentId);
       if (!terminal) return;
 
-      // Always attach xterm regardless of displayMode - it needs to receive PTY output
-      // In warp mode, xterm is hidden via CSS but still captures output
-      const hostElement = hosts[index].nativeElement;
+      const hostElement = host.nativeElement;
 
       // Check if already attached to this host
-      if (this.attachedTerminals.get(slot.terminalId) === index) {
+      if (this.attachedTerminals.get(slot.contentId) === index) {
         return;
       }
 
       // Re-attach terminal to new host
       this.attachTerminalToElement(terminal, hostElement, index);
-      this.attachedTerminals.set(slot.terminalId, index);
+      this.attachedTerminals.set(slot.contentId, index);
     });
   }
 
@@ -286,6 +300,14 @@ export class TerminalWorkspaceComponent implements AfterViewInit, OnDestroy {
     return this.terminalState.getTerminalForSlot(index);
   }
 
+  getFileBrowserForSlot(index: number): DockedFileBrowser | null {
+    return this.terminalState.getFileBrowserForSlot(index);
+  }
+
+  isFileBrowserInSlot(id: string): boolean {
+    return this.terminalState.isFileBrowserInSlot(id);
+  }
+
   setLayout(mode: LayoutMode): void {
     this.terminalState.setLayoutMode(mode);
     // Need to re-attach terminals after layout change
@@ -349,5 +371,20 @@ export class TerminalWorkspaceComponent implements AfterViewInit, OnDestroy {
     if (dockedTerminal?.terminal) {
       dockedTerminal.terminal.focus();
     }
+  }
+
+  // --- File Browser Dock ---
+
+  openFileBrowser(fb: DockedFileBrowser): void {
+    this.terminalState.focusFileBrowser(fb.id);
+  }
+
+  closeFileBrowser(id: string, event: Event): void {
+    event.stopPropagation();
+    this.terminalState.removeFileBrowser(id);
+  }
+
+  trackByFileBrowserId(_: number, fb: DockedFileBrowser): string {
+    return fb.id;
   }
 }

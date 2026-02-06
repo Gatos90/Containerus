@@ -1,0 +1,405 @@
+<!-- No system selected: show system picker -->
+@if (!systemId) {
+  <div class="p-3 sm:p-4 md:p-6 space-y-4">
+    <div>
+      <h1 class="text-xl sm:text-2xl font-bold">File Browser</h1>
+      <p class="text-sm text-zinc-400 mt-1">Select a connected system to browse files</p>
+    </div>
+
+    @if (systemState.connectedSystems().length === 0) {
+      <div class="flex flex-col items-center justify-center py-16 text-zinc-500">
+        <lucide-icon [img]="FolderOpen" class="w-12 h-12 mb-3 text-zinc-600"></lucide-icon>
+        <p class="text-sm">No systems connected</p>
+        <p class="text-xs text-zinc-600 mt-1">Connect to a system first to browse its files</p>
+      </div>
+    } @else {
+      <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        @for (system of systemState.connectedSystems(); track system.id) {
+          <button
+            (click)="selectSystem(system.id)"
+            class="flex items-center gap-3 p-4 rounded-xl border border-zinc-700 hover:border-zinc-600 hover:bg-zinc-800/50 transition-colors text-left"
+          >
+            <span class="w-2.5 h-2.5 rounded-full bg-green-500 flex-shrink-0"></span>
+            <div class="min-w-0">
+              <div class="font-medium truncate">{{ system.name }}</div>
+              <div class="text-xs text-zinc-500 truncate">{{ system.hostname }}</div>
+            </div>
+            <lucide-icon [img]="ChevronRight" class="w-4 h-4 text-zinc-500 ml-auto flex-shrink-0"></lucide-icon>
+          </button>
+        }
+      </div>
+    }
+  </div>
+} @else {
+  <!-- File Browser -->
+  <div class="flex flex-col h-full">
+    <!-- Context header -->
+    <div class="flex items-center justify-between px-3 py-2 bg-zinc-900/80 border-b border-zinc-800 flex-shrink-0">
+      <div class="flex items-center gap-2 min-w-0">
+        <div class="w-2 h-2 rounded-full bg-green-500 flex-shrink-0"></div>
+        <span class="text-sm font-medium truncate">{{ getSystemName() }}</span>
+        @if (getContainerName()) {
+          <span class="text-xs text-zinc-500">/</span>
+          <span class="text-sm text-blue-400 truncate">{{ getContainerName() }}</span>
+        } @else {
+          <span class="text-xs text-zinc-500">(host filesystem)</span>
+        }
+      </div>
+      @if (!embedded) {
+        <button
+          (click)="popOutToDock()"
+          class="p-1.5 rounded-lg hover:bg-zinc-800 transition-colors flex-shrink-0"
+          title="Pop out to dock"
+        >
+          <lucide-icon [img]="PanelBottomOpen" class="w-4 h-4"></lucide-icon>
+        </button>
+      }
+    </div>
+
+    <!-- Toolbar -->
+    <div class="flex items-center gap-2 px-3 py-2 border-b border-zinc-800 flex-shrink-0">
+      <!-- Navigation buttons -->
+      <button
+        (click)="state.goBack()"
+        [disabled]="!state.canGoBack()"
+        class="p-1.5 rounded-lg hover:bg-zinc-800 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+        title="Back"
+      >
+        <lucide-icon [img]="ArrowLeft" class="w-4 h-4"></lucide-icon>
+      </button>
+      <button
+        (click)="state.goForward()"
+        [disabled]="!state.canGoForward()"
+        class="p-1.5 rounded-lg hover:bg-zinc-800 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+        title="Forward"
+      >
+        <lucide-icon [img]="ArrowRight" class="w-4 h-4"></lucide-icon>
+      </button>
+      <button
+        (click)="state.goUp()"
+        [disabled]="!state.parentPath()"
+        class="p-1.5 rounded-lg hover:bg-zinc-800 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+        title="Up"
+      >
+        <lucide-icon [img]="ArrowUp" class="w-4 h-4"></lucide-icon>
+      </button>
+
+      <!-- Breadcrumbs -->
+      <div class="flex items-center gap-0.5 min-w-0 flex-1 overflow-x-auto text-sm">
+        @for (crumb of state.breadcrumbs(); track crumb.path; let last = $last) {
+          <button
+            (click)="state.navigateTo(crumb.path)"
+            class="px-1.5 py-0.5 rounded hover:bg-zinc-800 transition-colors whitespace-nowrap"
+            [class.text-white]="last"
+            [class.text-zinc-400]="!last"
+            [class.font-medium]="last"
+          >
+            {{ crumb.name }}
+          </button>
+          @if (!last) {
+            <lucide-icon [img]="ChevronRight" class="w-3 h-3 text-zinc-600 flex-shrink-0"></lucide-icon>
+          }
+        }
+      </div>
+
+      <!-- Right side actions -->
+      <div class="flex items-center gap-1 flex-shrink-0">
+        <!-- Search -->
+        <div class="relative hidden sm:block">
+          <lucide-icon [img]="Search" class="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-500"></lucide-icon>
+          <input
+            type="text"
+            placeholder="Filter..."
+            [ngModel]="state.searchQuery()"
+            (ngModelChange)="state.setSearchQuery($event)"
+            class="h-7 w-36 pl-7 pr-2 bg-zinc-800 border border-zinc-700 rounded-md text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+          />
+        </div>
+
+        <!-- Toggle hidden -->
+        <button
+          (click)="state.toggleHiddenFiles()"
+          class="p-1.5 rounded-lg hover:bg-zinc-800 transition-colors"
+          [title]="state.showHiddenFiles() ? 'Hide hidden files' : 'Show hidden files'"
+        >
+          <lucide-icon [img]="state.showHiddenFiles() ? EyeOff : Eye" class="w-4 h-4" [class.text-blue-400]="state.showHiddenFiles()"></lucide-icon>
+        </button>
+
+        <!-- Upload -->
+        <button
+          (click)="uploadFile()"
+          class="p-1.5 rounded-lg hover:bg-zinc-800 transition-colors"
+          title="Upload file"
+        >
+          <lucide-icon [img]="Upload" class="w-4 h-4"></lucide-icon>
+        </button>
+
+        <!-- New folder -->
+        <button
+          (click)="showCreateDirDialog.set(true)"
+          class="p-1.5 rounded-lg hover:bg-zinc-800 transition-colors"
+          title="New folder"
+        >
+          <lucide-icon [img]="FolderPlus" class="w-4 h-4"></lucide-icon>
+        </button>
+
+        <!-- Refresh -->
+        <button
+          (click)="refresh()"
+          class="p-1.5 rounded-lg hover:bg-zinc-800 transition-colors"
+          title="Refresh"
+        >
+          <lucide-icon [img]="RefreshCw" class="w-4 h-4" [class.animate-spin]="refreshing()"></lucide-icon>
+        </button>
+      </div>
+    </div>
+
+    <!-- Error banner -->
+    @if (state.error()) {
+      <div class="flex items-center justify-between px-4 py-2 bg-red-900/30 border-b border-red-800/50 text-sm text-red-300">
+        <span>{{ state.error() }}</span>
+        <button (click)="state.clearError()" class="p-1 hover:bg-red-800/50 rounded">
+          <lucide-icon [img]="X" class="w-3.5 h-3.5"></lucide-icon>
+        </button>
+      </div>
+    }
+
+    <!-- File list -->
+    <div class="flex-1 overflow-auto min-h-0">
+      @if (state.loading()) {
+        <div class="flex items-center justify-center py-16">
+          <lucide-icon [img]="RefreshCw" class="w-5 h-5 animate-spin text-zinc-500"></lucide-icon>
+          <span class="ml-2 text-sm text-zinc-500">Loading...</span>
+        </div>
+      } @else if (state.visibleEntries().length === 0) {
+        <div class="flex flex-col items-center justify-center py-16 text-zinc-500">
+          <lucide-icon [img]="FolderOpen" class="w-10 h-10 mb-2 text-zinc-600"></lucide-icon>
+          <p class="text-sm">
+            @if (state.searchQuery()) {
+              No matching files
+            } @else {
+              This directory is empty
+            }
+          </p>
+        </div>
+      } @else {
+        <!-- Table header -->
+        <div class="flex items-center px-3 py-1.5 text-[11px] text-zinc-500 uppercase tracking-wider border-b border-zinc-800/50 sticky top-0 bg-zinc-900 z-10">
+          <button (click)="state.setSortOption('name')" class="flex-1 text-left hover:text-zinc-300 transition-colors">
+            Name{{ getSortIcon('name') }}
+          </button>
+          @if (!embedded) {
+            <button (click)="state.setSortOption('size')" class="w-20 text-right hover:text-zinc-300 transition-colors hidden sm:block">
+              Size{{ getSortIcon('size') }}
+            </button>
+          }
+          <button (click)="state.setSortOption('modified')" class="w-36 text-right hover:text-zinc-300 transition-colors hidden md:block">
+            Modified{{ getSortIcon('modified') }}
+          </button>
+          <div class="w-24 text-right hidden lg:block">Permissions</div>
+          <div class="w-20 text-right hidden lg:block">Owner</div>
+          <div class="w-10"></div>
+        </div>
+
+        <!-- File entries -->
+        @for (entry of state.visibleEntries(); track entry.path) {
+          <div
+            class="group flex items-center px-3 py-1.5 hover:bg-zinc-800/50 transition-colors cursor-pointer border-b border-zinc-800/30"
+            [class.bg-zinc-800/30]="state.selectedEntry()?.path === entry.path"
+            [title]="embedded && entry.fileType !== 'directory' ? formatSize(entry.size) : ''"
+            (click)="state.selectEntry(entry)"
+            (dblclick)="navigateToEntry(entry)"
+            (contextmenu)="onContextMenu($event, entry)"
+          >
+            <!-- Icon + Name -->
+            <div class="flex items-center gap-2 flex-1 min-w-0">
+              <lucide-icon [img]="getIcon(entry)" class="w-4 h-4 flex-shrink-0" [class]="getIconColor(entry)"></lucide-icon>
+
+              @if (renameEntry()?.path === entry.path) {
+                <input
+                  [value]="renameValue()"
+                  (input)="renameValue.set($any($event.target).value)"
+                  (keydown.enter)="confirmRename()"
+                  (keydown.escape)="cancelRename()"
+                  (blur)="confirmRename()"
+                  class="flex-1 h-6 px-1.5 bg-zinc-800 border border-blue-500 rounded text-sm focus:outline-none"
+                  #renameInput
+                />
+              } @else {
+                <span class="text-sm truncate" [class.text-zinc-400]="entry.fileType === 'symlink'">
+                  {{ entry.name }}
+                </span>
+                @if (entry.symlinkTarget) {
+                  <span class="text-xs text-zinc-600 truncate hidden md:inline">→ {{ entry.symlinkTarget }}</span>
+                }
+              }
+            </div>
+
+            <!-- Size (hidden when embedded to give more space to file names) -->
+            @if (!embedded) {
+              <span class="w-20 text-right text-xs text-zinc-500 hidden sm:block">
+                @if (entry.fileType !== 'directory') {
+                  {{ formatSize(entry.size) }}
+                }
+              </span>
+            }
+
+            <!-- Modified -->
+            <span class="w-36 text-right text-xs text-zinc-500 hidden md:block">
+              {{ entry.modified }}
+            </span>
+
+            <!-- Permissions -->
+            <span class="w-24 text-right text-xs text-zinc-600 font-mono hidden lg:block">
+              {{ entry.permissions }}
+            </span>
+
+            <!-- Owner -->
+            <span class="w-20 text-right text-xs text-zinc-500 hidden lg:block truncate">
+              {{ entry.owner }}
+            </span>
+
+            <!-- Actions -->
+            <div class="w-10 flex justify-end">
+              <button
+                (click)="onContextMenu($event, entry); $event.stopPropagation()"
+                class="p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-zinc-700 transition-all"
+              >
+                <lucide-icon [img]="MoreVertical" class="w-3.5 h-3.5 text-zinc-400"></lucide-icon>
+              </button>
+            </div>
+          </div>
+        }
+      }
+    </div>
+
+    <!-- Status bar -->
+    <div class="flex items-center justify-between px-3 py-1.5 border-t border-zinc-800 text-[11px] text-zinc-500 flex-shrink-0">
+      <span>{{ state.visibleEntries().length }} items</span>
+      @if (containerId) {
+        <span class="text-zinc-600">Container: {{ containerId | slice:0:12 }}</span>
+      }
+    </div>
+  </div>
+}
+
+<!-- Context menu overlay -->
+@if (contextMenuEntry()) {
+  <div class="fixed inset-0 z-40" (click)="closeContextMenu()"></div>
+  <div
+    class="fixed z-50 bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl py-1 min-w-[160px]"
+    [style.left.px]="contextMenuPos().x"
+    [style.top.px]="contextMenuPos().y"
+  >
+    @if (contextMenuEntry()!.fileType !== 'directory' && isText(contextMenuEntry()!.name)) {
+      <button
+        (click)="state.openFile(contextMenuEntry()!); closeContextMenu()"
+        class="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-zinc-300 hover:bg-zinc-700 transition-colors"
+      >
+        <lucide-icon [img]="FileText" class="w-3.5 h-3.5"></lucide-icon>
+        Open / Edit
+      </button>
+    }
+    @if (contextMenuEntry()!.fileType === 'directory') {
+      <button
+        (click)="state.navigateTo(contextMenuEntry()!.path); closeContextMenu()"
+        class="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-zinc-300 hover:bg-zinc-700 transition-colors"
+      >
+        <lucide-icon [img]="FolderOpen" class="w-3.5 h-3.5"></lucide-icon>
+        Open
+      </button>
+    }
+    @if (contextMenuEntry()!.fileType !== 'directory') {
+      <button
+        (click)="downloadEntry(contextMenuEntry()!)"
+        class="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-zinc-300 hover:bg-zinc-700 transition-colors"
+      >
+        <lucide-icon [img]="Download" class="w-3.5 h-3.5"></lucide-icon>
+        Download
+      </button>
+    }
+    <button
+      (click)="startRename(contextMenuEntry()!)"
+      class="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-zinc-300 hover:bg-zinc-700 transition-colors"
+    >
+      <lucide-icon [img]="Pencil" class="w-3.5 h-3.5"></lucide-icon>
+      Rename
+    </button>
+    <div class="border-t border-zinc-700 my-1"></div>
+    <button
+      (click)="startDelete(contextMenuEntry()!)"
+      class="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-red-400 hover:bg-red-900/30 transition-colors"
+    >
+      <lucide-icon [img]="Trash2" class="w-3.5 h-3.5"></lucide-icon>
+      Delete
+    </button>
+  </div>
+}
+
+<!-- Create directory dialog -->
+@if (showCreateDirDialog()) {
+  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/60" (click)="showCreateDirDialog.set(false)">
+    <div class="bg-zinc-900 border border-zinc-700 rounded-xl p-4 w-80 shadow-xl" (click)="$event.stopPropagation()">
+      <h3 class="text-sm font-medium mb-3">Create New Folder</h3>
+      <input
+        [ngModel]="newDirName()"
+        (ngModelChange)="newDirName.set($event)"
+        (keydown.enter)="createDirectory()"
+        (keydown.escape)="showCreateDirDialog.set(false)"
+        placeholder="Folder name"
+        class="w-full h-9 px-3 bg-zinc-800 border border-zinc-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+        autofocus
+      />
+      <div class="flex justify-end gap-2 mt-3">
+        <button
+          (click)="showCreateDirDialog.set(false)"
+          class="px-3 py-1.5 text-sm rounded-lg border border-zinc-700 hover:bg-zinc-800 transition-colors"
+        >
+          Cancel
+        </button>
+        <button
+          (click)="createDirectory()"
+          [disabled]="!newDirName().trim()"
+          class="px-3 py-1.5 text-sm rounded-lg bg-blue-600 hover:bg-blue-500 transition-colors disabled:opacity-50"
+        >
+          Create
+        </button>
+      </div>
+    </div>
+  </div>
+}
+
+<!-- Delete confirmation dialog -->
+@if (confirmDeleteEntry()) {
+  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/60" (click)="cancelDelete()">
+    <div class="bg-zinc-900 border border-zinc-700 rounded-xl p-4 w-80 shadow-xl" (click)="$event.stopPropagation()">
+      <h3 class="text-sm font-medium mb-2">Confirm Delete</h3>
+      <p class="text-sm text-zinc-400 mb-4">
+        Are you sure you want to delete
+        <span class="text-white font-medium">{{ confirmDeleteEntry()!.name }}</span>?
+        @if (confirmDeleteEntry()!.fileType === 'directory') {
+          <span class="text-red-400"> This will delete all contents recursively.</span>
+        }
+      </p>
+      <div class="flex justify-end gap-2">
+        <button
+          (click)="cancelDelete()"
+          class="px-3 py-1.5 text-sm rounded-lg border border-zinc-700 hover:bg-zinc-800 transition-colors"
+        >
+          Cancel
+        </button>
+        <button
+          (click)="confirmDelete()"
+          class="px-3 py-1.5 text-sm rounded-lg bg-red-600 hover:bg-red-500 transition-colors"
+        >
+          Delete
+        </button>
+      </div>
+    </div>
+  </div>
+}
+
+<!-- File editor modal -->
+@if (state.editorContent()) {
+  <app-file-editor-modal (close)="state.closeEditor()"></app-file-editor-modal>
+}

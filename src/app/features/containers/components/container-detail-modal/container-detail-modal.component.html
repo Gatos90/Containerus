@@ -74,6 +74,15 @@
           <lucide-icon [img]="FileText" class="w-4 h-4"></lucide-icon>
           Logs
         </button>
+        <a
+          [routerLink]="['/files', container().systemId, container().id]"
+          [queryParams]="{ runtime: container().runtime }"
+          class="flex items-center gap-1.5 px-3 py-2 sm:py-1.5 text-sm bg-zinc-800 hover:bg-zinc-700 rounded-lg transition-colors touch-target-sm"
+          (click)="close.emit()"
+        >
+          <lucide-icon [img]="FolderOpen" class="w-4 h-4"></lucide-icon>
+          Files
+        </a>
       </div>
     }
 

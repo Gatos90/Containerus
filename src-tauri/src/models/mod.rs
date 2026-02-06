@@ -6,6 +6,7 @@ pub mod image;
 pub mod network;
 pub mod port_forward;
 pub mod system;
+pub mod file_browser;
 pub mod volume;
 
 pub use agent::*;

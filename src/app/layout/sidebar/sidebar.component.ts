@@ -1,7 +1,7 @@
 import { CommonModule, DecimalPipe } from '@angular/common';
 import { Component, inject, signal, computed } from '@angular/core';
 import { Router, RouterLink, RouterLinkActive } from '@angular/router';
-import { LucideAngularModule, LucideIconData, Box, Image, HardDrive, Network, Server, Settings, MoreHorizontal, Command, ChevronDown, ChevronUp, Terminal, Unplug, ExternalLink, Crown, ShieldCheck, Activity, Cpu, MemoryStick } from 'lucide-angular';
+import { LucideAngularModule, LucideIconData, Box, Image, HardDrive, Network, Server, Settings, MoreHorizontal, Command, ChevronDown, ChevronUp, Terminal, Unplug, ExternalLink, Crown, ShieldCheck, Activity, Cpu, MemoryStick, FolderOpen } from 'lucide-angular';
 import { SystemState } from '../../state/system.state';
 import { ContainerState } from '../../state/container.state';
 import { ContainerSystem, ExtendedSystemInfo, LiveSystemMetrics, OsType } from '../../core/models/system.model';
@@ -57,6 +57,7 @@ export class SidebarComponent {
   readonly Activity = Activity;
   readonly Cpu = Cpu;
   readonly MemoryStick = MemoryStick;
+  readonly FolderOpen = FolderOpen;
 
   navItems: NavItem[] = [
     {
@@ -81,6 +82,11 @@ export class SidebarComponent {
       label: 'Networks',
       route: '/networks',
       icon: Network,
+    },
+    {
+      label: 'Files',
+      route: '/files',
+      icon: FolderOpen,
     },
     {
       label: 'Systems',

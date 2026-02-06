@@ -147,6 +147,15 @@ pub fn run() {
             commands::get_agent_context_summary,
             commands::get_agent_preferences,
             commands::update_agent_preferences,
+            // File browser commands
+            commands::list_directory,
+            commands::read_file,
+            commands::write_file,
+            commands::create_directory,
+            commands::delete_path,
+            commands::rename_path,
+            commands::download_file,
+            commands::upload_file,
             // Monitoring commands
             commands::start_system_monitoring,
             commands::stop_system_monitoring,

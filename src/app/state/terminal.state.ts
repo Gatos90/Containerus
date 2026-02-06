@@ -3,6 +3,7 @@ import { Terminal, ITerminalOptions } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { SearchAddon } from '@xterm/addon-search';
 import { TerminalService, TerminalSession } from '../core/services/terminal.service';
+import { ContainerRuntime } from '../core/models/container.model';
 
 export type LayoutMode = 'single' | 'split-h' | 'split-v' | 'quad';
 
@@ -54,21 +55,36 @@ export interface DockedTerminal {
   displayMode?: 'xterm' | 'warp';
 }
 
+export interface DockedFileBrowser {
+  id: string;
+  systemId: string;
+  containerId?: string;
+  runtime?: ContainerRuntime;
+  systemName: string;
+  containerName?: string;
+  currentPath: string;
+}
+
+export type SlotContentType = 'terminal' | 'file-browser' | 'empty';
+
 export interface TerminalSlot {
-  terminalId: string | null;
+  contentType: SlotContentType;
+  contentId: string | null;
 }
 
 @Injectable({ providedIn: 'root' })
 export class TerminalState {
   private _dockedTerminals = signal<DockedTerminal[]>([]);
   private _layoutMode = signal<LayoutMode>('single');
-  private _slots = signal<TerminalSlot[]>([{ terminalId: null }]);
+  private _slots = signal<TerminalSlot[]>([{ contentType: 'empty', contentId: null }]);
   private _activeSlotIndex = signal<number>(0);
   private _isDockMinimized = signal<boolean>(false);
   private _isDockExpanded = signal<boolean>(true);
   private _isDockFullscreen = signal<boolean>(false);
+  private _dockedFileBrowsers = signal<DockedFileBrowser[]>([]);
 
   readonly dockedTerminals = this._dockedTerminals.asReadonly();
+  readonly dockedFileBrowsers = this._dockedFileBrowsers.asReadonly();
   readonly layoutMode = this._layoutMode.asReadonly();
   readonly slots = this._slots.asReadonly();
   readonly activeSlotIndex = this._activeSlotIndex.asReadonly();
@@ -76,7 +92,9 @@ export class TerminalState {
   readonly isDockExpanded = this._isDockExpanded.asReadonly();
   readonly isDockFullscreen = this._isDockFullscreen.asReadonly();
 
-  readonly isDockVisible = computed(() => this._dockedTerminals().length > 0);
+  readonly isDockVisible = computed(() =>
+    this._dockedTerminals().length > 0 || this._dockedFileBrowsers().length > 0
+  );
 
   readonly activeSlot = computed(() => {
     const slots = this._slots();
@@ -86,8 +104,14 @@ export class TerminalState {
 
   readonly activeTerminal = computed(() => {
     const slot = this.activeSlot();
-    if (!slot?.terminalId) return null;
-    return this._dockedTerminals().find(t => t.id === slot.terminalId) ?? null;
+    if (!slot || slot.contentType !== 'terminal' || !slot.contentId) return null;
+    return this._dockedTerminals().find(t => t.id === slot.contentId) ?? null;
+  });
+
+  readonly activeFileBrowser = computed(() => {
+    const slot = this.activeSlot();
+    if (!slot || slot.contentType !== 'file-browser' || !slot.contentId) return null;
+    return this._dockedFileBrowsers().find(b => b.id === slot.contentId) ?? null;
   });
 
   readonly slotCount = computed(() => {
@@ -107,7 +131,7 @@ export class TerminalState {
 
     // Assign to first empty slot or active slot
     const slots = this._slots();
-    const emptySlotIndex = slots.findIndex(s => s.terminalId === null);
+    const emptySlotIndex = slots.findIndex(s => s.contentType === 'empty');
 
     if (emptySlotIndex !== -1) {
       this.assignTerminalToSlot(terminal.id, emptySlotIndex);
@@ -129,7 +153,9 @@ export class TerminalState {
 
     // Remove from slots
     this._slots.update(slots =>
-      slots.map(s => s.terminalId === terminalId ? { terminalId: null } : s)
+      slots.map(s => s.contentType === 'terminal' && s.contentId === terminalId
+        ? { contentType: 'empty' as SlotContentType, contentId: null }
+        : s)
     );
 
     // Remove from docked terminals
@@ -140,7 +166,17 @@ export class TerminalState {
 
   assignTerminalToSlot(terminalId: string, slotIndex: number): void {
     this._slots.update(slots =>
-      slots.map((slot, i) => i === slotIndex ? { terminalId } : slot)
+      slots.map((slot, i) => i === slotIndex
+        ? { contentType: 'terminal' as SlotContentType, contentId: terminalId }
+        : slot)
+    );
+  }
+
+  assignFileBrowserToSlot(fileBrowserId: string, slotIndex: number): void {
+    this._slots.update(slots =>
+      slots.map((slot, i) => i === slotIndex
+        ? { contentType: 'file-browser' as SlotContentType, contentId: fileBrowserId }
+        : slot)
     );
   }
 
@@ -160,7 +196,7 @@ export class TerminalState {
       // Add empty slots
       const newSlots = Array(newSlotCount - oldSlotCount)
         .fill(null)
-        .map(() => ({ terminalId: null }));
+        .map(() => ({ contentType: 'empty' as SlotContentType, contentId: null }));
       this._slots.update(slots => [...slots, ...newSlots]);
     } else if (newSlotCount < oldSlotCount) {
       // Remove extra slots (terminals stay docked, just not visible)
@@ -210,17 +246,29 @@ export class TerminalState {
 
   getTerminalForSlot(slotIndex: number): DockedTerminal | null {
     const slot = this._slots()[slotIndex];
-    if (!slot?.terminalId) return null;
-    return this._dockedTerminals().find(t => t.id === slot.terminalId) ?? null;
+    if (!slot || slot.contentType !== 'terminal' || !slot.contentId) return null;
+    return this._dockedTerminals().find(t => t.id === slot.contentId) ?? null;
+  }
+
+  getFileBrowserForSlot(slotIndex: number): DockedFileBrowser | null {
+    const slot = this._slots()[slotIndex];
+    if (!slot || slot.contentType !== 'file-browser' || !slot.contentId) return null;
+    return this._dockedFileBrowsers().find(b => b.id === slot.contentId) ?? null;
   }
 
   isTerminalInSlot(terminalId: string): boolean {
-    return this._slots().some(s => s.terminalId === terminalId);
+    return this._slots().some(s => s.contentType === 'terminal' && s.contentId === terminalId);
+  }
+
+  isFileBrowserInSlot(id: string): boolean {
+    return this._slots().some(s => s.contentType === 'file-browser' && s.contentId === id);
   }
 
   focusTerminal(terminalId: string): void {
     // If terminal is already in a slot, activate that slot
-    const slotIndex = this._slots().findIndex(s => s.terminalId === terminalId);
+    const slotIndex = this._slots().findIndex(
+      s => s.contentType === 'terminal' && s.contentId === terminalId
+    );
     if (slotIndex !== -1) {
       this.setActiveSlot(slotIndex);
       return;
@@ -228,6 +276,20 @@ export class TerminalState {
 
     // Otherwise assign to active slot
     this.assignTerminalToSlot(terminalId, this._activeSlotIndex());
+  }
+
+  focusFileBrowser(id: string): void {
+    // If file browser is already in a slot, activate that slot
+    const slotIndex = this._slots().findIndex(
+      s => s.contentType === 'file-browser' && s.contentId === id
+    );
+    if (slotIndex !== -1) {
+      this.setActiveSlot(slotIndex);
+      return;
+    }
+
+    // Otherwise assign to active slot
+    this.assignFileBrowserToSlot(id, this._activeSlotIndex());
   }
 
   // Generate unique ID for new terminals
@@ -265,8 +327,57 @@ export class TerminalState {
       terminal.terminal?.dispose();
     }
     this._dockedTerminals.set([]);
-    this._slots.set([{ terminalId: null }]);
+    this._dockedFileBrowsers.set([]);
+    this._slots.set([{ contentType: 'empty', contentId: null }]);
     this._layoutMode.set('single');
     this._activeSlotIndex.set(0);
+  }
+
+  // --- File Browser Dock ---
+
+  addFileBrowser(fb: DockedFileBrowser): void {
+    // Prevent duplicates for same system+container — update path instead
+    const existing = this._dockedFileBrowsers().find(
+      f => f.systemId === fb.systemId && f.containerId === fb.containerId
+    );
+    if (existing) {
+      this._dockedFileBrowsers.update(browsers =>
+        browsers.map(b => b.id === existing.id ? { ...b, currentPath: fb.currentPath } : b)
+      );
+      this.focusFileBrowser(existing.id);
+      return;
+    }
+    this._dockedFileBrowsers.update(browsers => [...browsers, fb]);
+
+    // Assign to first empty slot or active slot
+    const slots = this._slots();
+    const emptySlotIndex = slots.findIndex(s => s.contentType === 'empty');
+    if (emptySlotIndex !== -1) {
+      this.assignFileBrowserToSlot(fb.id, emptySlotIndex);
+    } else {
+      this.assignFileBrowserToSlot(fb.id, this._activeSlotIndex());
+    }
+  }
+
+  removeFileBrowser(id: string): void {
+    // Clear from any slot
+    this._slots.update(slots =>
+      slots.map(s => s.contentType === 'file-browser' && s.contentId === id
+        ? { contentType: 'empty' as SlotContentType, contentId: null }
+        : s)
+    );
+    this._dockedFileBrowsers.update(browsers => browsers.filter(b => b.id !== id));
+  }
+
+  updateFileBrowserPath(id: string, path: string): void {
+    const current = this._dockedFileBrowsers().find(b => b.id === id);
+    if (current?.currentPath === path) return;
+    this._dockedFileBrowsers.update(browsers =>
+      browsers.map(b => b.id === id ? { ...b, currentPath: path } : b)
+    );
+  }
+
+  generateFileBrowserId(): string {
+    return `filebrowser-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
   }
 }
