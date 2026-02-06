@@ -58,7 +58,7 @@ jobs:
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: pnpm tauri build --bundles deb,appimage
+        run: pnpm tauri build --bundles deb,appimage,updater
 
       - name: Upload Linux artifacts
         uses: actions/upload-artifact@v4
@@ -125,7 +125,7 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: pnpm tauri build --bundles dmg
+        run: pnpm tauri build --bundles dmg,updater
 
       - name: Upload macOS artifacts
         uses: actions/upload-artifact@v4
@@ -191,7 +191,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
           # Use --config to override version for MSI without modifying tauri.conf.json
-          pnpm tauri build --bundles msi,nsis --config "{\"version\":\"${{ steps.msi_version.outputs.version }}\"}"
+          pnpm tauri build --bundles msi,nsis,updater --config "{\"version\":\"${{ steps.msi_version.outputs.version }}\"}"
 
       - name: Upload Windows artifacts
         uses: actions/upload-artifact@v4
@@ -226,6 +226,80 @@ jobs:
       - name: List artifacts
         run: find artifacts -type f
 
+      - name: Generate latest.json
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          DOWNLOAD_URL="https://github.com/Gatos90/Containerus/releases/download/v${VERSION}"
+
+          # Read signatures
+          LINUX_SIG=""
+          MACOS_SIG=""
+          WINDOWS_SIG=""
+
+          for f in artifacts/linux-artifacts/**/*.AppImage.tar.gz.sig; do
+            [ -f "$f" ] && LINUX_SIG=$(cat "$f")
+          done
+          for f in artifacts/macos-artifacts/**/*.app.tar.gz.sig; do
+            [ -f "$f" ] && MACOS_SIG=$(cat "$f")
+          done
+          for f in artifacts/windows-artifacts/**/*.nsis.zip.sig; do
+            [ -f "$f" ] && WINDOWS_SIG=$(cat "$f")
+          done
+
+          # Get filenames for download URLs
+          LINUX_FILE=""
+          MACOS_FILE=""
+          WINDOWS_FILE=""
+
+          for f in artifacts/linux-artifacts/**/*.AppImage.tar.gz; do
+            [[ "$f" != *.sig ]] && [ -f "$f" ] && LINUX_FILE=$(basename "$f")
+          done
+          for f in artifacts/macos-artifacts/**/*.app.tar.gz; do
+            [[ "$f" != *.sig ]] && [ -f "$f" ] && MACOS_FILE=$(basename "$f")
+          done
+          for f in artifacts/windows-artifacts/**/*.nsis.zip; do
+            [[ "$f" != *.sig ]] && [ -f "$f" ] && WINDOWS_FILE=$(basename "$f")
+          done
+
+          echo "Linux: $LINUX_FILE (sig: ${LINUX_SIG:0:20}...)"
+          echo "macOS: $MACOS_FILE (sig: ${MACOS_SIG:0:20}...)"
+          echo "Windows: $WINDOWS_FILE (sig: ${WINDOWS_SIG:0:20}...)"
+
+          # Build platforms object
+          PLATFORMS="{}"
+
+          if [ -n "$LINUX_SIG" ] && [ -n "$LINUX_FILE" ]; then
+            PLATFORMS=$(echo "$PLATFORMS" | jq \
+              --arg sig "$LINUX_SIG" \
+              --arg url "$DOWNLOAD_URL/$LINUX_FILE" \
+              '. + {"linux-x86_64": {"signature": $sig, "url": $url}}')
+          fi
+
+          if [ -n "$MACOS_SIG" ] && [ -n "$MACOS_FILE" ]; then
+            PLATFORMS=$(echo "$PLATFORMS" | jq \
+              --arg sig "$MACOS_SIG" \
+              --arg url "$DOWNLOAD_URL/$MACOS_FILE" \
+              '. + {"darwin-aarch64": {"signature": $sig, "url": $url}}')
+          fi
+
+          if [ -n "$WINDOWS_SIG" ] && [ -n "$WINDOWS_FILE" ]; then
+            PLATFORMS=$(echo "$PLATFORMS" | jq \
+              --arg sig "$WINDOWS_SIG" \
+              --arg url "$DOWNLOAD_URL/$WINDOWS_FILE" \
+              '. + {"windows-x86_64": {"signature": $sig, "url": $url}}')
+          fi
+
+          # Create latest.json
+          jq -n \
+            --arg version "v${VERSION}" \
+            --arg pub_date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --argjson platforms "$PLATFORMS" \
+            '{version: $version, notes: "", pub_date: $pub_date, platforms: $platforms}' \
+            > latest.json
+
+          echo "Generated latest.json:"
+          cat latest.json
+
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
@@ -244,6 +318,6 @@ jobs:
             artifacts/**/*.exe
             artifacts/**/*.nsis.zip
             artifacts/**/*.nsis.zip.sig
-            artifacts/**/latest.json
+            latest.json
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
