@@ -1,6 +1,6 @@
 [package]
 name = "containerus"
-version = "1.0.0-beta.2"
+version = "1.0.0-beta.4"
 description = "Docker container management application"
 authors = ["CreativDev"]
 edition = "2021"
