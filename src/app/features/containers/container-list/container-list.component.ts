@@ -1,7 +1,6 @@
 import { CommonModule } from '@angular/common';
-import { Component, computed, inject, OnInit, signal } from '@angular/core';
+import { Component, computed, inject, OnInit, signal, ChangeDetectionStrategy } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { RouterLink } from '@angular/router';
 import {
   LucideAngularModule,
   LucideIconData,
@@ -47,13 +46,15 @@ import { PortBadgeComponent } from '../components/port-badge/port-badge.componen
 import { ContainerDetailsComponent } from '../components/container-details/container-details.component';
 import { ContainerDetailModalComponent } from '../components/container-detail-modal/container-detail-modal.component';
 import { LogsViewerModalComponent } from '../components/logs-viewer-modal/logs-viewer-modal.component';
+import { ToastState } from '../../../state/toast.state';
+import { TerminalState, DockedFileBrowser, DEFAULT_TERMINAL_OPTIONS } from '../../../state/terminal.state';
+import { TerminalService } from '../../../core/services/terminal.service';
 
 @Component({
   selector: 'app-container-list',
   imports: [
     CommonModule,
     FormsModule,
-    RouterLink,
     LucideAngularModule,
     PortSectionComponent,
     PortBadgeComponent,
@@ -67,6 +68,9 @@ export class ContainerListComponent implements OnInit {
   readonly containerState = inject(ContainerState);
   readonly systemState = inject(SystemState);
   readonly portForwardState = inject(PortForwardState);
+  private readonly toast = inject(ToastState);
+  private readonly terminalState = inject(TerminalState);
+  private readonly terminalService = inject(TerminalService);
 
   // Lucide icons
   readonly Play = Play;
@@ -140,8 +144,36 @@ export class ContainerListComponent implements OnInit {
     this.containerState.setStatusFilter('exited');
   }
 
+  confirmAction = signal<{ container: Container; action: ContainerAction } | null>(null);
+
   async performAction(container: Container, action: ContainerAction): Promise<void> {
-    await this.containerState.performAction(container, action);
+    const destructive: ContainerAction[] = ['stop', 'remove'];
+    if (destructive.includes(action)) {
+      this.confirmAction.set({ container, action });
+      return;
+    }
+    await this.executeAction(container, action);
+  }
+
+  async confirmAndExecute(): Promise<void> {
+    const pending = this.confirmAction();
+    if (!pending) return;
+    this.confirmAction.set(null);
+    await this.executeAction(pending.container, pending.action);
+  }
+
+  cancelAction(): void {
+    this.confirmAction.set(null);
+  }
+
+  private async executeAction(container: Container, action: ContainerAction): Promise<void> {
+    const name = getDisplayName(container);
+    const success = await this.containerState.performAction(container, action);
+    if (success) {
+      this.toast.success(`${action.charAt(0).toUpperCase() + action.slice(1)}${action.endsWith('e') ? 'd' : 'ed'} ${name}`);
+    } else {
+      this.toast.error(`Failed to ${action} ${name}`);
+    }
   }
 
   showLogs(container: Container): void {
@@ -166,5 +198,39 @@ export class ContainerListComponent implements OnInit {
 
   closeModal(): void {
     this.modalContainer.set(null);
+  }
+
+  async dockTerminal(container: Container): Promise<void> {
+    const system = this.systemState.systems().find(s => s.id === container.systemId);
+    if (!system) return;
+    try {
+      const session = await this.terminalService.startSession(container.systemId, container.id);
+      this.terminalState.addTerminal({
+        id: this.terminalState.generateTerminalId(),
+        session,
+        systemId: container.systemId,
+        systemName: system.name,
+        containerName: getDisplayName(container),
+        serializedState: '',
+        terminalOptions: DEFAULT_TERMINAL_OPTIONS,
+      });
+    } catch (err: any) {
+      this.toast.error(`Failed to open terminal: ${err?.message ?? err}`);
+    }
+  }
+
+  dockFileBrowser(container: Container): void {
+    const system = this.systemState.systems().find(s => s.id === container.systemId);
+    if (!system) return;
+    const fb: DockedFileBrowser = {
+      id: this.terminalState.generateFileBrowserId(),
+      systemId: container.systemId,
+      systemName: system.name,
+      containerId: container.id,
+      containerName: getDisplayName(container),
+      runtime: container.runtime,
+      currentPath: '/',
+    };
+    this.terminalState.addFileBrowser(fb);
   }
 }

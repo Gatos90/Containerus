@@ -1,7 +1,6 @@
 import { CommonModule } from '@angular/common';
 import { Component, inject, OnInit, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { RouterLink } from '@angular/router';
 import {
   LucideAngularModule,
   Server,
@@ -41,13 +40,16 @@ export interface LoadLevelInfo {
 }
 import { KeychainService } from '../../../core/services/keychain.service';
 import { SystemService } from '../../../core/services/system.service';
+import { TerminalService } from '../../../core/services/terminal.service';
 import { SystemState } from '../../../state/system.state';
 import { AppState } from '../../../state/app.state';
+import { TerminalState, DEFAULT_TERMINAL_OPTIONS } from '../../../state/terminal.state';
+import { ToastState } from '../../../state/toast.state';
 
 @Component({
   selector: 'app-system-list',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterLink, LucideAngularModule],
+  imports: [CommonModule, FormsModule, LucideAngularModule],
   templateUrl: './system-list.component.html',
 })
 export class SystemListComponent implements OnInit {
@@ -55,6 +57,9 @@ export class SystemListComponent implements OnInit {
   readonly appState = inject(AppState);
   private readonly systemService = inject(SystemService);
   private readonly keychainService = inject(KeychainService);
+  private readonly terminalState = inject(TerminalState);
+  private readonly terminalService = inject(TerminalService);
+  private readonly toast = inject(ToastState);
 
   readonly Server = Server;
   readonly Plus = Plus;
@@ -818,6 +823,24 @@ export class SystemListComponent implements OnInit {
         return 'Windows';
       default:
         return 'Unknown';
+    }
+  }
+
+  async dockTerminal(systemId: string): Promise<void> {
+    const system = this.systemState.systems().find(s => s.id === systemId);
+    if (!system) return;
+    try {
+      const session = await this.terminalService.startSession(systemId);
+      this.terminalState.addTerminal({
+        id: this.terminalState.generateTerminalId(),
+        session,
+        systemId,
+        systemName: system.name,
+        serializedState: '',
+        terminalOptions: DEFAULT_TERMINAL_OPTIONS,
+      });
+    } catch (err: any) {
+      this.toast.error(`Failed to open terminal: ${err?.message ?? err}`);
     }
   }
 }

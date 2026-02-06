@@ -187,69 +187,66 @@
   <!-- Container Grid -->
   <div
     [class]="viewMode() === 'grid'
-      ? 'space-y-3 sm:grid sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-3 sm:gap-4 sm:auto-rows-min'
+      ? 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4'
       : 'space-y-3'"
   >
     @for (container of containerState.filteredContainers(); track container.id) {
       <div
-        class="bg-zinc-800 rounded-lg border border-zinc-700/50 flex flex-col overflow-hidden"
-        [class.row-span-2]="expandedContainerId() === container.id"
+        class="bg-zinc-900 rounded-xl border border-zinc-700/50 flex flex-col overflow-hidden hover:bg-zinc-800 transition-colors"
       >
-        <!-- Fixed Header (never scrolls) -->
-        <div class="flex-shrink-0 p-4 pb-2">
-          <!-- Card Header -->
-          <div class="flex items-start justify-between">
+        <!-- Header -->
+        <div class="flex-shrink-0 px-4 pt-4 pb-3">
+          <div class="flex items-start justify-between gap-2">
             <div class="flex-1 min-w-0">
-              <div class="font-medium truncate">{{ getDisplayName(container) }}</div>
-              <div class="text-sm text-zinc-400 truncate">{{ container.image }}</div>
+              <div class="font-medium text-sm truncate text-zinc-100">{{ getDisplayName(container) }}</div>
+              <div class="text-xs text-zinc-500 truncate mt-0.5">{{ container.image }}</div>
             </div>
-            <div class="flex items-center gap-1">
+            <div class="flex items-center gap-0.5 flex-shrink-0">
               <button
                 (click)="openModal(container)"
-                class="p-1.5 rounded-lg hover:bg-zinc-700 transition-colors text-zinc-400 hover:text-zinc-200"
+                class="p-1 rounded-md hover:bg-zinc-700/50 transition-colors text-zinc-500 hover:text-zinc-300"
                 title="Open full details"
               >
-                <lucide-icon [img]="Maximize2" class="w-4 h-4"></lucide-icon>
+                <lucide-icon [img]="Maximize2" class="w-3.5 h-3.5"></lucide-icon>
               </button>
               <button
                 (click)="toggleDetails(container)"
-                class="p-1.5 rounded-lg hover:bg-zinc-700 transition-colors text-zinc-400 hover:text-zinc-200"
+                class="p-1 rounded-md hover:bg-zinc-700/50 transition-colors text-zinc-500 hover:text-zinc-300"
                 title="View details"
               >
-                <lucide-icon [img]="Info" class="w-4 h-4"></lucide-icon>
+                <lucide-icon [img]="Info" class="w-3.5 h-3.5"></lucide-icon>
               </button>
             </div>
           </div>
 
           <!-- Status Row -->
           <div class="flex items-center justify-between mt-2">
-            <div class="flex items-center gap-2">
+            <div class="flex items-center gap-1.5">
               <span
-                class="w-2 h-2 rounded-full"
-                [class.bg-green-500]="container.status === 'running'"
-                [class.bg-red-500]="container.status === 'exited' || container.status === 'dead'"
-                [class.bg-yellow-500]="container.status === 'paused'"
-                [class.bg-orange-500]="container.status === 'created'"
-                [class.bg-blue-500]="container.status === 'restarting'"
+                class="w-1.5 h-1.5 rounded-full"
+                [class.bg-green-400]="container.status === 'running'"
+                [class.bg-red-400]="container.status === 'exited' || container.status === 'dead'"
+                [class.bg-yellow-400]="container.status === 'paused'"
+                [class.bg-orange-400]="container.status === 'created'"
+                [class.bg-blue-400]="container.status === 'restarting'"
               ></span>
               <span
-                class="text-sm"
-                [class.text-green-500]="container.status === 'running'"
-                [class.text-red-500]="container.status === 'exited' || container.status === 'dead'"
-                [class.text-yellow-500]="container.status === 'paused'"
-                [class.text-orange-500]="container.status === 'created'"
-                [class.text-blue-500]="container.status === 'restarting'"
+                class="text-xs font-medium"
+                [class.text-green-400]="container.status === 'running'"
+                [class.text-red-400]="container.status === 'exited' || container.status === 'dead'"
+                [class.text-yellow-400]="container.status === 'paused'"
+                [class.text-orange-400]="container.status === 'created'"
+                [class.text-blue-400]="container.status === 'restarting'"
               >
                 {{ getStatusText(container.status) }}
               </span>
             </div>
-            <span class="text-xs text-zinc-500">{{ getRelativeTime(container.createdAt) }}</span>
+            <span class="text-[11px] text-zinc-600">{{ getRelativeTime(container.createdAt) }}</span>
           </div>
         </div>
 
-        <!-- Scrollable Body -->
-        <div class="flex-1 min-h-0 overflow-auto px-4 pb-4 space-y-3">
-          <!-- Ports Section -->
+        <!-- Middle content (ports, expanded details) -->
+        <div class="flex-1 min-h-0 px-4">
           @if (container.ports && container.ports.length > 0) {
             <app-port-section
               [ports]="container.ports"
@@ -258,80 +255,86 @@
             />
           }
 
-          <!-- Action Buttons -->
-          <div class="flex flex-wrap gap-2 pt-2 border-t border-zinc-700/50 mt-2">
+          @if (expandedContainerId() === container.id) {
+            <div class="pt-3 border-t border-zinc-800 mt-2">
+              <app-container-details [container]="container" />
+            </div>
+          }
+        </div>
+
+        <!-- Action Buttons (always at bottom) -->
+        <div class="flex-shrink-0 px-4 py-3 mt-auto">
+          <div class="flex items-center gap-1.5 border-t border-zinc-700/50 pt-3">
             @if (isRunning(container)) {
               <button
                 (click)="performAction(container, 'stop')"
-                class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-red-500/50 text-red-400 text-sm hover:bg-red-500/10 transition-colors"
+                class="flex items-center gap-1 px-2.5 py-1 rounded-md text-xs text-red-400 hover:bg-red-500/10 transition-colors"
                 [disabled]="containerState.isLoading(container.id)"
+                title="Stop"
               >
-                <lucide-icon [img]="Square" class="w-3.5 h-3.5"></lucide-icon>
+                <lucide-icon [img]="Square" class="w-3 h-3"></lucide-icon>
                 Stop
               </button>
               <button
                 (click)="performAction(container, 'restart')"
-                class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-zinc-600 text-zinc-300 text-sm hover:bg-zinc-700 transition-colors"
+                class="flex items-center gap-1 px-2.5 py-1 rounded-md text-xs text-zinc-400 hover:bg-zinc-700/50 hover:text-zinc-200 transition-colors"
                 [disabled]="containerState.isLoading(container.id)"
+                title="Restart"
               >
-                <lucide-icon [img]="RotateCcw" class="w-3.5 h-3.5"></lucide-icon>
+                <lucide-icon [img]="RotateCcw" class="w-3 h-3"></lucide-icon>
                 Restart
               </button>
+              <div class="flex-1"></div>
               <button
                 (click)="showLogs(container)"
-                class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-zinc-600 text-zinc-300 text-sm hover:bg-zinc-700 transition-colors"
+                class="p-1.5 rounded-md text-zinc-500 hover:bg-zinc-700/50 hover:text-zinc-300 transition-colors"
+                title="Logs"
               >
                 <lucide-icon [img]="FileText" class="w-3.5 h-3.5"></lucide-icon>
-                Logs
               </button>
-              <a
-                [routerLink]="['/terminal', container.systemId, container.id]"
-                class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-zinc-600 text-zinc-300 text-sm hover:bg-zinc-700 transition-colors"
+              <button
+                (click)="dockTerminal(container)"
+                class="p-1.5 rounded-md text-zinc-500 hover:bg-zinc-700/50 hover:text-zinc-300 transition-colors"
+                title="Terminal"
               >
                 <lucide-icon [img]="Terminal" class="w-3.5 h-3.5"></lucide-icon>
-                Terminal
-              </a>
-              <a
-                [routerLink]="['/files', container.systemId, container.id]"
-                [queryParams]="{ runtime: container.runtime }"
-                class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-zinc-600 text-zinc-300 text-sm hover:bg-zinc-700 transition-colors"
+              </button>
+              <button
+                (click)="dockFileBrowser(container)"
+                class="p-1.5 rounded-md text-zinc-500 hover:bg-zinc-700/50 hover:text-zinc-300 transition-colors"
+                title="Files"
               >
                 <lucide-icon [img]="FolderOpen" class="w-3.5 h-3.5"></lucide-icon>
-                Files
-              </a>
+              </button>
             } @else {
               <button
                 (click)="performAction(container, 'start')"
-                class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-green-500/50 text-green-400 text-sm hover:bg-green-500/10 transition-colors"
+                class="flex items-center gap-1 px-2.5 py-1 rounded-md text-xs text-green-400 hover:bg-green-500/10 transition-colors"
                 [disabled]="containerState.isLoading(container.id)"
+                title="Start"
               >
-                <lucide-icon [img]="Play" class="w-3.5 h-3.5"></lucide-icon>
+                <lucide-icon [img]="Play" class="w-3 h-3"></lucide-icon>
                 Start
               </button>
               <button
                 (click)="performAction(container, 'restart')"
-                class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-zinc-600 text-zinc-300 text-sm hover:bg-zinc-700 transition-colors"
+                class="flex items-center gap-1 px-2.5 py-1 rounded-md text-xs text-zinc-400 hover:bg-zinc-700/50 hover:text-zinc-200 transition-colors"
                 [disabled]="containerState.isLoading(container.id)"
+                title="Restart"
               >
-                <lucide-icon [img]="RotateCcw" class="w-3.5 h-3.5"></lucide-icon>
+                <lucide-icon [img]="RotateCcw" class="w-3 h-3"></lucide-icon>
                 Restart
               </button>
+              <div class="flex-1"></div>
               <button
                 (click)="showLogs(container)"
-                class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-zinc-600 text-zinc-300 text-sm hover:bg-zinc-700 transition-colors"
+                class="p-1.5 rounded-md text-zinc-500 hover:bg-zinc-700/50 hover:text-zinc-300 transition-colors"
+                title="Logs"
               >
                 <lucide-icon [img]="FileText" class="w-3.5 h-3.5"></lucide-icon>
-                Logs
               </button>
             }
           </div>
-
-          <!-- Expanded Details -->
-          @if (expandedContainerId() === container.id) {
-            <div class="pt-3 border-t border-zinc-700">
-              <app-container-details [container]="container" />
-            </div>
-          }
         </div>
       </div>
     } @empty {
@@ -347,6 +350,37 @@
     }
   </div>
 </div>
+
+<!-- Confirm Action Dialog -->
+@if (confirmAction(); as pending) {
+  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/60" (click)="cancelAction()">
+    <div class="bg-zinc-900 border border-zinc-700 rounded-xl p-4 w-80 shadow-xl" (click)="$event.stopPropagation()">
+      <h3 class="text-sm font-medium mb-2">Confirm {{ pending.action | titlecase }}</h3>
+      <p class="text-sm text-zinc-400 mb-4">
+        Are you sure you want to {{ pending.action }}
+        <span class="text-white font-medium">{{ getDisplayName(pending.container) }}</span>?
+      </p>
+      <div class="flex justify-end gap-2">
+        <button
+          (click)="cancelAction()"
+          class="px-3 py-1.5 text-sm rounded-lg border border-zinc-700 hover:bg-zinc-800 transition-colors"
+        >
+          Cancel
+        </button>
+        <button
+          (click)="confirmAndExecute()"
+          class="px-3 py-1.5 text-sm rounded-lg transition-colors"
+          [class.bg-red-600]="pending.action === 'stop' || pending.action === 'remove'"
+          [class.hover:bg-red-500]="pending.action === 'stop' || pending.action === 'remove'"
+          [class.bg-blue-600]="pending.action !== 'stop' && pending.action !== 'remove'"
+          [class.hover:bg-blue-500]="pending.action !== 'stop' && pending.action !== 'remove'"
+        >
+          {{ pending.action | titlecase }}
+        </button>
+      </div>
+    </div>
+  </div>
+}
 
 <!-- Detail Modal -->
 @if (modalContainer()) {

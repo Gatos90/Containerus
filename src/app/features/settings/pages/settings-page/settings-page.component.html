@@ -476,12 +476,19 @@
 
     <!-- Save Button -->
     <div class="flex items-center justify-between">
-      <div class="text-sm text-green-500">{{ saveMessage() }}</div>
+      <div class="flex items-center gap-2">
+        <div class="text-sm text-green-500">{{ saveMessage() }}</div>
+        @if (isAiDirty()) {
+          <div class="text-sm text-amber-400">Unsaved changes</div>
+        }
+      </div>
       <button
         type="button"
         (click)="saveSettings()"
         [disabled]="isSaving()"
-        class="flex items-center gap-2 px-6 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 rounded-lg font-medium transition-colors"
+        class="flex items-center gap-2 px-6 py-2 rounded-lg font-medium transition-colors"
+        [class]="isAiDirty() ? 'bg-amber-600 hover:bg-amber-500' : 'bg-blue-600 hover:bg-blue-500'"
+        [class.disabled:opacity-50]="isSaving()"
       >
         @if (isSaving()) {
           <lucide-icon [img]="Loader2" class="w-4 h-4 animate-spin"></lucide-icon>
@@ -557,12 +564,19 @@
 
       <!-- SSH Save Button -->
       <div class="flex items-center justify-between">
-        <div class="text-sm text-green-500">{{ sshSaveMessage() }}</div>
+        <div class="flex items-center gap-2">
+          <div class="text-sm text-green-500">{{ sshSaveMessage() }}</div>
+          @if (isSshDirty()) {
+            <div class="text-sm text-amber-400">Unsaved changes</div>
+          }
+        </div>
         <button
           type="button"
           (click)="saveSshSettings()"
           [disabled]="isSavingSsh()"
-          class="flex items-center gap-2 px-6 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 rounded-lg font-medium transition-colors"
+          class="flex items-center gap-2 px-6 py-2 rounded-lg font-medium transition-colors"
+          [class]="isSshDirty() ? 'bg-amber-600 hover:bg-amber-500' : 'bg-blue-600 hover:bg-blue-500'"
+          [class.disabled:opacity-50]="isSavingSsh()"
         >
           @if (isSavingSsh()) {
             <lucide-icon [img]="Loader2" class="w-4 h-4 animate-spin"></lucide-icon>

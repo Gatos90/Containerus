@@ -93,7 +93,7 @@
   <!-- System Cards -->
   <div class="space-y-3">
     @for (system of systemState.filteredSystems(); track system.id) {
-      <div class="bg-zinc-800 rounded-lg p-3 sm:p-4 space-y-3">
+      <div class="bg-zinc-900 rounded-xl border border-zinc-700/50 p-3 sm:p-4 space-y-3 hover:bg-zinc-800 transition-colors">
         <!-- Mobile: Stack layout -->
         <div class="flex items-start sm:items-center gap-3 sm:gap-4">
           <lucide-icon [img]="Server" class="w-5 h-5 sm:w-6 sm:h-6 text-zinc-400 flex-shrink-0 mt-0.5 sm:mt-0"></lucide-icon>
@@ -132,13 +132,13 @@
                 <lucide-icon [img]="Unlink" class="w-4 h-4"></lucide-icon>
               </button>
 
-              <a
-                [routerLink]="['/terminal', system.id]"
+              <button
+                (click)="dockTerminal(system.id)"
                 title="Terminal"
                 class="p-2.5 sm:p-2 touch-target rounded-lg hover:bg-zinc-700 transition-colors"
               >
                 <lucide-icon [img]="Terminal" class="w-4 h-4"></lucide-icon>
-              </a>
+              </button>
             } @else {
               <button
                 (click)="connect(system.id)"

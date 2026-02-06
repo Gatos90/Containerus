@@ -4,9 +4,11 @@ import {
   Component,
   effect,
   ElementRef,
+  HostListener,
   inject,
   OnDestroy,
   QueryList,
+  signal,
   ViewChildren,
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
@@ -23,13 +25,23 @@ import {
   Minimize2,
   Sparkles,
   FolderOpen,
+  Plus,
+  Terminal as TerminalIcon,
+  Box,
+  Keyboard,
+  ChevronRight,
+  Server,
 } from 'lucide-angular';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { SearchAddon } from '@xterm/addon-search';
 import { WebLinksAddon } from '@xterm/addon-web-links';
-import { TerminalState, DockedTerminal, DockedFileBrowser, LayoutMode } from '../../../state/terminal.state';
+import { TerminalState, DockedTerminal, DockedFileBrowser, LayoutMode, DEFAULT_TERMINAL_OPTIONS } from '../../../state/terminal.state';
 import { TerminalService } from '../../../core/services/terminal.service';
+import { SystemState } from '../../../state/system.state';
+import { ContainerState } from '../../../state/container.state';
+import { ToastState } from '../../../state/toast.state';
+import { Container, getDisplayName, isRunning } from '../../../core/models/container.model';
 import { WarpTerminalViewComponent } from '../../../features/warp-terminal/warp-terminal-view/warp-terminal-view.component';
 import { FileBrowserViewComponent } from '../../../features/file-browser/file-browser-view/file-browser-view.component';
 
@@ -44,7 +56,10 @@ export class TerminalWorkspaceComponent implements AfterViewInit, OnDestroy {
   @ViewChildren('terminalHost') terminalHosts!: QueryList<ElementRef<HTMLDivElement>>;
 
   readonly terminalState = inject(TerminalState);
+  readonly systemState = inject(SystemState);
+  readonly containerState = inject(ContainerState);
   private readonly terminalService = inject(TerminalService);
+  private readonly toastState = inject(ToastState);
 
   readonly Square = Square;
   readonly Columns2 = Columns2;
@@ -57,6 +72,21 @@ export class TerminalWorkspaceComponent implements AfterViewInit, OnDestroy {
   readonly Minimize2 = Minimize2;
   readonly Sparkles = Sparkles;
   readonly FolderOpen = FolderOpen;
+  readonly Plus = Plus;
+  readonly TerminalIcon = TerminalIcon;
+  readonly Box = Box;
+  readonly Keyboard = Keyboard;
+  readonly ChevronRight = ChevronRight;
+  readonly Server = Server;
+  readonly getDisplayName = getDisplayName;
+
+  showNewMenu = signal(false);
+  showShortcuts = signal(false);
+  expandedSlotSystemId = signal<string | null>(null);
+  dragTabIndex = signal<number | null>(null);
+  dragTabType = signal<'terminal' | 'file-browser' | null>(null);
+  dropTargetIndex = signal<number | null>(null);
+  slotDropTarget = signal<number | null>(null);
 
   private resizeObservers = new Map<number, ResizeObserver>();
   private attachedTerminals = new Map<string, number>();
@@ -144,9 +174,13 @@ export class TerminalWorkspaceComponent implements AfterViewInit, OnDestroy {
 
       const hostElement = host.nativeElement;
 
-      // Check if already attached to this host
+      // Check if already attached to this host AND the terminal element is actually in it
+      // (Angular may have recreated the host div when switching between content types)
       if (this.attachedTerminals.get(slot.contentId) === index) {
-        return;
+        const termEl = terminal.terminal?.element;
+        if (termEl && hostElement.contains(termEl)) {
+          return;
+        }
       }
 
       // Re-attach terminal to new host
@@ -160,30 +194,12 @@ export class TerminalWorkspaceComponent implements AfterViewInit, OnDestroy {
     element: HTMLElement,
     slotIndex: number
   ): void {
-    // First, clean up any OTHER terminal that was attached to this slot
-    // This prevents orphaned terminal instances when switching terminals
+    // Detach any OTHER terminal from this slot (don't dispose — keep alive for reattachment)
     for (const [termId, attachedSlot] of this.attachedTerminals.entries()) {
       if (attachedSlot === slotIndex && termId !== dockedTerminal.id) {
         const otherTerminal = this.terminalState.getTerminalById(termId);
-        if (otherTerminal?.terminal) {
-          // Serialize buffer state before disposing
-          try {
-            const buffer = otherTerminal.terminal.buffer.active;
-            let content = '';
-            for (let i = 0; i < buffer.length; i++) {
-              const line = buffer.getLine(i);
-              if (line) {
-                content += line.translateToString(true) + '\r\n';
-              }
-            }
-            otherTerminal.serializedState = content;
-          } catch {
-            // Ignore serialization errors
-          }
-          otherTerminal.terminal.dispose();
-          otherTerminal.terminal = undefined;
-          otherTerminal.fitAddon = undefined;
-          otherTerminal.searchAddon = undefined;
+        if (otherTerminal?.terminal?.element?.parentElement) {
+          otherTerminal.terminal.element.remove();
         }
         this.attachedTerminals.delete(termId);
         break;
@@ -201,11 +217,21 @@ export class TerminalWorkspaceComponent implements AfterViewInit, OnDestroy {
         return;
       }
 
-      // Terminal exists but needs to move to new container
-      if (terminalElement && currentParent) {
+      // Terminal exists but needs to move to new container (or was detached)
+      if (terminalElement) {
         element.innerHTML = '';
         element.appendChild(terminalElement);
         dockedTerminal.fitAddon?.fit();
+
+        // Resize PTY to match after refit
+        this.terminalService.resize(
+          dockedTerminal.session.id,
+          dockedTerminal.terminal!.cols,
+          dockedTerminal.terminal!.rows
+        );
+
+        // Focus the terminal
+        dockedTerminal.terminal!.focus();
 
         // Update resize observer for new container
         if (this.resizeObservers.has(slotIndex)) {
@@ -224,7 +250,7 @@ export class TerminalWorkspaceComponent implements AfterViewInit, OnDestroy {
         return;
       }
 
-      // Terminal reference exists but DOM is broken - dispose and recreate
+      // Terminal reference exists but no DOM element - dispose and recreate
       dockedTerminal.terminal.dispose();
       dockedTerminal.terminal = undefined;
       dockedTerminal.fitAddon = undefined;
@@ -386,5 +412,236 @@ export class TerminalWorkspaceComponent implements AfterViewInit, OnDestroy {
 
   trackByFileBrowserId(_: number, fb: DockedFileBrowser): string {
     return fb.id;
+  }
+
+  // --- New Terminal from dock ---
+
+  toggleNewMenu(): void {
+    this.showNewMenu.update(v => !v);
+  }
+
+  toggleSlotSystem(systemId: string): void {
+    this.expandedSlotSystemId.update(id => id === systemId ? null : systemId);
+  }
+
+  toggleShortcuts(): void {
+    this.showShortcuts.update(v => !v);
+  }
+
+  getRunningContainers(systemId: string): Container[] {
+    const bySystem = this.containerState.containersBySystem();
+    return (bySystem[systemId] ?? []).filter(isRunning);
+  }
+
+  async openNewTerminal(systemId: string, targetSlot?: number): Promise<void> {
+    this.showNewMenu.set(false);
+    const system = this.systemState.systems().find(s => s.id === systemId);
+    if (!system) return;
+
+    try {
+      const session = await this.terminalService.startSession(systemId);
+      const id = this.terminalState.generateTerminalId();
+      this.terminalState.addTerminal({
+        id,
+        session,
+        systemId,
+        systemName: system.name,
+        serializedState: '',
+        terminalOptions: DEFAULT_TERMINAL_OPTIONS,
+      }, targetSlot);
+    } catch (err: any) {
+      this.toastState.error(`Failed to open terminal: ${err?.message ?? err}`);
+    }
+  }
+
+  async openContainerTerminal(systemId: string, container: Container, targetSlot?: number): Promise<void> {
+    this.showNewMenu.set(false);
+    const system = this.systemState.systems().find(s => s.id === systemId);
+    if (!system) return;
+
+    try {
+      const session = await this.terminalService.startSession(systemId, container.id);
+      const id = this.terminalState.generateTerminalId();
+      this.terminalState.addTerminal({
+        id,
+        session,
+        systemId,
+        systemName: system.name,
+        containerName: getDisplayName(container),
+        serializedState: '',
+        terminalOptions: DEFAULT_TERMINAL_OPTIONS,
+      }, targetSlot);
+    } catch (err: any) {
+      this.toastState.error(`Failed to open container terminal: ${err?.message ?? err}`);
+    }
+  }
+
+  openNewFileBrowser(systemId: string, targetSlot?: number, containerId?: string, containerName?: string, runtime?: string): void {
+    this.showNewMenu.set(false);
+    const system = this.systemState.systems().find(s => s.id === systemId);
+    if (!system) return;
+
+    const fb: DockedFileBrowser = {
+      id: this.terminalState.generateFileBrowserId(),
+      systemId,
+      systemName: system.name,
+      currentPath: '/',
+    };
+    if (containerId) fb.containerId = containerId;
+    if (containerName) fb.containerName = containerName;
+    if (runtime) fb.runtime = runtime as any;
+    this.terminalState.addFileBrowser(fb, targetSlot);
+  }
+
+  // --- Slot index for tab badges ---
+
+  getSlotIndex(terminalId: string): number {
+    return this.terminalState.slots().findIndex(
+      s => s.contentType === 'terminal' && s.contentId === terminalId
+    );
+  }
+
+  getFileBrowserSlotIndex(fbId: string): number {
+    return this.terminalState.slots().findIndex(
+      s => s.contentType === 'file-browser' && s.contentId === fbId
+    );
+  }
+
+  isSplitView(): boolean {
+    return this.terminalState.layoutMode() !== 'single';
+  }
+
+  // --- Drag and drop for dock tabs ---
+
+  private dragItemId: string | null = null;
+
+  onTabDragStart(index: number, type: 'terminal' | 'file-browser', itemId: string): void {
+    this.dragTabIndex.set(index);
+    this.dragTabType.set(type);
+    this.dragItemId = itemId;
+  }
+
+  onTabDragOver(event: DragEvent, index: number, type: 'terminal' | 'file-browser'): void {
+    if (this.dragTabType() !== type) return;
+    event.preventDefault();
+    if (event.dataTransfer) {
+      event.dataTransfer.dropEffect = 'move';
+    }
+    this.dropTargetIndex.set(index);
+  }
+
+  onTabDragLeave(event: DragEvent): void {
+    // Only clear if leaving the tab element, not entering a child
+    const related = event.relatedTarget as HTMLElement | null;
+    const current = event.currentTarget as HTMLElement;
+    if (related && current.contains(related)) return;
+    this.dropTargetIndex.set(null);
+  }
+
+  onTabDrop(event: DragEvent, index: number, type: 'terminal' | 'file-browser'): void {
+    event.preventDefault();
+    const fromIndex = this.dragTabIndex();
+    if (fromIndex === null || this.dragTabType() !== type || fromIndex === index) {
+      this.resetDragState();
+      return;
+    }
+    if (type === 'terminal') {
+      this.terminalState.reorderTerminals(fromIndex, index);
+    } else {
+      this.terminalState.reorderFileBrowsers(fromIndex, index);
+    }
+    this.resetDragState();
+  }
+
+  onTabDragEnd(): void {
+    this.resetDragState();
+  }
+
+  // --- Drag tabs onto grid slots ---
+
+  onSlotDragOver(event: DragEvent, slotIndex: number): void {
+    // Only allow drop when dragging a dock tab
+    if (this.dragTabType() === null) return;
+    event.preventDefault();
+    if (event.dataTransfer) {
+      event.dataTransfer.dropEffect = 'move';
+    }
+    this.slotDropTarget.set(slotIndex);
+  }
+
+  onSlotDragLeave(event: DragEvent): void {
+    const related = event.relatedTarget as HTMLElement | null;
+    const current = event.currentTarget as HTMLElement;
+    if (related && current.contains(related)) return;
+    this.slotDropTarget.set(null);
+  }
+
+  onSlotDrop(event: DragEvent, slotIndex: number): void {
+    event.preventDefault();
+    const type = this.dragTabType();
+    const itemId = this.dragItemId;
+
+    if (!type || !itemId) {
+      this.resetDragState();
+      return;
+    }
+
+    if (type === 'terminal') {
+      this.terminalState.assignTerminalToSlot(itemId, slotIndex);
+    } else {
+      this.terminalState.assignFileBrowserToSlot(itemId, slotIndex);
+    }
+    this.terminalState.setActiveSlot(slotIndex);
+    this.resetDragState();
+  }
+
+  private resetDragState(): void {
+    this.dragTabIndex.set(null);
+    this.dragTabType.set(null);
+    this.dropTargetIndex.set(null);
+    this.slotDropTarget.set(null);
+    this.dragItemId = null;
+  }
+
+  // --- Keyboard shortcuts ---
+
+  @HostListener('document:keydown', ['$event'])
+  onKeyDown(event: KeyboardEvent): void {
+    if (!this.terminalState.isDockVisible()) return;
+
+    // Ctrl+Shift+F — toggle fullscreen
+    if (event.ctrlKey && event.shiftKey && event.key === 'F') {
+      event.preventDefault();
+      this.toggleDockFullscreen();
+      return;
+    }
+
+    // Ctrl+Shift+M — toggle minimize
+    if (event.ctrlKey && event.shiftKey && event.key === 'M') {
+      event.preventDefault();
+      this.toggleDockMinimized();
+      return;
+    }
+
+    // Ctrl+1..4 — switch dock tabs by index
+    if (event.ctrlKey && !event.shiftKey && !event.metaKey) {
+      const num = parseInt(event.key, 10);
+      if (num >= 1 && num <= 9) {
+        const allItems = [
+          ...this.terminalState.dockedTerminals().map(t => ({ type: 'terminal' as const, id: t.id })),
+          ...this.terminalState.dockedFileBrowsers().map(f => ({ type: 'file-browser' as const, id: f.id })),
+        ];
+        const idx = num - 1;
+        if (idx < allItems.length) {
+          event.preventDefault();
+          const item = allItems[idx];
+          if (item.type === 'terminal') {
+            this.focusTerminal(item.id);
+          } else {
+            this.terminalState.focusFileBrowser(item.id);
+          }
+        }
+      }
+    }
   }
 }

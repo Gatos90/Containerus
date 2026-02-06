@@ -81,6 +81,7 @@ export class TerminalState {
   private _isDockMinimized = signal<boolean>(false);
   private _isDockExpanded = signal<boolean>(true);
   private _isDockFullscreen = signal<boolean>(false);
+  private _dockHeightPercent = signal<number>(50);
   private _dockedFileBrowsers = signal<DockedFileBrowser[]>([]);
 
   readonly dockedTerminals = this._dockedTerminals.asReadonly();
@@ -91,8 +92,11 @@ export class TerminalState {
   readonly isDockMinimized = this._isDockMinimized.asReadonly();
   readonly isDockExpanded = this._isDockExpanded.asReadonly();
   readonly isDockFullscreen = this._isDockFullscreen.asReadonly();
+  readonly dockHeightPercent = this._dockHeightPercent.asReadonly();
 
-  readonly isDockVisible = computed(() =>
+  readonly isDockVisible = signal(true);
+
+  readonly hasDockedItems = computed(() =>
     this._dockedTerminals().length > 0 || this._dockedFileBrowsers().length > 0
   );
 
@@ -126,8 +130,13 @@ export class TerminalState {
 
   constructor(private terminalService: TerminalService) {}
 
-  addTerminal(terminal: DockedTerminal): void {
+  addTerminal(terminal: DockedTerminal, targetSlot?: number): void {
     this._dockedTerminals.update(terminals => [...terminals, terminal]);
+
+    if (targetSlot !== undefined) {
+      this.assignTerminalToSlot(terminal.id, targetSlot);
+      return;
+    }
 
     // Assign to first empty slot or active slot
     const slots = this._slots();
@@ -240,6 +249,10 @@ export class TerminalState {
     this._isDockMinimized.set(minimized);
   }
 
+  setDockHeightPercent(percent: number): void {
+    this._dockHeightPercent.set(Math.max(15, Math.min(85, percent)));
+  }
+
   getTerminalById(id: string): DockedTerminal | undefined {
     return this._dockedTerminals().find(t => t.id === id);
   }
@@ -335,7 +348,7 @@ export class TerminalState {
 
   // --- File Browser Dock ---
 
-  addFileBrowser(fb: DockedFileBrowser): void {
+  addFileBrowser(fb: DockedFileBrowser, targetSlot?: number): void {
     // Prevent duplicates for same system+container — update path instead
     const existing = this._dockedFileBrowsers().find(
       f => f.systemId === fb.systemId && f.containerId === fb.containerId
@@ -344,10 +357,19 @@ export class TerminalState {
       this._dockedFileBrowsers.update(browsers =>
         browsers.map(b => b.id === existing.id ? { ...b, currentPath: fb.currentPath } : b)
       );
-      this.focusFileBrowser(existing.id);
+      if (targetSlot !== undefined) {
+        this.assignFileBrowserToSlot(existing.id, targetSlot);
+      } else {
+        this.focusFileBrowser(existing.id);
+      }
       return;
     }
     this._dockedFileBrowsers.update(browsers => [...browsers, fb]);
+
+    if (targetSlot !== undefined) {
+      this.assignFileBrowserToSlot(fb.id, targetSlot);
+      return;
+    }
 
     // Assign to first empty slot or active slot
     const slots = this._slots();
@@ -379,5 +401,23 @@ export class TerminalState {
 
   generateFileBrowserId(): string {
     return `filebrowser-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  }
+
+  reorderTerminals(fromIndex: number, toIndex: number): void {
+    this._dockedTerminals.update(terminals => {
+      const arr = [...terminals];
+      const [moved] = arr.splice(fromIndex, 1);
+      arr.splice(toIndex, 0, moved);
+      return arr;
+    });
+  }
+
+  reorderFileBrowsers(fromIndex: number, toIndex: number): void {
+    this._dockedFileBrowsers.update(browsers => {
+      const arr = [...browsers];
+      const [moved] = arr.splice(fromIndex, 1);
+      arr.splice(toIndex, 0, moved);
+      return arr;
+    });
   }
 }

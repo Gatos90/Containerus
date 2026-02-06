@@ -2,6 +2,7 @@ import {
   ChangeDetectionStrategy,
   Component,
   computed,
+  HostListener,
   inject,
   OnInit,
   signal,
@@ -118,6 +119,41 @@ export class SettingsPageComponent implements OnInit {
   sshSaveMessage = signal<string>('');
   isSavingSsh = signal(false);
 
+  // Saved state tracking for dirty detection
+  private savedAi = signal<{ provider: string; apiKey: string; endpoint: string; model: string; temp: number; maxTokens: number; memoryEnabled: boolean; summaryModel: string; summaryMaxTokens: number; apiVersion: string } | null>(null);
+  private savedSshPaths = signal<string[]>([]);
+
+  readonly isAiDirty = computed(() => {
+    const saved = this.savedAi();
+    if (!saved) return false;
+    return saved.provider !== this.selectedProvider()
+      || saved.apiKey !== this.apiKey()
+      || saved.endpoint !== this.endpointUrl()
+      || saved.model !== this.modelName()
+      || saved.temp !== this.temperature()
+      || saved.maxTokens !== this.maxTokens()
+      || saved.memoryEnabled !== this.memoryEnabled()
+      || saved.summaryModel !== this.summaryModel()
+      || saved.summaryMaxTokens !== this.summaryMaxTokens()
+      || saved.apiVersion !== this.apiVersion();
+  });
+
+  readonly isSshDirty = computed(() => {
+    const saved = this.savedSshPaths();
+    const current = this.sshConfigPaths();
+    if (saved.length !== current.length) return true;
+    return saved.some((p, i) => p !== current[i]);
+  });
+
+  readonly hasUnsavedChanges = computed(() => this.isAiDirty() || this.isSshDirty());
+
+  @HostListener('window:beforeunload', ['$event'])
+  onBeforeUnload(event: BeforeUnloadEvent): void {
+    if (this.hasUnsavedChanges()) {
+      event.preventDefault();
+    }
+  }
+
   // Computed
   get currentProviderInfo(): ProviderInfo {
     return this.providers.find((p) => p.id === this.selectedProvider()) ?? this.providers[0];
@@ -168,9 +204,25 @@ export class SettingsPageComponent implements OnInit {
         this.apiVersion.set(settings.apiVersion ?? '');
       }
       await this.loadModels();
+      this.snapshotAiState();
     } catch (err) {
       console.error('Failed to load settings:', err);
     }
+  }
+
+  private snapshotAiState(): void {
+    this.savedAi.set({
+      provider: this.selectedProvider(),
+      apiKey: this.apiKey(),
+      endpoint: this.endpointUrl(),
+      model: this.modelName(),
+      temp: this.temperature(),
+      maxTokens: this.maxTokens(),
+      memoryEnabled: this.memoryEnabled(),
+      summaryModel: this.summaryModel(),
+      summaryMaxTokens: this.summaryMaxTokens(),
+      apiVersion: this.apiVersion(),
+    });
   }
 
   private isDefaultEndpoint(url: string): boolean {
@@ -314,6 +366,7 @@ export class SettingsPageComponent implements OnInit {
         this.summaryMaxTokens(),
         this.apiVersion() || undefined
       );
+      this.snapshotAiState();
       this.saveMessage.set('Settings saved successfully!');
       setTimeout(() => this.saveMessage.set(''), 3000);
     } catch (err) {
@@ -399,7 +452,9 @@ export class SettingsPageComponent implements OnInit {
   async loadSshSettings(): Promise<void> {
     try {
       const settings = await this.systemService.getAppSettings();
-      this.sshConfigPaths.set(settings.sshConfigPaths ?? []);
+      const paths = settings.sshConfigPaths ?? [];
+      this.sshConfigPaths.set(paths);
+      this.savedSshPaths.set([...paths]);
     } catch (err) {
       console.warn('Failed to load SSH settings:', err);
     }
@@ -415,6 +470,7 @@ export class SettingsPageComponent implements OnInit {
         sshConfigPaths: paths,
       });
       this.sshConfigPaths.set(paths);
+      this.savedSshPaths.set([...paths]);
       this.sshSaveMessage.set('SSH settings saved!');
       setTimeout(() => this.sshSaveMessage.set(''), 3000);
     } catch (err) {

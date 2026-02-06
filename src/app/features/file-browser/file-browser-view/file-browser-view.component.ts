@@ -8,14 +8,14 @@ import {
   Search, FolderPlus, Upload, Eye, EyeOff,
   Folder, File, FileText, FileCode, FileImage, FileArchive,
   Link, Settings, Trash2, Pencil, Download, MoreVertical,
-  ChevronRight, X, FolderOpen, PanelBottomOpen,
+  ChevronRight, ChevronDown, X, FolderOpen, PanelBottomOpen, Box, Globe,
 } from 'lucide-angular';
 import { FileBrowserState } from '../../../state/file-browser.state';
 import { SystemState } from '../../../state/system.state';
 import { ContainerState } from '../../../state/container.state';
 import { FileEntry, formatFileSize, isTextFile } from '../../../core/models/file-browser.model';
-import { ContainerRuntime, getDisplayName } from '../../../core/models/container.model';
-import { TerminalState } from '../../../state/terminal.state';
+import { Container, ContainerRuntime, getDisplayName, isRunning } from '../../../core/models/container.model';
+import { TerminalState, DockedFileBrowser } from '../../../state/terminal.state';
 import { FileEditorModalComponent } from '../components/file-editor-modal/file-editor-modal.component';
 import { Subscription } from 'rxjs';
 
@@ -61,6 +61,9 @@ export class FileBrowserViewComponent implements OnInit, OnDestroy {
   readonly X = X;
   readonly FolderOpen = FolderOpen;
   readonly PanelBottomOpen = PanelBottomOpen;
+  readonly Box = Box;
+  readonly ChevronDown = ChevronDown;
+  readonly Globe = Globe;
 
   // Embedded mode inputs (when rendered inside workspace dock)
   readonly embeddedSystemId = input<string>();
@@ -77,6 +80,7 @@ export class FileBrowserViewComponent implements OnInit, OnDestroy {
   contextMenuEntry = signal<FileEntry | null>(null);
   contextMenuPos = signal({ x: 0, y: 0 });
   refreshing = signal(false);
+  expandedSystemId = signal<string | null>(null);
   embedded = false;
 
   // System selection (when no systemId in route)
@@ -201,12 +205,67 @@ export class FileBrowserViewComponent implements OnInit, OnDestroy {
     this.router.navigate(['/containers']);
   }
 
-  // System selection for when no systemId in route
-  async selectSystem(systemId: string): Promise<void> {
-    this.router.navigate(['/files', systemId]);
+  // System selection - dock file browser instead of routing
+  selectSystem(systemId: string): void {
+    const system = this.systemState.systems().find(s => s.id === systemId);
+    if (!system) return;
+
+    const fb: DockedFileBrowser = {
+      id: this.terminalState.generateFileBrowserId(),
+      systemId,
+      systemName: system.name,
+      currentPath: '/',
+    };
+    this.terminalState.addFileBrowser(fb);
+  }
+
+  selectContainer(systemId: string, container: Container): void {
+    const system = this.systemState.systems().find(s => s.id === systemId);
+    if (!system) return;
+
+    const fb: DockedFileBrowser = {
+      id: this.terminalState.generateFileBrowserId(),
+      systemId,
+      systemName: system.name,
+      containerId: container.id,
+      containerName: getDisplayName(container),
+      runtime: container.runtime,
+      currentPath: '/',
+    };
+    this.terminalState.addFileBrowser(fb);
+  }
+
+  getRunningContainers(systemId: string): Container[] {
+    const bySystem = this.containerState.containersBySystem();
+    return (bySystem[systemId] ?? []).filter(isRunning);
+  }
+
+  getContainerDisplayName(container: Container): string {
+    return getDisplayName(container);
+  }
+
+  toggleExpandSystem(systemId: string): void {
+    this.expandedSystemId.update(id => id === systemId ? null : systemId);
+  }
+
+  getRuntimeIcon(system: { primaryRuntime: string }): string {
+    switch (system.primaryRuntime) {
+      case 'docker': return 'Docker';
+      case 'podman': return 'Podman';
+      case 'apple': return 'Apple';
+      default: return 'Container';
+    }
   }
 
   // Navigation
+  async onEntryClick(entry: FileEntry): Promise<void> {
+    if (entry.fileType === 'directory') {
+      await this.state.navigateTo(entry.path);
+    } else {
+      this.state.selectEntry(entry);
+    }
+  }
+
   async navigateToEntry(entry: FileEntry): Promise<void> {
     if (entry.fileType === 'directory') {
       await this.state.navigateTo(entry.path);
