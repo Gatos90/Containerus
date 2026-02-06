@@ -237,3 +237,273 @@ pub enum ConfirmationAction {
     Reject,
     UseAlternative,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // === AgentEvent serialization ===
+
+    #[test]
+    fn test_agent_event_thinking_serialization() {
+        let event = AgentEvent::Thinking {
+            session_id: "sess-1".to_string(),
+            query_id: "q-1".to_string(),
+        };
+        let json = serde_json::to_value(&event).unwrap();
+        assert_eq!(json["type"], "thinking");
+        // rename_all on enum only renames variants, not struct fields
+        assert_eq!(json["session_id"], "sess-1");
+        assert_eq!(json["query_id"], "q-1");
+    }
+
+    #[test]
+    fn test_agent_event_response_chunk_serialization() {
+        let event = AgentEvent::ResponseChunk {
+            session_id: "s1".to_string(),
+            query_id: "q1".to_string(),
+            chunk_type: ChunkType::Text,
+            content: "hello".to_string(),
+            is_final: false,
+        };
+        let json = serde_json::to_value(&event).unwrap();
+        assert_eq!(json["type"], "responseChunk");
+        assert_eq!(json["chunk_type"], "text");
+        assert_eq!(json["is_final"], false);
+    }
+
+    #[test]
+    fn test_agent_event_command_proposed_serialization() {
+        let event = AgentEvent::CommandProposed {
+            session_id: "s1".to_string(),
+            query_id: "q1".to_string(),
+            command: "docker ps".to_string(),
+            explanation: "List containers".to_string(),
+            danger_level: "safe".to_string(),
+            requires_confirmation: false,
+            affected_resources: vec![],
+        };
+        let json = serde_json::to_value(&event).unwrap();
+        assert_eq!(json["type"], "commandProposed");
+        assert_eq!(json["command"], "docker ps");
+        assert_eq!(json["requires_confirmation"], false);
+    }
+
+    #[test]
+    fn test_agent_event_confirmation_required_serialization() {
+        let event = AgentEvent::ConfirmationRequired {
+            session_id: "s1".to_string(),
+            query_id: "q1".to_string(),
+            confirmation_id: "conf-1".to_string(),
+            command: "rm -rf /tmp".to_string(),
+            explanation: "Delete tmp".to_string(),
+            risk_level: "dangerous".to_string(),
+            affected_resources: vec!["/tmp".to_string()],
+            warning: Some("Data loss possible".to_string()),
+            alternatives: vec![CommandAlternative {
+                command: "rm -ri /tmp".to_string(),
+                description: "Interactive mode".to_string(),
+                is_safer: true,
+            }],
+        };
+        let json = serde_json::to_value(&event).unwrap();
+        assert_eq!(json["type"], "confirmationRequired");
+        assert_eq!(json["confirmation_id"], "conf-1");
+        assert_eq!(json["alternatives"].as_array().unwrap().len(), 1);
+        // CommandAlternative has its own rename_all = "camelCase"
+        assert_eq!(json["alternatives"][0]["isSafer"], true);
+    }
+
+    #[test]
+    fn test_agent_event_command_completed_serialization() {
+        let event = AgentEvent::CommandCompleted {
+            session_id: "s1".to_string(),
+            query_id: "q1".to_string(),
+            block_id: 42,
+            exit_code: 0,
+            duration_ms: 1500,
+        };
+        let json = serde_json::to_value(&event).unwrap();
+        assert_eq!(json["type"], "commandCompleted");
+        assert_eq!(json["block_id"], 42);
+        assert_eq!(json["exit_code"], 0);
+        assert_eq!(json["duration_ms"], 1500);
+    }
+
+    #[test]
+    fn test_agent_event_error_serialization() {
+        let event = AgentEvent::Error {
+            session_id: "s1".to_string(),
+            query_id: Some("q1".to_string()),
+            error_type: AgentErrorType::ProviderUnavailable,
+            message: "Cannot connect".to_string(),
+            recoverable: true,
+            suggestion: Some("Check API key".to_string()),
+        };
+        let json = serde_json::to_value(&event).unwrap();
+        assert_eq!(json["type"], "error");
+        assert_eq!(json["error_type"], "provider_unavailable");
+        assert_eq!(json["recoverable"], true);
+    }
+
+    #[test]
+    fn test_agent_event_query_completed_serialization() {
+        let event = AgentEvent::QueryCompleted {
+            session_id: "s1".to_string(),
+            query_id: "q1".to_string(),
+            status: QueryCompletionStatus::Success,
+            summary: Some("Done".to_string()),
+            blocks_created: vec![1, 2, 3],
+        };
+        let json = serde_json::to_value(&event).unwrap();
+        assert_eq!(json["type"], "queryCompleted");
+        assert_eq!(json["status"], "success");
+        assert_eq!(json["blocks_created"].as_array().unwrap().len(), 3);
+    }
+
+    // === ChunkType serialization ===
+
+    #[test]
+    fn test_chunk_type_serialization() {
+        assert_eq!(serde_json::to_value(ChunkType::Thinking).unwrap(), "thinking");
+        assert_eq!(serde_json::to_value(ChunkType::Text).unwrap(), "text");
+        assert_eq!(serde_json::to_value(ChunkType::Command).unwrap(), "command");
+        assert_eq!(serde_json::to_value(ChunkType::Explanation).unwrap(), "explanation");
+        assert_eq!(serde_json::to_value(ChunkType::Warning).unwrap(), "warning");
+    }
+
+    #[test]
+    fn test_chunk_type_deserialization() {
+        let thinking: ChunkType = serde_json::from_str("\"thinking\"").unwrap();
+        assert!(matches!(thinking, ChunkType::Thinking));
+    }
+
+    // === QueryCompletionStatus serialization ===
+
+    #[test]
+    fn test_query_completion_status_serialization() {
+        assert_eq!(serde_json::to_value(QueryCompletionStatus::Success).unwrap(), "success");
+        assert_eq!(serde_json::to_value(QueryCompletionStatus::PartialSuccess).unwrap(), "partial_success");
+        assert_eq!(serde_json::to_value(QueryCompletionStatus::Cancelled).unwrap(), "cancelled");
+        assert_eq!(serde_json::to_value(QueryCompletionStatus::Failed).unwrap(), "failed");
+        assert_eq!(serde_json::to_value(QueryCompletionStatus::AwaitingConfirmation).unwrap(), "awaiting_confirmation");
+    }
+
+    // === AgentErrorType serialization ===
+
+    #[test]
+    fn test_agent_error_type_serialization() {
+        assert_eq!(serde_json::to_value(AgentErrorType::SessionNotFound).unwrap(), "session_not_found");
+        assert_eq!(serde_json::to_value(AgentErrorType::RateLimited).unwrap(), "rate_limited");
+        assert_eq!(serde_json::to_value(AgentErrorType::ContextTooLarge).unwrap(), "context_too_large");
+        assert_eq!(serde_json::to_value(AgentErrorType::Internal).unwrap(), "internal");
+    }
+
+    // === AgentCommand deserialization ===
+
+    #[test]
+    fn test_agent_command_user_prompt_deserialization() {
+        let json = r#"{"type":"userPrompt","session_id":"s1","text":"help me"}"#;
+        let cmd: AgentCommand = serde_json::from_str(json).unwrap();
+        match cmd {
+            AgentCommand::UserPrompt { session_id, text, attached_blocks } => {
+                assert_eq!(session_id, "s1");
+                assert_eq!(text, "help me");
+                assert!(attached_blocks.is_none());
+            }
+            _ => panic!("Expected UserPrompt"),
+        }
+    }
+
+    #[test]
+    fn test_agent_command_confirm_deserialization() {
+        let json = r#"{"type":"confirmCommand","session_id":"s1","confirmation_id":"c1","confirmed":true}"#;
+        let cmd: AgentCommand = serde_json::from_str(json).unwrap();
+        match cmd {
+            AgentCommand::ConfirmCommand { session_id, confirmation_id, confirmed, .. } => {
+                assert_eq!(session_id, "s1");
+                assert_eq!(confirmation_id, "c1");
+                assert!(confirmed);
+            }
+            _ => panic!("Expected ConfirmCommand"),
+        }
+    }
+
+    #[test]
+    fn test_agent_command_cancel_deserialization() {
+        let json = r#"{"type":"cancel","session_id":"s1"}"#;
+        let cmd: AgentCommand = serde_json::from_str(json).unwrap();
+        assert!(matches!(cmd, AgentCommand::Cancel { .. }));
+    }
+
+    #[test]
+    fn test_agent_command_inject_deserialization() {
+        let json = r#"{"type":"injectCommand","session_id":"s1","command":"docker ps"}"#;
+        let cmd: AgentCommand = serde_json::from_str(json).unwrap();
+        match cmd {
+            AgentCommand::InjectCommand { command, .. } => {
+                assert_eq!(command, "docker ps");
+            }
+            _ => panic!("Expected InjectCommand"),
+        }
+    }
+
+    // === AgentQueryRequest deserialization ===
+
+    #[test]
+    fn test_agent_query_request_deserialization() {
+        // AgentQueryRequest is a struct with rename_all = "camelCase", so fields use camelCase
+        let json = r#"{
+            "sessionId": "s1",
+            "query": "list containers",
+            "autoExecute": true,
+            "streaming": true
+        }"#;
+        let req: AgentQueryRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(req.session_id, "s1");
+        assert_eq!(req.query, "list containers");
+        assert!(req.auto_execute);
+        assert!(req.streaming);
+        assert!(req.context_block_ids.is_none());
+        assert!(req.query_id.is_none());
+    }
+
+    // === ConfirmationResponse deserialization ===
+
+    #[test]
+    fn test_confirmation_response_deserialization() {
+        // ConfirmationResponse is a struct with rename_all = "camelCase"
+        let json = r#"{"confirmationId":"c1","action":"approve"}"#;
+        let resp: ConfirmationResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(resp.confirmation_id, "c1");
+        assert!(matches!(resp.action, ConfirmationAction::Approve));
+        assert!(resp.use_alternative.is_none());
+    }
+
+    #[test]
+    fn test_confirmation_action_variants() {
+        let approve: ConfirmationAction = serde_json::from_str("\"approve\"").unwrap();
+        assert!(matches!(approve, ConfirmationAction::Approve));
+
+        let reject: ConfirmationAction = serde_json::from_str("\"reject\"").unwrap();
+        assert!(matches!(reject, ConfirmationAction::Reject));
+
+        let alt: ConfirmationAction = serde_json::from_str("\"use_alternative\"").unwrap();
+        assert!(matches!(alt, ConfirmationAction::UseAlternative));
+    }
+
+    // === CommandAlternative serialization ===
+
+    #[test]
+    fn test_command_alternative_roundtrip() {
+        let alt = CommandAlternative {
+            command: "docker container ls".to_string(),
+            description: "List containers".to_string(),
+            is_safer: true,
+        };
+        let json = serde_json::to_string(&alt).unwrap();
+        let deserialized: CommandAlternative = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.command, "docker container ls");
+        assert!(deserialized.is_safer);
+    }
+}

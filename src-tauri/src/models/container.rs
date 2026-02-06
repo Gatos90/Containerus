@@ -210,6 +210,176 @@ pub struct ContainerDetails {
     pub host_config: HostConfigExtras,
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::system::SystemId;
+    use chrono::Utc;
+
+    fn make_container(status: ContainerStatus) -> Container {
+        Container {
+            id: ContainerId("abc123def456789012345678".to_string()),
+            name: "web-server".to_string(),
+            image: "nginx:latest".to_string(),
+            status,
+            runtime: ContainerRuntime::Docker,
+            system_id: SystemId("sys-1".to_string()),
+            created_at: Utc::now(),
+            ports: vec![],
+            environment_variables: std::collections::HashMap::new(),
+            volumes: vec![],
+            network_settings: NetworkSettings {
+                networks: std::collections::HashMap::new(),
+                port_bindings: vec![],
+            },
+            resource_limits: ResourceLimits::default(),
+            labels: std::collections::HashMap::new(),
+            restart_policy: RestartPolicy::default(),
+            health_check: None,
+            state: ContainerState::default(),
+            config: ContainerConfig::default(),
+            host_config: HostConfigExtras::default(),
+        }
+    }
+
+    #[test]
+    fn test_short_id() {
+        let container = make_container(ContainerStatus::Running);
+        assert_eq!(container.short_id(), "abc123def456");
+    }
+
+    #[test]
+    fn test_display_name_with_name() {
+        let container = make_container(ContainerStatus::Running);
+        assert_eq!(container.display_name(), "web-server");
+    }
+
+    #[test]
+    fn test_display_name_without_name() {
+        let mut container = make_container(ContainerStatus::Running);
+        container.name = String::new();
+        assert_eq!(container.display_name(), "abc123def456");
+    }
+
+    #[test]
+    fn test_is_running() {
+        assert!(make_container(ContainerStatus::Running).is_running());
+        assert!(!make_container(ContainerStatus::Exited).is_running());
+        assert!(!make_container(ContainerStatus::Paused).is_running());
+        assert!(!make_container(ContainerStatus::Created).is_running());
+        assert!(!make_container(ContainerStatus::Dead).is_running());
+    }
+
+    #[test]
+    fn test_available_actions_running() {
+        let actions = make_container(ContainerStatus::Running).available_actions();
+        assert_eq!(actions, vec![ContainerAction::Stop, ContainerAction::Restart, ContainerAction::Pause]);
+    }
+
+    #[test]
+    fn test_available_actions_exited() {
+        let actions = make_container(ContainerStatus::Exited).available_actions();
+        assert_eq!(actions, vec![ContainerAction::Start, ContainerAction::Remove]);
+    }
+
+    #[test]
+    fn test_available_actions_paused() {
+        let actions = make_container(ContainerStatus::Paused).available_actions();
+        assert_eq!(actions, vec![ContainerAction::Unpause, ContainerAction::Stop]);
+    }
+
+    #[test]
+    fn test_available_actions_created() {
+        let actions = make_container(ContainerStatus::Created).available_actions();
+        assert_eq!(actions, vec![ContainerAction::Start, ContainerAction::Remove]);
+    }
+
+    #[test]
+    fn test_available_actions_dead() {
+        let actions = make_container(ContainerStatus::Dead).available_actions();
+        assert_eq!(actions, vec![ContainerAction::Start, ContainerAction::Remove]);
+    }
+
+    #[test]
+    fn test_available_actions_restarting() {
+        let actions = make_container(ContainerStatus::Restarting).available_actions();
+        assert_eq!(actions, vec![ContainerAction::Stop]);
+    }
+
+    #[test]
+    fn test_available_actions_removing() {
+        let actions = make_container(ContainerStatus::Removing).available_actions();
+        assert!(actions.is_empty());
+    }
+
+    #[test]
+    fn test_container_status_serialization() {
+        let json = serde_json::to_string(&ContainerStatus::Running).unwrap();
+        assert_eq!(json, "\"running\"");
+
+        let status: ContainerStatus = serde_json::from_str("\"exited\"").unwrap();
+        assert_eq!(status, ContainerStatus::Exited);
+    }
+
+    #[test]
+    fn test_container_runtime_serialization() {
+        let json = serde_json::to_string(&ContainerRuntime::Docker).unwrap();
+        assert_eq!(json, "\"docker\"");
+
+        let json = serde_json::to_string(&ContainerRuntime::Podman).unwrap();
+        assert_eq!(json, "\"podman\"");
+
+        let json = serde_json::to_string(&ContainerRuntime::Apple).unwrap();
+        assert_eq!(json, "\"apple\"");
+    }
+
+    #[test]
+    fn test_container_action_serialization() {
+        let json = serde_json::to_string(&ContainerAction::Start).unwrap();
+        assert_eq!(json, "\"start\"");
+
+        let action: ContainerAction = serde_json::from_str("\"stop\"").unwrap();
+        assert_eq!(action, ContainerAction::Stop);
+    }
+
+    #[test]
+    fn test_restart_policy_default() {
+        let rp = RestartPolicy::default();
+        assert_eq!(rp.name, "no");
+        assert_eq!(rp.maximum_retry_count, 0);
+    }
+
+    #[test]
+    fn test_resource_limits_default() {
+        let rl = ResourceLimits::default();
+        assert!(rl.memory.is_none());
+        assert!(rl.cpu_shares.is_none());
+        assert!(rl.cpu_quota.is_none());
+        assert!(rl.cpu_period.is_none());
+    }
+
+    #[test]
+    fn test_container_details_from_container() {
+        let container = make_container(ContainerStatus::Running);
+        let details = ContainerDetails::from(&container);
+        assert_eq!(details.restart_policy.name, container.restart_policy.name);
+        assert_eq!(details.resource_limits.memory, container.resource_limits.memory);
+    }
+
+    #[test]
+    fn test_port_mapping_serialization() {
+        let pm = PortMapping {
+            host_ip: "0.0.0.0".to_string(),
+            host_port: 8080,
+            container_port: 80,
+            protocol: "tcp".to_string(),
+        };
+        let json = serde_json::to_string(&pm).unwrap();
+        assert!(json.contains("hostIp")); // camelCase
+        assert!(json.contains("8080"));
+    }
+}
+
 impl From<&Container> for ContainerDetails {
     fn from(c: &Container) -> Self {
         Self {

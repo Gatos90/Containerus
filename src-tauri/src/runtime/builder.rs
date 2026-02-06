@@ -673,4 +673,470 @@ mod tests {
             "container resume abc123" // Apple uses "resume" instead of "unpause"
         );
     }
+
+    #[test]
+    fn test_all_container_actions_docker() {
+        let actions = vec![
+            (ContainerAction::Start, "docker start c1"),
+            (ContainerAction::Stop, "docker stop c1"),
+            (ContainerAction::Restart, "docker restart c1"),
+            (ContainerAction::Pause, "docker pause c1"),
+            (ContainerAction::Unpause, "docker unpause c1"),
+            (ContainerAction::Remove, "docker rm c1"),
+        ];
+        for (action, expected) in actions {
+            assert_eq!(
+                CommandBuilder::container_action(ContainerRuntime::Docker, action, "c1"),
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn test_all_container_actions_podman() {
+        assert_eq!(
+            CommandBuilder::container_action(ContainerRuntime::Podman, ContainerAction::Start, "c1"),
+            "podman start c1"
+        );
+        assert_eq!(
+            CommandBuilder::container_action(ContainerRuntime::Podman, ContainerAction::Remove, "c1"),
+            "podman rm c1"
+        );
+    }
+
+    #[test]
+    fn test_apple_restart_chains_stop_and_start() {
+        let cmd = CommandBuilder::container_action(ContainerRuntime::Apple, ContainerAction::Restart, "c1");
+        assert!(cmd.contains("container stop c1"));
+        assert!(cmd.contains("container start c1"));
+    }
+
+    #[test]
+    fn test_apple_remove_uses_remove_not_rm() {
+        assert_eq!(
+            CommandBuilder::container_action(ContainerRuntime::Apple, ContainerAction::Remove, "c1"),
+            "container remove c1"
+        );
+    }
+
+    #[test]
+    fn test_list_containers_fallback() {
+        assert!(CommandBuilder::list_containers_fallback(ContainerRuntime::Docker).is_some());
+        assert!(CommandBuilder::list_containers_fallback(ContainerRuntime::Podman).is_some());
+        assert!(CommandBuilder::list_containers_fallback(ContainerRuntime::Apple).is_none());
+    }
+
+    #[test]
+    fn test_inspect_container() {
+        assert_eq!(
+            CommandBuilder::inspect_container(ContainerRuntime::Docker, "abc"),
+            "docker inspect abc"
+        );
+        assert_eq!(
+            CommandBuilder::inspect_container(ContainerRuntime::Apple, "abc"),
+            "container inspect abc"
+        );
+    }
+
+    #[test]
+    fn test_batch_inspect_containers() {
+        let cmd = CommandBuilder::batch_inspect_containers(ContainerRuntime::Docker, &["c1", "c2", "c3"]);
+        assert_eq!(cmd, "docker inspect c1 c2 c3");
+    }
+
+    #[test]
+    fn test_force_remove_container() {
+        assert_eq!(
+            CommandBuilder::force_remove_container(ContainerRuntime::Docker, "c1"),
+            "docker rm -f c1"
+        );
+        assert_eq!(
+            CommandBuilder::force_remove_container(ContainerRuntime::Apple, "c1"),
+            "container remove --force c1"
+        );
+    }
+
+    #[test]
+    fn test_container_logs_with_options() {
+        let cmd = CommandBuilder::container_logs(ContainerRuntime::Docker, "c1", Some(100), true);
+        assert!(cmd.contains("--tail 100"));
+        assert!(cmd.contains("--timestamps"));
+        assert!(cmd.contains("c1"));
+    }
+
+    #[test]
+    fn test_container_logs_no_options() {
+        let cmd = CommandBuilder::container_logs(ContainerRuntime::Docker, "c1", None, false);
+        assert!(!cmd.contains("--tail"));
+        assert!(!cmd.contains("--timestamps"));
+        assert!(cmd.contains("docker logs"));
+        assert!(cmd.contains("c1"));
+    }
+
+    #[test]
+    fn test_container_logs_apple_no_timestamps() {
+        let cmd = CommandBuilder::container_logs(ContainerRuntime::Apple, "c1", Some(50), true);
+        assert!(cmd.contains("container logs"));
+        assert!(cmd.contains("--tail 50"));
+        // Apple doesn't support --timestamps
+        assert!(!cmd.contains("--timestamps"));
+    }
+
+    #[test]
+    fn test_container_logs_stream() {
+        assert_eq!(
+            CommandBuilder::container_logs_stream(ContainerRuntime::Docker, "c1"),
+            "docker logs -f c1"
+        );
+        assert_eq!(
+            CommandBuilder::container_logs_stream(ContainerRuntime::Apple, "c1"),
+            "container logs -f c1"
+        );
+    }
+
+    #[test]
+    fn test_list_images() {
+        assert_eq!(
+            CommandBuilder::list_images(ContainerRuntime::Docker),
+            "docker images --format json"
+        );
+        assert_eq!(
+            CommandBuilder::list_images(ContainerRuntime::Apple),
+            "container image list --format json"
+        );
+    }
+
+    #[test]
+    fn test_pull_image() {
+        assert_eq!(
+            CommandBuilder::pull_image(ContainerRuntime::Docker, "nginx:latest"),
+            "docker pull nginx:latest"
+        );
+        assert_eq!(
+            CommandBuilder::pull_image(ContainerRuntime::Apple, "nginx:latest"),
+            "container image pull nginx:latest"
+        );
+    }
+
+    #[test]
+    fn test_remove_image_with_force() {
+        assert_eq!(
+            CommandBuilder::remove_image(ContainerRuntime::Docker, "img1", true),
+            "docker rmi -f img1"
+        );
+        assert_eq!(
+            CommandBuilder::remove_image(ContainerRuntime::Docker, "img1", false),
+            "docker rmi img1"
+        );
+        assert_eq!(
+            CommandBuilder::remove_image(ContainerRuntime::Apple, "img1", true),
+            "container image remove --force img1"
+        );
+    }
+
+    #[test]
+    fn test_inspect_image() {
+        assert_eq!(
+            CommandBuilder::inspect_image(ContainerRuntime::Docker, "img1"),
+            "docker image inspect img1"
+        );
+    }
+
+    #[test]
+    fn test_tag_image() {
+        assert_eq!(
+            CommandBuilder::tag_image(ContainerRuntime::Docker, "src:v1", "dst:v2"),
+            "docker tag src:v1 dst:v2"
+        );
+        assert_eq!(
+            CommandBuilder::tag_image(ContainerRuntime::Apple, "src:v1", "dst:v2"),
+            "container image tag src:v1 dst:v2"
+        );
+    }
+
+    #[test]
+    fn test_list_volumes() {
+        assert_eq!(
+            CommandBuilder::list_volumes(ContainerRuntime::Docker),
+            "docker volume ls --format json"
+        );
+    }
+
+    #[test]
+    fn test_create_volume() {
+        assert_eq!(
+            CommandBuilder::create_volume(ContainerRuntime::Docker, "myvol"),
+            "docker volume create myvol"
+        );
+    }
+
+    #[test]
+    fn test_remove_volume_with_force() {
+        assert_eq!(
+            CommandBuilder::remove_volume(ContainerRuntime::Docker, "myvol", true),
+            "docker volume rm -f myvol"
+        );
+        assert_eq!(
+            CommandBuilder::remove_volume(ContainerRuntime::Apple, "myvol", true),
+            "container volume remove --force myvol"
+        );
+    }
+
+    #[test]
+    fn test_inspect_volume() {
+        assert_eq!(
+            CommandBuilder::inspect_volume(ContainerRuntime::Podman, "vol1"),
+            "podman volume inspect vol1"
+        );
+    }
+
+    #[test]
+    fn test_list_networks() {
+        assert_eq!(
+            CommandBuilder::list_networks(ContainerRuntime::Docker),
+            "docker network ls --format json"
+        );
+    }
+
+    #[test]
+    fn test_create_network_with_options() {
+        let cmd = CommandBuilder::create_network(
+            ContainerRuntime::Docker,
+            "mynet",
+            Some("bridge"),
+            Some("10.0.0.0/24"),
+        );
+        assert!(cmd.contains("docker network create"));
+        assert!(cmd.contains("--driver bridge"));
+        assert!(cmd.contains("--subnet 10.0.0.0/24"));
+        assert!(cmd.contains("mynet"));
+    }
+
+    #[test]
+    fn test_create_network_no_options() {
+        let cmd = CommandBuilder::create_network(ContainerRuntime::Docker, "mynet", None, None);
+        assert_eq!(cmd, "docker network create mynet");
+    }
+
+    #[test]
+    fn test_create_network_apple_ignores_driver_subnet() {
+        let cmd = CommandBuilder::create_network(
+            ContainerRuntime::Apple,
+            "mynet",
+            Some("bridge"),
+            Some("10.0.0.0/24"),
+        );
+        assert_eq!(cmd, "container network create mynet");
+    }
+
+    #[test]
+    fn test_remove_network() {
+        assert_eq!(
+            CommandBuilder::remove_network(ContainerRuntime::Docker, "mynet"),
+            "docker network rm mynet"
+        );
+        assert_eq!(
+            CommandBuilder::remove_network(ContainerRuntime::Apple, "mynet"),
+            "container network remove mynet"
+        );
+    }
+
+    #[test]
+    fn test_inspect_network() {
+        assert_eq!(
+            CommandBuilder::inspect_network(ContainerRuntime::Docker, "mynet"),
+            "docker network inspect mynet"
+        );
+    }
+
+    #[test]
+    fn test_connect_to_network() {
+        assert_eq!(
+            CommandBuilder::connect_to_network(ContainerRuntime::Docker, "mynet", "c1"),
+            "docker network connect mynet c1"
+        );
+    }
+
+    #[test]
+    fn test_disconnect_from_network() {
+        assert_eq!(
+            CommandBuilder::disconnect_from_network(ContainerRuntime::Podman, "mynet", "c1"),
+            "podman network disconnect mynet c1"
+        );
+    }
+
+    #[test]
+    fn test_runtime_version() {
+        assert_eq!(CommandBuilder::runtime_version(ContainerRuntime::Docker), "docker --version");
+        assert_eq!(CommandBuilder::runtime_version(ContainerRuntime::Podman), "podman --version");
+        assert_eq!(CommandBuilder::runtime_version(ContainerRuntime::Apple), "container --version");
+    }
+
+    #[test]
+    fn test_system_info() {
+        assert_eq!(
+            CommandBuilder::system_info(ContainerRuntime::Docker),
+            "docker info --format json"
+        );
+        assert_eq!(
+            CommandBuilder::system_info(ContainerRuntime::Apple),
+            "container system status"
+        );
+    }
+
+    #[test]
+    fn test_disk_usage() {
+        assert_eq!(
+            CommandBuilder::disk_usage(ContainerRuntime::Docker),
+            "docker system df --format json"
+        );
+    }
+
+    #[test]
+    fn test_detect_runtime_delegates_to_version() {
+        assert_eq!(
+            CommandBuilder::detect_runtime(ContainerRuntime::Docker),
+            CommandBuilder::runtime_version(ContainerRuntime::Docker)
+        );
+    }
+
+    #[test]
+    fn test_exec_terminal() {
+        assert_eq!(
+            CommandBuilder::exec_terminal(ContainerRuntime::Docker, "c1", "/bin/bash"),
+            "docker exec -it c1 /bin/bash"
+        );
+    }
+
+    #[test]
+    fn test_exec_command_escapes_special_chars() {
+        let cmd = CommandBuilder::exec_command(
+            ContainerRuntime::Docker,
+            "c1",
+            "echo $HOME && ls \"dir\"",
+        );
+        assert!(cmd.contains("docker exec c1 sh -c"));
+        assert!(cmd.contains("\\$HOME"));
+        assert!(cmd.contains("\\\"dir\\\""));
+    }
+
+    #[test]
+    fn test_default_shell() {
+        assert_eq!(CommandBuilder::default_shell(), "/bin/sh");
+    }
+
+    #[test]
+    fn test_shell_escape() {
+        assert_eq!(CommandBuilder::shell_escape("/tmp/test"), "'/tmp/test'");
+        assert_eq!(CommandBuilder::shell_escape("it's"), "'it'\\''s'");
+    }
+
+    #[test]
+    fn test_list_directory() {
+        let cmd = CommandBuilder::list_directory("/var/log");
+        assert!(cmd.contains("ls -la"));
+        assert!(cmd.contains("'/var/log'"));
+    }
+
+    #[test]
+    fn test_read_file() {
+        let cmd = CommandBuilder::read_file("/etc/hosts", 1048576);
+        assert!(cmd.contains("'/etc/hosts'"));
+        assert!(cmd.contains("1048576"));
+        assert!(cmd.contains("__FILE_TOO_LARGE__"));
+    }
+
+    #[test]
+    fn test_write_file_from_base64() {
+        let cmd = CommandBuilder::write_file_from_base64("/tmp/file.txt", "SGVsbG8=");
+        assert!(cmd.contains("base64 -d"));
+        assert!(cmd.contains("'/tmp/file.txt'"));
+        assert!(cmd.contains("SGVsbG8="));
+    }
+
+    #[test]
+    fn test_create_directory() {
+        assert_eq!(CommandBuilder::create_directory("/tmp/newdir"), "mkdir -p '/tmp/newdir'");
+    }
+
+    #[test]
+    fn test_delete_file() {
+        assert_eq!(CommandBuilder::delete_file("/tmp/file.txt"), "rm '/tmp/file.txt'");
+    }
+
+    #[test]
+    fn test_delete_directory() {
+        assert_eq!(CommandBuilder::delete_directory("/tmp/dir"), "rm -rf '/tmp/dir'");
+    }
+
+    #[test]
+    fn test_rename_path() {
+        assert_eq!(
+            CommandBuilder::rename_path("/old/path", "/new/path"),
+            "mv '/old/path' '/new/path'"
+        );
+    }
+
+    #[test]
+    fn test_read_file_base64() {
+        assert_eq!(
+            CommandBuilder::read_file_base64("/tmp/binary"),
+            "base64 '/tmp/binary'"
+        );
+    }
+
+    #[test]
+    fn test_extended_system_info_unix_contains_markers() {
+        let cmd = CommandBuilder::get_extended_system_info_unix(ContainerRuntime::Docker);
+        assert!(cmd.contains("===USERNAME==="));
+        assert!(cmd.contains("===HOSTNAME==="));
+        assert!(cmd.contains("===CONTAINERS==="));
+        assert!(cmd.contains("===END==="));
+        assert!(cmd.contains("docker"));
+    }
+
+    #[test]
+    fn test_extended_system_info_windows_contains_markers() {
+        let cmd = CommandBuilder::get_extended_system_info_windows(ContainerRuntime::Docker);
+        assert!(cmd.contains("===USERNAME==="));
+        assert!(cmd.contains("===END==="));
+        assert!(cmd.contains("docker"));
+    }
+
+    #[test]
+    fn test_live_metrics_unix_contains_markers() {
+        let cmd = CommandBuilder::get_live_metrics_unix();
+        assert!(cmd.contains("===CPU==="));
+        assert!(cmd.contains("===MEM==="));
+        assert!(cmd.contains("===LOAD==="));
+        assert!(cmd.contains("===END==="));
+    }
+
+    #[test]
+    fn test_live_metrics_macos_contains_markers() {
+        let cmd = CommandBuilder::get_live_metrics_macos();
+        assert!(cmd.contains("===CPU==="));
+        assert!(cmd.contains("vm_stat"));
+    }
+
+    #[test]
+    fn test_live_metrics_windows_contains_markers() {
+        let cmd = CommandBuilder::get_live_metrics_windows();
+        assert!(cmd.contains("===CPU==="));
+        assert!(cmd.contains("===MEM==="));
+    }
+
+    #[test]
+    fn test_extended_system_info_for_remote_always_unix() {
+        let cmd = CommandBuilder::get_extended_system_info_for_remote(ContainerRuntime::Podman);
+        // Remote always uses Unix commands
+        assert!(cmd.contains("whoami"));
+        assert!(cmd.contains("podman"));
+    }
+
+    #[test]
+    fn test_live_metrics_for_remote_always_unix() {
+        let cmd = CommandBuilder::get_live_metrics_for_remote();
+        assert!(cmd.contains("/proc/stat"));
+    }
 }

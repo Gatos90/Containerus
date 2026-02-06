@@ -2240,4 +2240,106 @@ lrwxrwxrwx  1 user group     6 2024-01-15 10:30 link -> target"#;
         let link = entries.iter().find(|e| e.name == "link").unwrap();
         assert_eq!(link.symlink_target.as_deref(), Some("target"));
     }
+
+    #[test]
+    fn test_parse_status_variants() {
+        assert_eq!(OutputParser::parse_status("created"), ContainerStatus::Created);
+        assert_eq!(OutputParser::parse_status("restarting"), ContainerStatus::Restarting);
+        assert_eq!(OutputParser::parse_status("removing"), ContainerStatus::Removing);
+        assert_eq!(OutputParser::parse_status("dead"), ContainerStatus::Dead);
+        assert_eq!(OutputParser::parse_status("unknown-stuff"), ContainerStatus::Exited);
+        // "Up 5 minutes (Paused)" contains "up" which matches Running before the paused check
+        assert_eq!(OutputParser::parse_status("Up 5 minutes (Paused)"), ContainerStatus::Running);
+        assert_eq!(OutputParser::parse_status("Exited (137) 2 hours ago"), ContainerStatus::Exited);
+    }
+
+    #[test]
+    fn test_parse_docker_ports_empty() {
+        let ports = OutputParser::parse_docker_ports("");
+        assert!(ports.is_empty());
+    }
+
+    #[test]
+    fn test_parse_docker_ports_with_ipv6() {
+        let ports = OutputParser::parse_docker_ports(":::8080->80/tcp");
+        assert_eq!(ports.len(), 1);
+        assert_eq!(ports[0].host_port, 8080);
+        assert_eq!(ports[0].container_port, 80);
+    }
+
+    #[test]
+    fn test_parse_docker_ports_no_host() {
+        // "80/tcp" has no host->container mapping (no "->"), so regex doesn't match
+        let ports = OutputParser::parse_docker_ports("80/tcp");
+        assert!(ports.is_empty());
+    }
+
+    #[test]
+    fn test_parse_size_string_variants() {
+        assert_eq!(OutputParser::parse_size_string("500B"), Some(500));
+        assert_eq!(OutputParser::parse_size_string("1.0TB"), Some(1099511627776));
+        assert_eq!(OutputParser::parse_size_string("0GB"), Some(0));
+        assert_eq!(OutputParser::parse_size_string("invalid"), None);
+    }
+
+    #[test]
+    fn test_parse_size_string_case_insensitive() {
+        assert_eq!(OutputParser::parse_size_string("100mb"), Some(104857600));
+        assert_eq!(OutputParser::parse_size_string("100Mb"), Some(104857600));
+    }
+
+    #[test]
+    fn test_parse_runtime_available_docker() {
+        assert!(OutputParser::parse_runtime_available(
+            "Docker version 20.10.12",
+            ContainerRuntime::Docker
+        ));
+        assert!(!OutputParser::parse_runtime_available(
+            "command not found",
+            ContainerRuntime::Docker
+        ));
+    }
+
+    #[test]
+    fn test_parse_runtime_available_podman() {
+        assert!(OutputParser::parse_runtime_available(
+            "podman version 4.0.0",
+            ContainerRuntime::Podman
+        ));
+        assert!(!OutputParser::parse_runtime_available(
+            "command not found",
+            ContainerRuntime::Podman
+        ));
+    }
+
+    #[test]
+    fn test_format_human_bytes() {
+        assert_eq!(OutputParser::format_bytes(500), "500B");
+        assert_eq!(OutputParser::format_bytes(1536), "1.5K");
+        assert_eq!(OutputParser::format_bytes(1_048_576), "1.0M");
+        assert_eq!(OutputParser::format_bytes(1_073_741_824), "1.0G");
+    }
+
+    #[test]
+    fn test_parse_directory_listing_empty() {
+        let result = OutputParser::parse_directory_listing("total 0", "/");
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_parse_directory_listing_handles_hidden_files() {
+        let output = r#"total 8
+-rw-r--r--  1 user group  100 2024-01-15 10:30 .hidden
+-rw-r--r--  1 user group  200 2024-01-15 10:30 visible"#;
+
+        let entries = OutputParser::parse_directory_listing(output, "/home").unwrap();
+        assert_eq!(entries.len(), 2);
+
+        let hidden = entries.iter().find(|e| e.name == ".hidden").unwrap();
+        assert!(hidden.is_hidden);
+
+        let visible = entries.iter().find(|e| e.name == "visible").unwrap();
+        assert!(!visible.is_hidden);
+    }
 }

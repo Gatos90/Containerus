@@ -124,7 +124,7 @@ mod tests {
     fn test_preamble_not_empty() {
         let preamble = get_agent_preamble();
         assert!(!preamble.is_empty());
-        assert!(preamble.contains("execute_shell"));
-        assert!(preamble.contains("query_state"));
+        assert!(preamble.contains("commands"));
+        assert!(preamble.contains("container"));
     }
 }

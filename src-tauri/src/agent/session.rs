@@ -763,3 +763,622 @@ impl AgentSessionManager {
             .map(|s| s.context.clone())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_command_entry(command: &str, output: &str, exit_code: i32) -> CommandHistoryEntry {
+        CommandHistoryEntry {
+            id: Uuid::new_v4().to_string(),
+            command: command.to_string(),
+            output: output.to_string(),
+            exit_code: Some(exit_code),
+            timestamp: chrono::Utc::now().timestamp_millis(),
+            duration_ms: 100,
+        }
+    }
+
+    fn make_input_summary(summary: &str) -> InputSummary {
+        InputSummary {
+            summary: summary.to_string(),
+            timestamp: chrono::Utc::now().timestamp_millis(),
+            original_length: summary.len(),
+        }
+    }
+
+    fn make_conversation_turn(input: &str) -> ConversationTurn {
+        ConversationTurn {
+            user_input: input.to_string(),
+            tool_calls: vec![],
+            ai_response: None,
+            timestamp: chrono::Utc::now().timestamp_millis(),
+        }
+    }
+
+    // === generate_block_id tests ===
+
+    #[test]
+    fn test_generate_block_id_increments() {
+        let id1 = generate_block_id();
+        let id2 = generate_block_id();
+        // Global atomic counter shared across parallel tests, so just verify ordering
+        assert!(id2 > id1);
+    }
+
+    #[test]
+    fn test_generate_block_id_is_unique() {
+        let ids: Vec<i64> = (0..100).map(|_| generate_block_id()).collect();
+        let unique: std::collections::HashSet<i64> = ids.iter().copied().collect();
+        assert_eq!(ids.len(), unique.len());
+    }
+
+    // === TerminalContext tests ===
+
+    #[test]
+    fn test_terminal_context_default() {
+        let ctx = TerminalContext::default();
+        assert!(ctx.recent_output.is_empty());
+        assert!(ctx.command_history.is_empty());
+        assert!(!ctx.in_container);
+        assert!(ctx.container_id.is_none());
+    }
+
+    #[test]
+    fn test_append_output() {
+        let mut ctx = TerminalContext::default();
+        ctx.append_output("line 1");
+        ctx.append_output("line 2");
+
+        assert_eq!(ctx.recent_output.len(), 2);
+        assert_eq!(ctx.recent_output[0], "line 1");
+        assert_eq!(ctx.recent_output[1], "line 2");
+    }
+
+    #[test]
+    fn test_append_output_respects_max_lines() {
+        let mut ctx = TerminalContext::default();
+        for i in 0..MAX_RECENT_OUTPUT_LINES + 10 {
+            ctx.append_output(&format!("line {}", i));
+        }
+
+        assert_eq!(ctx.recent_output.len(), MAX_RECENT_OUTPUT_LINES);
+        // First lines should have been evicted
+        assert!(ctx.recent_output[0].contains("10"));
+    }
+
+    #[test]
+    fn test_get_recent_output() {
+        let mut ctx = TerminalContext::default();
+        ctx.append_output("line 1");
+        ctx.append_output("line 2");
+        ctx.append_output("line 3");
+
+        let output = ctx.get_recent_output(2);
+        assert_eq!(output, "line 2\nline 3");
+    }
+
+    #[test]
+    fn test_get_recent_output_all() {
+        let mut ctx = TerminalContext::default();
+        ctx.append_output("a");
+        ctx.append_output("b");
+
+        let output = ctx.get_recent_output(10);
+        assert_eq!(output, "a\nb");
+    }
+
+    #[test]
+    fn test_add_command_result() {
+        let mut ctx = TerminalContext::default();
+        ctx.add_command_result(make_command_entry("ls", "file.txt", 0));
+        ctx.add_command_result(make_command_entry("pwd", "/home", 0));
+
+        assert_eq!(ctx.command_history.len(), 2);
+    }
+
+    #[test]
+    fn test_add_command_result_respects_max() {
+        let mut ctx = TerminalContext::default();
+        for i in 0..MAX_COMMAND_HISTORY + 5 {
+            ctx.add_command_result(make_command_entry(&format!("cmd-{}", i), "out", 0));
+        }
+
+        assert_eq!(ctx.command_history.len(), MAX_COMMAND_HISTORY);
+    }
+
+    #[test]
+    fn test_get_command_history() {
+        let mut ctx = TerminalContext::default();
+        ctx.add_command_result(make_command_entry("ls", "file.txt", 0));
+        ctx.add_command_result(make_command_entry("pwd", "/home", 0));
+
+        let history = ctx.get_command_history();
+        assert_eq!(history.len(), 2);
+        assert_eq!(history[0].command, "ls");
+        assert_eq!(history[1].command, "pwd");
+    }
+
+    #[test]
+    fn test_find_command_output() {
+        let mut ctx = TerminalContext::default();
+        ctx.add_command_result(make_command_entry("ls", "file.txt", 0));
+        ctx.add_command_result(make_command_entry("pwd", "/home", 0));
+        ctx.add_command_result(make_command_entry("ls", "dir/", 0));
+
+        // Should find most recent 'ls'
+        let found = ctx.find_command_output("ls").unwrap();
+        assert_eq!(found.output, "dir/");
+
+        assert!(ctx.find_command_output("nonexistent").is_none());
+    }
+
+    #[test]
+    fn test_search_command_history() {
+        let mut ctx = TerminalContext::default();
+        ctx.add_command_result(make_command_entry("git status", "modified file", 0));
+        ctx.add_command_result(make_command_entry("ls", "file.txt", 0));
+        ctx.add_command_result(make_command_entry("git log", "commit abc", 0));
+
+        let results = ctx.search_command_history("git");
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0].command, "git status");
+        assert_eq!(results[1].command, "git log");
+    }
+
+    #[test]
+    fn test_search_command_history_by_output() {
+        let mut ctx = TerminalContext::default();
+        ctx.add_command_result(make_command_entry("ls", "config.json", 0));
+        ctx.add_command_result(make_command_entry("pwd", "/home", 0));
+
+        let results = ctx.search_command_history("config");
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].command, "ls");
+    }
+
+    #[test]
+    fn test_add_input_summary() {
+        let mut ctx = TerminalContext::default();
+        ctx.add_input_summary(make_input_summary("check docker containers"));
+        ctx.add_input_summary(make_input_summary("restart nginx"));
+
+        assert_eq!(ctx.input_summaries.len(), 2);
+    }
+
+    #[test]
+    fn test_add_input_summary_respects_max() {
+        let mut ctx = TerminalContext::default();
+        for i in 0..MAX_INPUT_SUMMARIES + 5 {
+            ctx.add_input_summary(make_input_summary(&format!("summary {}", i)));
+        }
+
+        assert_eq!(ctx.input_summaries.len(), MAX_INPUT_SUMMARIES);
+    }
+
+    #[test]
+    fn test_format_summaries_empty() {
+        let ctx = TerminalContext::default();
+        assert!(ctx.format_summaries_for_preamble().is_empty());
+    }
+
+    #[test]
+    fn test_format_summaries_for_preamble() {
+        let mut ctx = TerminalContext::default();
+        ctx.add_input_summary(make_input_summary("check docker containers"));
+
+        let formatted = ctx.format_summaries_for_preamble();
+        assert!(formatted.contains("Conversation History"));
+        assert!(formatted.contains("check docker containers"));
+        assert!(formatted.contains("just now"));
+    }
+
+    #[test]
+    fn test_add_conversation_turn() {
+        let mut ctx = TerminalContext::default();
+        ctx.add_conversation_turn(make_conversation_turn("list containers"));
+
+        assert_eq!(ctx.conversation_turns.len(), 1);
+    }
+
+    #[test]
+    fn test_add_conversation_turn_respects_max() {
+        let mut ctx = TerminalContext::default();
+        for i in 0..MAX_CONVERSATION_TURNS + 5 {
+            ctx.add_conversation_turn(make_conversation_turn(&format!("turn {}", i)));
+        }
+
+        assert_eq!(ctx.conversation_turns.len(), MAX_CONVERSATION_TURNS);
+    }
+
+    #[test]
+    fn test_format_conversation_empty() {
+        let ctx = TerminalContext::default();
+        assert!(ctx.format_conversation_for_preamble().is_empty());
+    }
+
+    #[test]
+    fn test_format_conversation_for_preamble() {
+        let mut ctx = TerminalContext::default();
+        let mut turn = make_conversation_turn("list running containers");
+        turn.tool_calls.push(TurnToolCall {
+            tool_name: "execute_command".to_string(),
+            arguments_summary: "docker ps".to_string(),
+            result_summary: "CONTAINER ID  IMAGE".to_string(),
+            success: true,
+        });
+        turn.ai_response = Some("Here are your running containers.".to_string());
+        ctx.add_conversation_turn(turn);
+
+        let formatted = ctx.format_conversation_for_preamble();
+        assert!(formatted.contains("Recent Conversation"));
+        assert!(formatted.contains("list running containers"));
+        assert!(formatted.contains("[OK]"));
+        assert!(formatted.contains("execute_command"));
+        assert!(formatted.contains("AI:"));
+    }
+
+    #[test]
+    fn test_format_conversation_shows_failed_commands() {
+        let mut ctx = TerminalContext::default();
+        let mut turn = make_conversation_turn("remove all containers");
+        turn.tool_calls.push(TurnToolCall {
+            tool_name: "execute_command".to_string(),
+            arguments_summary: "docker rm -f $(docker ps -aq)".to_string(),
+            result_summary: "Error: permission denied".to_string(),
+            success: false,
+        });
+        ctx.add_conversation_turn(turn);
+
+        let formatted = ctx.format_conversation_for_preamble();
+        assert!(formatted.contains("[FAILED]"));
+        assert!(formatted.contains("Error: permission denied"));
+    }
+
+    #[test]
+    fn test_format_conversation_truncates_long_input() {
+        let mut ctx = TerminalContext::default();
+        let long_input = "a".repeat(200);
+        ctx.add_conversation_turn(make_conversation_turn(&long_input));
+
+        let formatted = ctx.format_conversation_for_preamble();
+        assert!(formatted.contains("..."));
+    }
+
+    // === Container context tests ===
+
+    #[test]
+    fn test_enter_container() {
+        let mut ctx = TerminalContext::default();
+        ctx.os = "macos".to_string();
+        ctx.shell = "/bin/zsh".to_string();
+        ctx.cwd = "/home/user".to_string();
+        ctx.username = "kevin".to_string();
+        ctx.hostname = "macbook".to_string();
+
+        ctx.enter_container("abc123".to_string(), "docker".to_string(), "/bin/bash".to_string());
+
+        assert!(ctx.is_in_container());
+        assert_eq!(ctx.container_id.as_deref(), Some("abc123"));
+        assert_eq!(ctx.container_runtime.as_deref(), Some("docker"));
+        assert_eq!(ctx.os, "linux");
+        assert_eq!(ctx.shell, "/bin/bash");
+        assert_eq!(ctx.cwd, "/");
+        assert_eq!(ctx.hostname, "abc123");
+
+        // Host context should be saved
+        let host = ctx.host_context.as_ref().unwrap();
+        assert_eq!(host.os, "macos");
+        assert_eq!(host.shell, "/bin/zsh");
+        assert_eq!(host.cwd, "/home/user");
+        assert_eq!(host.username, "kevin");
+        assert_eq!(host.hostname, "macbook");
+    }
+
+    #[test]
+    fn test_exit_container() {
+        let mut ctx = TerminalContext::default();
+        ctx.os = "macos".to_string();
+        ctx.shell = "/bin/zsh".to_string();
+        ctx.cwd = "/home/user".to_string();
+        ctx.username = "kevin".to_string();
+        ctx.hostname = "macbook".to_string();
+
+        ctx.enter_container("abc123".to_string(), "docker".to_string(), "/bin/sh".to_string());
+        ctx.exit_container();
+
+        assert!(!ctx.is_in_container());
+        assert!(ctx.container_id.is_none());
+        assert!(ctx.container_runtime.is_none());
+        assert!(ctx.host_context.is_none());
+
+        // Host context should be restored
+        assert_eq!(ctx.os, "macos");
+        assert_eq!(ctx.shell, "/bin/zsh");
+        assert_eq!(ctx.cwd, "/home/user");
+        assert_eq!(ctx.username, "kevin");
+        assert_eq!(ctx.hostname, "macbook");
+    }
+
+    #[test]
+    fn test_exit_container_without_entering() {
+        let mut ctx = TerminalContext::default();
+        ctx.exit_container();
+        assert!(!ctx.is_in_container());
+    }
+
+    // === AgentSession tests ===
+
+    #[test]
+    fn test_agent_session_new() {
+        let session = AgentSession::new("term-1".to_string());
+        assert_eq!(session.terminal_session_id, "term-1");
+        assert!(!session.id.is_empty());
+        assert!(session.history.is_empty());
+        assert!(session.pending_confirmation.is_none());
+        assert!(session.active_query_id.is_none());
+    }
+
+    #[test]
+    fn test_agent_session_add_message() {
+        let mut session = AgentSession::new("term-1".to_string());
+        let msg = ConversationMessage {
+            id: "msg-1".to_string(),
+            role: MessageRole::User,
+            content: "hello".to_string(),
+            timestamp: chrono::Utc::now().timestamp_millis(),
+            tool_calls: None,
+        };
+        session.add_message(msg);
+
+        assert_eq!(session.history.len(), 1);
+        assert_eq!(session.history[0].content, "hello");
+    }
+
+    #[test]
+    fn test_agent_session_history_limit() {
+        let mut session = AgentSession::new("term-1".to_string());
+        for i in 0..MAX_HISTORY_SIZE + 10 {
+            session.add_message(ConversationMessage {
+                id: format!("msg-{}", i),
+                role: MessageRole::User,
+                content: format!("message {}", i),
+                timestamp: chrono::Utc::now().timestamp_millis(),
+                tool_calls: None,
+            });
+        }
+
+        assert_eq!(session.history.len(), MAX_HISTORY_SIZE);
+    }
+
+    #[test]
+    fn test_create_user_message() {
+        let mut session = AgentSession::new("term-1".to_string());
+        let msg = session.create_user_message("hello".to_string());
+
+        assert!(!msg.id.is_empty());
+        assert_eq!(msg.content, "hello");
+        assert!(session.history.len() == 1);
+    }
+
+    #[test]
+    fn test_create_assistant_message() {
+        let mut session = AgentSession::new("term-1".to_string());
+        let msg = session.create_assistant_message("response".to_string(), None);
+
+        assert_eq!(msg.content, "response");
+        assert!(msg.tool_calls.is_none());
+        assert_eq!(session.history.len(), 1);
+    }
+
+    #[test]
+    fn test_create_assistant_message_with_tool_calls() {
+        let mut session = AgentSession::new("term-1".to_string());
+        let tool_calls = vec![ToolCallRecord {
+            tool_name: "execute_command".to_string(),
+            arguments: serde_json::json!({"command": "ls"}),
+            result: Some("file.txt".to_string()),
+            duration_ms: 50,
+        }];
+        let msg = session.create_assistant_message("done".to_string(), Some(tool_calls));
+
+        assert!(msg.tool_calls.is_some());
+        assert_eq!(msg.tool_calls.unwrap().len(), 1);
+    }
+
+    #[test]
+    fn test_pending_confirmation() {
+        let mut session = AgentSession::new("term-1".to_string());
+        assert!(session.pending_confirmation.is_none());
+
+        let confirmation = PendingConfirmation {
+            id: "conf-1".to_string(),
+            query_id: "q-1".to_string(),
+            command: "rm -rf /tmp/test".to_string(),
+            explanation: "Delete temp directory".to_string(),
+            danger_level: DangerLevel::Safe,
+            affected_resources: vec!["/tmp/test".to_string()],
+            warning: None,
+            alternatives: vec![],
+            created_at: chrono::Utc::now().timestamp_millis(),
+            expires_at: chrono::Utc::now().timestamp_millis() + 60000,
+        };
+        session.set_pending_confirmation(confirmation);
+        assert!(session.pending_confirmation.is_some());
+
+        session.clear_pending_confirmation();
+        assert!(session.pending_confirmation.is_none());
+    }
+
+    #[test]
+    fn test_new_query_id() {
+        let mut session = AgentSession::new("term-1".to_string());
+        let id1 = session.new_query_id();
+        let id2 = session.new_query_id();
+
+        assert!(!id1.is_empty());
+        assert!(!id2.is_empty());
+        assert_ne!(id1, id2);
+        assert_eq!(session.active_query_id.as_deref(), Some(id2.as_str()));
+    }
+
+    #[test]
+    fn test_agent_session_input_summaries() {
+        let mut session = AgentSession::new("term-1".to_string());
+        session.add_input_summary(make_input_summary("check containers"));
+        session.add_input_summary(make_input_summary("restart service"));
+
+        assert_eq!(session.input_summaries.len(), 2);
+
+        let recent = session.get_recent_summaries(1);
+        assert_eq!(recent.len(), 1);
+        assert_eq!(recent[0].summary, "restart service");
+    }
+
+    #[test]
+    fn test_agent_session_input_summaries_limit() {
+        let mut session = AgentSession::new("term-1".to_string());
+        for i in 0..MAX_INPUT_SUMMARIES + 5 {
+            session.add_input_summary(make_input_summary(&format!("summary {}", i)));
+        }
+
+        assert_eq!(session.input_summaries.len(), MAX_INPUT_SUMMARIES);
+    }
+
+    #[test]
+    fn test_agent_session_format_summaries_empty() {
+        let session = AgentSession::new("term-1".to_string());
+        assert!(session.format_summaries_for_preamble().is_empty());
+    }
+
+    #[test]
+    fn test_agent_session_format_summaries() {
+        let mut session = AgentSession::new("term-1".to_string());
+        session.add_input_summary(make_input_summary("check docker containers"));
+
+        let formatted = session.format_summaries_for_preamble();
+        assert!(formatted.contains("Conversation History"));
+        assert!(formatted.contains("check docker containers"));
+    }
+
+    // === AgentSessionManager tests ===
+
+    #[tokio::test]
+    async fn test_session_manager_create_session() {
+        let manager = AgentSessionManager::new();
+        let (session, _events_rx, _confirm_rx, _cancel_rx) =
+            manager.create_session("term-1".to_string()).await;
+
+        assert_eq!(session.terminal_session_id, "term-1");
+        assert!(!session.id.is_empty());
+
+        let retrieved = manager.get_session(&session.id).await;
+        assert!(retrieved.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_session_manager_get_by_terminal() {
+        let manager = AgentSessionManager::new();
+        let (session, _events_rx, _confirm_rx, _cancel_rx) =
+            manager.create_session("term-1".to_string()).await;
+
+        let by_terminal = manager.get_session_by_terminal("term-1").await;
+        assert!(by_terminal.is_some());
+        assert_eq!(by_terminal.unwrap().id, session.id);
+    }
+
+    #[tokio::test]
+    async fn test_session_manager_remove_session() {
+        let manager = AgentSessionManager::new();
+        let (session, _events_rx, _confirm_rx, _cancel_rx) =
+            manager.create_session("term-1".to_string()).await;
+
+        manager.remove_session(&session.id).await;
+
+        assert!(manager.get_session(&session.id).await.is_none());
+        assert!(manager.get_session_by_terminal("term-1").await.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_session_manager_update_session() {
+        let manager = AgentSessionManager::new();
+        let (mut session, _events_rx, _confirm_rx, _cancel_rx) =
+            manager.create_session("term-1".to_string()).await;
+
+        session.create_user_message("hello".to_string());
+        manager.update_session(session.clone()).await.unwrap();
+
+        let updated = manager.get_session(&session.id).await.unwrap();
+        assert_eq!(updated.history.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_session_manager_append_output() {
+        let manager = AgentSessionManager::new();
+        let (session, _events_rx, _confirm_rx, _cancel_rx) =
+            manager.create_session("term-1".to_string()).await;
+
+        manager
+            .append_output(&session.id, "hello world")
+            .await
+            .unwrap();
+
+        let ctx = manager.get_context(&session.id).await.unwrap();
+        let ctx_read = ctx.read().await;
+        assert!(ctx_read.recent_output.contains(&"hello world".to_string()));
+    }
+
+    // === Serialization tests ===
+
+    #[test]
+    fn test_message_role_serialization() {
+        let role = MessageRole::User;
+        let json = serde_json::to_string(&role).unwrap();
+        assert_eq!(json, "\"user\"");
+
+        let role = MessageRole::Assistant;
+        let json = serde_json::to_string(&role).unwrap();
+        assert_eq!(json, "\"assistant\"");
+    }
+
+    #[test]
+    fn test_conversation_message_serialization() {
+        let msg = ConversationMessage {
+            id: "msg-1".to_string(),
+            role: MessageRole::User,
+            content: "hello".to_string(),
+            timestamp: 1704067200000,
+            tool_calls: None,
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(json.contains("\"role\":\"user\""));
+        assert!(json.contains("\"toolCalls\""));
+
+        let deserialized: ConversationMessage = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.content, "hello");
+    }
+
+    #[test]
+    fn test_command_history_entry_serialization() {
+        let entry = make_command_entry("ls -la", "total 42", 0);
+        let json = serde_json::to_string(&entry).unwrap();
+        assert!(json.contains("\"exitCode\""));
+        assert!(json.contains("\"durationMs\""));
+
+        let deserialized: CommandHistoryEntry = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.command, "ls -la");
+    }
+
+    #[test]
+    fn test_turn_tool_call_serialization() {
+        let tc = TurnToolCall {
+            tool_name: "execute_command".to_string(),
+            arguments_summary: "docker ps".to_string(),
+            result_summary: "container list".to_string(),
+            success: true,
+        };
+        let json = serde_json::to_string(&tc).unwrap();
+        assert!(json.contains("\"toolName\""));
+        assert!(json.contains("\"argumentsSummary\""));
+    }
+}
