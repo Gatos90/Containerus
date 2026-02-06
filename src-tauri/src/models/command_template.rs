@@ -1522,3 +1522,387 @@ pub fn str_to_category(s: &str) -> CommandCategory {
         _ => CommandCategory::Custom,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_category_to_str_all() {
+        assert_eq!(category_to_str(CommandCategory::ContainerManagement), "container-management");
+        assert_eq!(category_to_str(CommandCategory::Debugging), "debugging");
+        assert_eq!(category_to_str(CommandCategory::Networking), "networking");
+        assert_eq!(category_to_str(CommandCategory::Images), "images");
+        assert_eq!(category_to_str(CommandCategory::Volumes), "volumes");
+        assert_eq!(category_to_str(CommandCategory::System), "system");
+        assert_eq!(category_to_str(CommandCategory::Pods), "pods");
+        assert_eq!(category_to_str(CommandCategory::Custom), "custom");
+    }
+
+    #[test]
+    fn test_str_to_category_all() {
+        assert_eq!(str_to_category("container-management"), CommandCategory::ContainerManagement);
+        assert_eq!(str_to_category("debugging"), CommandCategory::Debugging);
+        assert_eq!(str_to_category("networking"), CommandCategory::Networking);
+        assert_eq!(str_to_category("images"), CommandCategory::Images);
+        assert_eq!(str_to_category("volumes"), CommandCategory::Volumes);
+        assert_eq!(str_to_category("system"), CommandCategory::System);
+        assert_eq!(str_to_category("pods"), CommandCategory::Pods);
+        assert_eq!(str_to_category("custom"), CommandCategory::Custom);
+    }
+
+    #[test]
+    fn test_str_to_category_unknown_defaults_to_custom() {
+        assert_eq!(str_to_category("unknown"), CommandCategory::Custom);
+        assert_eq!(str_to_category(""), CommandCategory::Custom);
+        assert_eq!(str_to_category("foobar"), CommandCategory::Custom);
+    }
+
+    #[test]
+    fn test_category_roundtrip() {
+        let categories = vec![
+            CommandCategory::ContainerManagement,
+            CommandCategory::Debugging,
+            CommandCategory::Networking,
+            CommandCategory::Images,
+            CommandCategory::Volumes,
+            CommandCategory::System,
+            CommandCategory::Pods,
+            CommandCategory::Custom,
+        ];
+
+        for cat in categories {
+            let s = category_to_str(cat);
+            let back = str_to_category(s);
+            assert_eq!(back, cat, "Roundtrip failed for {:?}", cat);
+        }
+    }
+
+    #[test]
+    fn test_category_serialization() {
+        let json = serde_json::to_string(&CommandCategory::ContainerManagement).unwrap();
+        assert_eq!(json, "\"container-management\"");
+
+        let json = serde_json::to_string(&CommandCategory::Debugging).unwrap();
+        assert_eq!(json, "\"debugging\"");
+    }
+
+    #[test]
+    fn test_category_deserialization() {
+        let cat: CommandCategory = serde_json::from_str("\"container-management\"").unwrap();
+        assert_eq!(cat, CommandCategory::ContainerManagement);
+
+        let cat: CommandCategory = serde_json::from_str("\"pods\"").unwrap();
+        assert_eq!(cat, CommandCategory::Pods);
+    }
+
+    #[test]
+    fn test_command_compatibility_default() {
+        let compat = CommandCompatibility::default();
+        assert_eq!(compat.runtimes.len(), 2);
+        assert!(compat.runtimes.contains(&ContainerRuntime::Docker));
+        assert!(compat.runtimes.contains(&ContainerRuntime::Podman));
+        assert!(compat.system_ids.is_none());
+    }
+
+    #[test]
+    fn test_template_variable_serialization() {
+        let var = TemplateVariable {
+            name: "PORT".to_string(),
+            description: "Port number".to_string(),
+            default_value: Some("8080".to_string()),
+            required: true,
+        };
+
+        let json = serde_json::to_string(&var).unwrap();
+        assert!(json.contains("\"defaultValue\""));
+        assert!(json.contains("8080"));
+
+        let deserialized: TemplateVariable = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.name, "PORT");
+        assert_eq!(deserialized.default_value, Some("8080".to_string()));
+    }
+
+    #[test]
+    fn test_template_variable_no_default_skips_serialization() {
+        let var = TemplateVariable {
+            name: "NAME".to_string(),
+            description: "Container name".to_string(),
+            default_value: None,
+            required: true,
+        };
+
+        let json = serde_json::to_string(&var).unwrap();
+        assert!(!json.contains("defaultValue"));
+    }
+
+    #[test]
+    fn test_command_template_new() {
+        let tpl = CommandTemplate::new(
+            "Test".to_string(),
+            "A test template".to_string(),
+            "echo hello".to_string(),
+            CommandCategory::Custom,
+            vec!["test".to_string()],
+            vec![],
+            CommandCompatibility::default(),
+        );
+
+        assert!(!tpl.id.is_empty());
+        assert_eq!(tpl.name, "Test");
+        assert_eq!(tpl.category, CommandCategory::Custom);
+        assert!(!tpl.is_favorite);
+        assert!(!tpl.is_built_in);
+        assert!(!tpl.created_at.is_empty());
+        assert!(!tpl.updated_at.is_empty());
+    }
+
+    #[test]
+    fn test_command_template_new_generates_unique_ids() {
+        let tpl1 = CommandTemplate::new(
+            "Test1".to_string(),
+            "".to_string(),
+            "".to_string(),
+            CommandCategory::Custom,
+            vec![],
+            vec![],
+            CommandCompatibility::default(),
+        );
+        let tpl2 = CommandTemplate::new(
+            "Test2".to_string(),
+            "".to_string(),
+            "".to_string(),
+            CommandCategory::Custom,
+            vec![],
+            vec![],
+            CommandCompatibility::default(),
+        );
+
+        assert_ne!(tpl1.id, tpl2.id);
+    }
+
+    #[test]
+    fn test_new_built_in() {
+        let tpl = CommandTemplate::new_built_in(
+            "Start Container",
+            "Start a stopped container",
+            "docker start ${CONTAINER_NAME}",
+            CommandCategory::ContainerManagement,
+            vec!["docker", "start"],
+            vec![],
+        );
+
+        assert!(tpl.is_built_in);
+        assert!(!tpl.is_favorite);
+        assert_eq!(tpl.id, "builtin-start-container");
+        assert_eq!(tpl.tags, vec!["docker", "start"]);
+        assert_eq!(tpl.compatibility.runtimes.len(), 2); // default Docker + Podman
+    }
+
+    #[test]
+    fn test_new_built_in_for_runtime() {
+        let tpl = CommandTemplate::new_built_in_for_runtime(
+            "List Pods",
+            "List all pods",
+            "podman pod ps",
+            CommandCategory::Pods,
+            vec!["podman", "pod"],
+            vec![],
+            vec![ContainerRuntime::Podman],
+        );
+
+        assert!(tpl.is_built_in);
+        assert_eq!(tpl.compatibility.runtimes, vec![ContainerRuntime::Podman]);
+    }
+
+    #[test]
+    fn test_generate_built_in_id() {
+        // Test via new_built_in which uses generate_built_in_id
+        let tpl = CommandTemplate::new_built_in(
+            "Create Container (Apple)",
+            "",
+            "",
+            CommandCategory::ContainerManagement,
+            vec![],
+            vec![],
+        );
+        assert_eq!(tpl.id, "builtin-create-container-apple");
+
+        let tpl2 = CommandTemplate::new_built_in(
+            "Run with Port Mapping",
+            "",
+            "",
+            CommandCategory::ContainerManagement,
+            vec![],
+            vec![],
+        );
+        assert_eq!(tpl2.id, "builtin-run-with-port-mapping");
+    }
+
+    #[test]
+    fn test_built_in_id_handles_special_chars() {
+        let tpl = CommandTemplate::new_built_in(
+            "Build Image (No Cache)",
+            "",
+            "",
+            CommandCategory::Images,
+            vec![],
+            vec![],
+        );
+        assert_eq!(tpl.id, "builtin-build-image-no-cache");
+    }
+
+    #[test]
+    fn test_command_template_serialization_roundtrip() {
+        let tpl = CommandTemplate::new_built_in(
+            "Test Template",
+            "Description",
+            "docker ps",
+            CommandCategory::ContainerManagement,
+            vec!["docker"],
+            vec![TemplateVariable {
+                name: "NAME".to_string(),
+                description: "Name".to_string(),
+                default_value: None,
+                required: true,
+            }],
+        );
+
+        let json = serde_json::to_string(&tpl).unwrap();
+        let deserialized: CommandTemplate = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(deserialized.name, "Test Template");
+        assert_eq!(deserialized.category, CommandCategory::ContainerManagement);
+        assert!(deserialized.is_built_in);
+        assert_eq!(deserialized.variables.len(), 1);
+        assert_eq!(deserialized.variables[0].name, "NAME");
+    }
+
+    #[test]
+    fn test_command_template_camel_case() {
+        let tpl = CommandTemplate::new_built_in("T", "", "", CommandCategory::Custom, vec![], vec![]);
+        let json = serde_json::to_string(&tpl).unwrap();
+
+        assert!(json.contains("\"isFavorite\""));
+        assert!(json.contains("\"isBuiltIn\""));
+        assert!(json.contains("\"createdAt\""));
+        assert!(json.contains("\"updatedAt\""));
+    }
+
+    #[test]
+    fn test_get_built_in_templates_not_empty() {
+        let templates = get_built_in_templates();
+        assert!(!templates.is_empty());
+        // Should have a significant number of templates
+        assert!(templates.len() > 50);
+    }
+
+    #[test]
+    fn test_built_in_templates_all_have_ids() {
+        let templates = get_built_in_templates();
+        for tpl in &templates {
+            assert!(!tpl.id.is_empty(), "Template '{}' has empty ID", tpl.name);
+            assert!(tpl.id.starts_with("builtin-"), "Template '{}' ID doesn't start with builtin-", tpl.name);
+        }
+    }
+
+    #[test]
+    fn test_built_in_templates_all_built_in_flag() {
+        let templates = get_built_in_templates();
+        for tpl in &templates {
+            assert!(tpl.is_built_in, "Template '{}' should be built-in", tpl.name);
+        }
+    }
+
+    #[test]
+    fn test_built_in_templates_have_unique_ids() {
+        let templates = get_built_in_templates();
+        let mut ids: Vec<&str> = templates.iter().map(|t| t.id.as_str()).collect();
+        let original_len = ids.len();
+        ids.sort();
+        ids.dedup();
+        assert_eq!(ids.len(), original_len, "Built-in templates have duplicate IDs");
+    }
+
+    #[test]
+    fn test_built_in_templates_have_categories() {
+        let templates = get_built_in_templates();
+
+        let has_container_management = templates.iter().any(|t| t.category == CommandCategory::ContainerManagement);
+        let has_debugging = templates.iter().any(|t| t.category == CommandCategory::Debugging);
+        let has_images = templates.iter().any(|t| t.category == CommandCategory::Images);
+        let has_networking = templates.iter().any(|t| t.category == CommandCategory::Networking);
+        let has_volumes = templates.iter().any(|t| t.category == CommandCategory::Volumes);
+        let has_system = templates.iter().any(|t| t.category == CommandCategory::System);
+        let has_pods = templates.iter().any(|t| t.category == CommandCategory::Pods);
+
+        assert!(has_container_management);
+        assert!(has_debugging);
+        assert!(has_images);
+        assert!(has_networking);
+        assert!(has_volumes);
+        assert!(has_system);
+        assert!(has_pods);
+    }
+
+    #[test]
+    fn test_built_in_templates_include_apple_runtime() {
+        let templates = get_built_in_templates();
+        let apple_templates: Vec<_> = templates.iter()
+            .filter(|t| t.compatibility.runtimes.contains(&ContainerRuntime::Apple))
+            .collect();
+
+        assert!(!apple_templates.is_empty(), "Should have Apple container templates");
+        // Apple templates should only have Apple runtime
+        for tpl in &apple_templates {
+            assert_eq!(tpl.compatibility.runtimes, vec![ContainerRuntime::Apple]);
+        }
+    }
+
+    #[test]
+    fn test_built_in_templates_include_podman_only() {
+        let templates = get_built_in_templates();
+        let podman_only: Vec<_> = templates.iter()
+            .filter(|t| t.compatibility.runtimes == vec![ContainerRuntime::Podman])
+            .collect();
+
+        assert!(!podman_only.is_empty(), "Should have Podman-only templates (pods)");
+        // Podman-only templates should be in Pods category
+        for tpl in &podman_only {
+            assert_eq!(tpl.category, CommandCategory::Pods);
+        }
+    }
+
+    #[test]
+    fn test_create_command_template_request_deserialization() {
+        let json = r#"{
+            "name": "Test",
+            "description": "A test",
+            "command": "echo hi",
+            "category": "custom",
+            "tags": ["test"],
+            "variables": [],
+            "compatibility": { "runtimes": ["docker"] }
+        }"#;
+
+        let request: CreateCommandTemplateRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(request.name, "Test");
+        assert_eq!(request.category, CommandCategory::Custom);
+        assert!(!request.is_favorite);
+    }
+
+    #[test]
+    fn test_update_command_template_request_partial() {
+        let json = r#"{
+            "id": "tpl-1",
+            "name": "Updated Name"
+        }"#;
+
+        let request: UpdateCommandTemplateRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(request.id, "tpl-1");
+        assert_eq!(request.name, Some("Updated Name".to_string()));
+        assert!(request.description.is_none());
+        assert!(request.command.is_none());
+        assert!(request.category.is_none());
+    }
+}

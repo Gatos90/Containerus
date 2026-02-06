@@ -77,3 +77,66 @@ pub struct CreatePortForwardRequest {
     /// Remote host - defaults to container IP or localhost
     pub remote_host: Option<String>,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_port_forward_new() {
+        let pf = PortForward::new(
+            "sys-1".to_string(),
+            "container-1".to_string(),
+            80,
+            8080,
+            "127.0.0.1".to_string(),
+            80,
+            "tcp".to_string(),
+        );
+
+        assert!(!pf.id.is_empty());
+        assert_eq!(pf.system_id, "sys-1");
+        assert_eq!(pf.container_id, "container-1");
+        assert_eq!(pf.container_port, 80);
+        assert_eq!(pf.local_port, 8080);
+        assert_eq!(pf.remote_host, "127.0.0.1");
+        assert_eq!(pf.remote_port, 80);
+        assert_eq!(pf.protocol, "tcp");
+        assert_eq!(pf.status, PortForwardStatus::Active);
+        assert!(!pf.created_at.is_empty());
+    }
+
+    #[test]
+    fn test_port_forward_unique_ids() {
+        let pf1 = PortForward::new("s".into(), "c".into(), 80, 8080, "h".into(), 80, "tcp".into());
+        let pf2 = PortForward::new("s".into(), "c".into(), 80, 8080, "h".into(), 80, "tcp".into());
+        assert_ne!(pf1.id, pf2.id);
+    }
+
+    #[test]
+    fn test_port_forward_status_serialization() {
+        let json = serde_json::to_string(&PortForwardStatus::Active).unwrap();
+        assert_eq!(json, "\"active\"");
+
+        let json = serde_json::to_string(&PortForwardStatus::Stopped).unwrap();
+        assert_eq!(json, "\"stopped\"");
+
+        let json = serde_json::to_string(&PortForwardStatus::Error).unwrap();
+        assert_eq!(json, "\"error\"");
+
+        let status: PortForwardStatus = serde_json::from_str("\"active\"").unwrap();
+        assert_eq!(status, PortForwardStatus::Active);
+    }
+
+    #[test]
+    fn test_port_forward_serialization() {
+        let pf = PortForward::new("s".into(), "c".into(), 80, 8080, "localhost".into(), 80, "tcp".into());
+        let json = serde_json::to_string(&pf).unwrap();
+        assert!(json.contains("localPort")); // camelCase
+        assert!(json.contains("8080"));
+
+        let deserialized: PortForward = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.local_port, 8080);
+        assert_eq!(deserialized.container_port, 80);
+    }
+}

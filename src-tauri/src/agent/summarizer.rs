@@ -282,4 +282,69 @@ mod tests {
         let input = "list containers";
         assert!(input.len() < MIN_SUMMARIZATION_LENGTH);
     }
+
+    #[test]
+    fn test_truncate_input_at_word_boundary() {
+        // Build a string that's longer than FALLBACK_TRUNCATION_LENGTH
+        let words: Vec<&str> = (0..50).map(|_| "word").collect();
+        let input = words.join(" ");
+        let truncated = truncate_input(&input);
+        // Should end with "..." and break at a space
+        assert!(truncated.ends_with("..."));
+        // The part before "..." shouldn't end mid-word
+        let before_dots = &truncated[..truncated.len() - 3];
+        assert!(!before_dots.ends_with("wor")); // not mid-word
+    }
+
+    #[test]
+    fn test_truncate_input_exact_boundary() {
+        let input = "x".repeat(FALLBACK_TRUNCATION_LENGTH);
+        let truncated = truncate_input(&input);
+        assert_eq!(truncated, input); // exactly at boundary, no truncation
+    }
+
+    #[test]
+    fn test_truncate_input_one_over_boundary() {
+        let input = "x".repeat(FALLBACK_TRUNCATION_LENGTH + 1);
+        let truncated = truncate_input(&input);
+        // No spaces, so truncation happens at character boundary
+        assert!(truncated.ends_with("..."));
+    }
+
+    #[test]
+    fn test_truncate_input_empty() {
+        assert_eq!(truncate_input(""), "");
+    }
+
+    #[test]
+    fn test_min_summarization_length_constant() {
+        assert_eq!(MIN_SUMMARIZATION_LENGTH, 100);
+    }
+
+    #[test]
+    fn test_fallback_truncation_length_constant() {
+        assert_eq!(FALLBACK_TRUNCATION_LENGTH, 200);
+    }
+
+    #[test]
+    fn test_input_summary_serialization() {
+        let summary = InputSummary {
+            summary: "User asked about containers".to_string(),
+            timestamp: 1700000000000,
+            original_length: 500,
+        };
+        let json = serde_json::to_value(&summary).unwrap();
+        assert_eq!(json["summary"], "User asked about containers");
+        assert_eq!(json["timestamp"], 1700000000000i64);
+        assert_eq!(json["originalLength"], 500);
+    }
+
+    #[test]
+    fn test_input_summary_deserialization() {
+        let json = r#"{"summary":"test","timestamp":123,"originalLength":10}"#;
+        let summary: InputSummary = serde_json::from_str(json).unwrap();
+        assert_eq!(summary.summary, "test");
+        assert_eq!(summary.timestamp, 123);
+        assert_eq!(summary.original_length, 10);
+    }
 }

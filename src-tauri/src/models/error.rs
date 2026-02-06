@@ -100,3 +100,103 @@ impl ContainerError {
 pub type ContainerusError = ContainerError;
 
 pub type Result<T> = std::result::Result<T, ContainerError>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_error_display_messages() {
+        let err = ContainerError::SystemNotFound("sys-1".to_string());
+        assert_eq!(err.to_string(), "System not found: sys-1");
+
+        let err = ContainerError::NotConnected("sys-2".to_string());
+        assert_eq!(err.to_string(), "System not connected: sys-2");
+
+        let err = ContainerError::ConnectionFailed("host".to_string(), "timeout".to_string());
+        assert_eq!(err.to_string(), "Connection failed to host: timeout");
+
+        let err = ContainerError::SshAuthenticationFailed("bad key".to_string());
+        assert_eq!(err.to_string(), "SSH authentication failed: bad key");
+
+        let err = ContainerError::CommandExecutionFailed {
+            command: "docker ps".to_string(),
+            exit_code: 1,
+            stderr: "permission denied".to_string(),
+        };
+        assert!(err.to_string().contains("docker ps"));
+        assert!(err.to_string().contains("1"));
+
+        let err = ContainerError::ContainerNotFound("c1".to_string());
+        assert_eq!(err.to_string(), "Container not found: c1");
+
+        let err = ContainerError::DatabaseError { message: "table missing".to_string() };
+        assert_eq!(err.to_string(), "Database error: table missing");
+
+        let err = ContainerError::NotFound { resource: "Image".to_string(), id: "abc".to_string() };
+        assert_eq!(err.to_string(), "Image not found: abc");
+
+        let err = ContainerError::InvalidOperation { message: "not allowed".to_string() };
+        assert_eq!(err.to_string(), "Invalid operation: not allowed");
+    }
+
+    #[test]
+    fn test_is_retryable() {
+        assert!(ContainerError::NetworkTimeout("timeout".to_string()).is_retryable());
+        assert!(ContainerError::ConnectionFailed("host".to_string(), "err".to_string()).is_retryable());
+        assert!(!ContainerError::SystemNotFound("sys".to_string()).is_retryable());
+        assert!(!ContainerError::NotConnected("sys".to_string()).is_retryable());
+        assert!(!ContainerError::SshAuthenticationFailed("err".to_string()).is_retryable());
+        assert!(!ContainerError::ContainerNotFound("c1".to_string()).is_retryable());
+        assert!(!ContainerError::ParseError("err".to_string()).is_retryable());
+        assert!(!ContainerError::PermissionDenied("err".to_string()).is_retryable());
+        assert!(!ContainerError::Internal("err".to_string()).is_retryable());
+        assert!(!ContainerError::DatabaseError { message: "err".to_string() }.is_retryable());
+    }
+
+    #[test]
+    fn test_recovery_suggestions_non_empty() {
+        let errors = vec![
+            ContainerError::SystemNotFound("x".to_string()),
+            ContainerError::NotConnected("x".to_string()),
+            ContainerError::ConnectionFailed("x".to_string(), "y".to_string()),
+            ContainerError::SshAuthenticationFailed("x".to_string()),
+            ContainerError::CommandExecutionFailed { command: "x".to_string(), exit_code: 1, stderr: "y".to_string() },
+            ContainerError::ContainerNotFound("x".to_string()),
+            ContainerError::UnsupportedRuntime("x".to_string()),
+            ContainerError::NetworkTimeout("x".to_string()),
+            ContainerError::InvalidConfiguration("x".to_string()),
+            ContainerError::ParseError("x".to_string()),
+            ContainerError::PermissionDenied("x".to_string()),
+            ContainerError::UnsupportedOperation("x".to_string()),
+            ContainerError::CredentialError("x".to_string()),
+            ContainerError::Internal("x".to_string()),
+            ContainerError::DatabaseError { message: "x".to_string() },
+            ContainerError::NotFound { resource: "x".to_string(), id: "y".to_string() },
+            ContainerError::InvalidOperation { message: "x".to_string() },
+        ];
+
+        for err in errors {
+            let suggestion = err.recovery_suggestion();
+            assert!(!suggestion.is_empty(), "Recovery suggestion for {:?} should not be empty", err);
+        }
+    }
+
+    #[test]
+    fn test_error_serialization() {
+        let err = ContainerError::SystemNotFound("sys-1".to_string());
+        let json = serde_json::to_string(&err).unwrap();
+        assert!(json.contains("SystemNotFound"));
+        assert!(json.contains("sys-1"));
+
+        let deserialized: ContainerError = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.to_string(), err.to_string());
+    }
+
+    #[test]
+    fn test_error_clone() {
+        let err = ContainerError::Internal("test".to_string());
+        let cloned = err.clone();
+        assert_eq!(err.to_string(), cloned.to_string());
+    }
+}

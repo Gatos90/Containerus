@@ -160,6 +160,167 @@ Rules:
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // === strip_markdown tests ===
+
+    #[test]
+    fn test_strip_markdown_plain_text() {
+        assert_eq!(strip_markdown("docker ps -a"), "docker ps -a");
+    }
+
+    #[test]
+    fn test_strip_markdown_inline_backticks() {
+        assert_eq!(strip_markdown("`docker ps -a`"), "docker ps -a");
+    }
+
+    #[test]
+    fn test_strip_markdown_code_block_with_lang() {
+        let input = "```bash\ndocker ps -a\n```";
+        assert_eq!(strip_markdown(input), "docker ps -a");
+    }
+
+    #[test]
+    fn test_strip_markdown_code_block_without_lang() {
+        let input = "```\ndocker ps -a\n```";
+        assert_eq!(strip_markdown(input), "docker ps -a");
+    }
+
+    #[test]
+    fn test_strip_markdown_trims_whitespace() {
+        assert_eq!(strip_markdown("  docker ps  "), "docker ps");
+    }
+
+    #[test]
+    fn test_strip_markdown_single_backtick_not_stripped() {
+        // Single backtick character is kept (len <= 2)
+        assert_eq!(strip_markdown("`"), "`");
+    }
+
+    // === get_shell_system_prompt tests ===
+
+    #[test]
+    fn test_get_shell_system_prompt_json_mode() {
+        let prompt = get_shell_system_prompt("macOS", "zsh", true);
+        assert!(prompt.contains("macOS"));
+        assert!(prompt.contains("zsh"));
+        assert!(prompt.contains("JSON"));
+        assert!(prompt.contains(SHELL_COMMAND_JSON_SCHEMA));
+    }
+
+    #[test]
+    fn test_get_shell_system_prompt_plain_mode() {
+        let prompt = get_shell_system_prompt("Linux", "bash", false);
+        assert!(prompt.contains("Linux"));
+        assert!(prompt.contains("bash"));
+        assert!(prompt.contains("ONLY the raw command"));
+        assert!(!prompt.contains(SHELL_COMMAND_JSON_SCHEMA));
+    }
+
+    // === Struct serialization tests ===
+
+    #[test]
+    fn test_shell_command_response_serialization() {
+        let response = ShellCommandResponse {
+            command: "docker ps".to_string(),
+            explanation: "List containers".to_string(),
+            is_dangerous: false,
+            requires_sudo: false,
+            affects_files: vec![],
+            alternatives: vec![CommandAlternative {
+                command: "docker container ls".to_string(),
+                description: "Alias".to_string(),
+            }],
+            warning: None,
+        };
+
+        let json = serde_json::to_value(&response).unwrap();
+        assert_eq!(json["command"], "docker ps");
+        assert_eq!(json["is_dangerous"], false);
+        assert!(json.get("warning").is_none() || json["warning"].is_null());
+
+        // Roundtrip
+        let deserialized: ShellCommandResponse = serde_json::from_value(json).unwrap();
+        assert_eq!(deserialized.command, "docker ps");
+        assert_eq!(deserialized.alternatives.len(), 1);
+    }
+
+    #[test]
+    fn test_shell_command_response_with_warning() {
+        let response = ShellCommandResponse {
+            command: "rm -rf /tmp".to_string(),
+            explanation: "Delete tmp".to_string(),
+            is_dangerous: true,
+            requires_sudo: false,
+            affects_files: vec!["/tmp".to_string()],
+            alternatives: vec![],
+            warning: Some("This will delete all files in /tmp".to_string()),
+        };
+
+        let json = serde_json::to_value(&response).unwrap();
+        assert_eq!(json["is_dangerous"], true);
+        assert!(json["warning"].is_string());
+    }
+
+    #[test]
+    fn test_ai_model_serialization() {
+        let model = AiModel {
+            id: "gpt-4o".to_string(),
+            name: "GPT-4o".to_string(),
+            provider: AiProviderType::OpenAi,
+            context_window: Some(128000),
+            parameter_size: None,
+            quantization_level: None,
+        };
+
+        let json = serde_json::to_value(&model).unwrap();
+        assert_eq!(json["id"], "gpt-4o");
+        assert_eq!(json["context_window"], 128000);
+        // Optional None fields should be skipped
+        assert!(json.get("parameter_size").is_none() || json["parameter_size"].is_null());
+    }
+
+    #[test]
+    fn test_completion_request_serialization() {
+        let request = CompletionRequest {
+            prompt: "list containers".to_string(),
+            system_prompt: Some("You are helpful".to_string()),
+            context: None,
+            temperature: Some(0.7),
+            max_tokens: Some(1024),
+            json_mode: true,
+        };
+
+        let json = serde_json::to_value(&request).unwrap();
+        assert_eq!(json["prompt"], "list containers");
+        assert_eq!(json["json_mode"], true);
+        // f32 -> f64 conversion may have precision loss; check approximately
+        assert!(json["temperature"].as_f64().unwrap() > 0.69 && json["temperature"].as_f64().unwrap() < 0.71);
+    }
+
+    #[test]
+    fn test_completion_response_serialization() {
+        let response = CompletionResponse {
+            content: "docker ps -a".to_string(),
+            tokens_used: Some(42),
+            structured: None,
+        };
+
+        let json = serde_json::to_value(&response).unwrap();
+        assert_eq!(json["content"], "docker ps -a");
+        assert_eq!(json["tokens_used"], 42);
+    }
+
+    #[test]
+    fn test_json_schema_is_valid_json() {
+        let parsed: serde_json::Value = serde_json::from_str(SHELL_COMMAND_JSON_SCHEMA).unwrap();
+        assert_eq!(parsed["type"], "object");
+        assert!(parsed["properties"]["command"].is_object());
+    }
+}
+
 /// Strip markdown formatting from AI output
 pub fn strip_markdown(text: &str) -> String {
     let mut result = text.trim().to_string();

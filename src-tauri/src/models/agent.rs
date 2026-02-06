@@ -116,3 +116,109 @@ impl From<AgentError> for String {
         err.to_string()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_agent_preferences_default() {
+        let prefs = AgentPreferences::default();
+        assert!(prefs.auto_execute_safe_commands);
+        assert!(!prefs.show_thinking_process);
+        assert!(!prefs.confirm_all_commands);
+        assert_eq!(prefs.max_auto_execute_steps, 5);
+        assert_eq!(prefs.confirmation_timeout_secs, 300);
+        assert!(prefs.preferred_shell.is_none());
+        assert!(prefs.dangerous_command_patterns.is_empty());
+    }
+
+    #[test]
+    fn test_agent_preferences_serialization() {
+        let prefs = AgentPreferences {
+            auto_execute_safe_commands: false,
+            show_thinking_process: true,
+            confirm_all_commands: true,
+            max_auto_execute_steps: 10,
+            confirmation_timeout_secs: 60,
+            preferred_shell: Some("/bin/zsh".to_string()),
+            dangerous_command_patterns: vec!["rm -rf".to_string()],
+        };
+
+        let json = serde_json::to_string(&prefs).unwrap();
+        let deserialized: AgentPreferences = serde_json::from_str(&json).unwrap();
+        assert!(!deserialized.auto_execute_safe_commands);
+        assert!(deserialized.show_thinking_process);
+        assert_eq!(deserialized.max_auto_execute_steps, 10);
+        assert_eq!(deserialized.preferred_shell.as_deref(), Some("/bin/zsh"));
+        assert_eq!(deserialized.dangerous_command_patterns.len(), 1);
+    }
+
+    #[test]
+    fn test_agent_error_display() {
+        assert_eq!(
+            AgentError::SessionNotFound("s1".to_string()).to_string(),
+            "Session not found: s1"
+        );
+        assert_eq!(
+            AgentError::QueryCancelled.to_string(),
+            "Query cancelled"
+        );
+        assert_eq!(
+            AgentError::RateLimited.to_string(),
+            "Rate limited"
+        );
+        assert_eq!(
+            AgentError::ContextTooLarge.to_string(),
+            "Context too large"
+        );
+        assert_eq!(
+            AgentError::ConfirmationTimeout.to_string(),
+            "Confirmation timeout"
+        );
+        assert_eq!(
+            AgentError::ConfirmationRejected.to_string(),
+            "Confirmation rejected"
+        );
+    }
+
+    #[test]
+    fn test_agent_error_to_string_conversion() {
+        let err = AgentError::Internal("oops".to_string());
+        let s: String = err.into();
+        assert_eq!(s, "Internal error: oops");
+    }
+
+    #[test]
+    fn test_attached_block_serialization() {
+        let block = AttachedBlock {
+            block_id: 42,
+            command: "ls -la".to_string(),
+            output_preview: "total 100".to_string(),
+            exit_code: Some(0),
+        };
+
+        let json = serde_json::to_string(&block).unwrap();
+        assert!(json.contains("blockId")); // camelCase
+        assert!(json.contains("ls -la"));
+
+        let deserialized: AttachedBlock = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.block_id, 42);
+        assert_eq!(deserialized.exit_code, Some(0));
+    }
+
+    #[test]
+    fn test_context_summary_serialization() {
+        let summary = ContextSummary {
+            attached_blocks: vec![],
+            recent_commands: vec!["ls".to_string(), "pwd".to_string()],
+            cwd: "/home/user".to_string(),
+            git_branch: Some("main".to_string()),
+        };
+
+        let json = serde_json::to_string(&summary).unwrap();
+        assert!(json.contains("recentCommands")); // camelCase
+        assert!(json.contains("/home/user"));
+        assert!(json.contains("main"));
+    }
+}

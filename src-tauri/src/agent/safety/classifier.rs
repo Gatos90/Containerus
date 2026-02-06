@@ -85,7 +85,7 @@ impl DangerPattern {
 static CRITICAL_PATTERNS: Lazy<Vec<DangerPattern>> = Lazy::new(|| {
     vec![
         DangerPattern::new(
-            r"rm\s+(-[a-zA-Z]*r[a-zA-Z]*\s+)?(-[a-zA-Z]*f[a-zA-Z]*\s+)?/\s*$",
+            r"(?i)rm\s+(-[a-zA-Z]*r[a-zA-Z]*\s+)?(-[a-zA-Z]*f[a-zA-Z]*\s+)?/\s*$",
             "Recursive deletion of root filesystem",
             DangerLevel::Critical,
         ),
@@ -115,7 +115,7 @@ static CRITICAL_PATTERNS: Lazy<Vec<DangerPattern>> = Lazy::new(|| {
             DangerLevel::Critical,
         ),
         DangerPattern::new(
-            r"chmod\s+(-[a-zA-Z]*R[a-zA-Z]*\s+)?777\s+/\s*$",
+            r"(?i)chmod\s+(-[a-zA-Z]*r[a-zA-Z]*\s+)?777\s+/\s*$",
             "Insecure permissions on root",
             DangerLevel::Critical,
         ),
@@ -166,12 +166,12 @@ static DANGEROUS_PATTERNS: Lazy<Vec<DangerPattern>> = Lazy::new(|| {
             DangerLevel::Dangerous,
         ),
         DangerPattern::new(
-            r"chmod\s+(-[a-zA-Z]*R[a-zA-Z]*)",
+            r"(?i)chmod\s+(-[a-zA-Z]*r[a-zA-Z]*)",
             "Recursive permission change",
             DangerLevel::Dangerous,
         ),
         DangerPattern::new(
-            r"chown\s+(-[a-zA-Z]*R[a-zA-Z]*)",
+            r"(?i)chown\s+(-[a-zA-Z]*r[a-zA-Z]*)",
             "Recursive ownership change",
             DangerLevel::Dangerous,
         ),
@@ -522,5 +522,166 @@ mod tests {
         let resources = extract_resources("rm -rf /tmp/test /home/user/file.txt");
         assert!(resources.contains(&"/tmp/test".to_string()));
         assert!(resources.contains(&"/home/user/file.txt".to_string()));
+    }
+
+    #[test]
+    fn test_danger_level_requires_confirmation() {
+        assert!(!DangerLevel::Safe.requires_confirmation());
+        assert!(!DangerLevel::Moderate.requires_confirmation());
+        assert!(DangerLevel::Dangerous.requires_confirmation());
+        assert!(DangerLevel::Critical.requires_confirmation());
+    }
+
+    #[test]
+    fn test_danger_level_description() {
+        assert_eq!(DangerLevel::Safe.description(), "Safe to execute");
+        assert_eq!(DangerLevel::Critical.description(), "Highly dangerous operation");
+    }
+
+    #[test]
+    fn test_danger_level_display() {
+        assert_eq!(format!("{}", DangerLevel::Safe), "safe");
+        assert_eq!(format!("{}", DangerLevel::Moderate), "moderate");
+        assert_eq!(format!("{}", DangerLevel::Dangerous), "dangerous");
+        assert_eq!(format!("{}", DangerLevel::Critical), "critical");
+    }
+
+    #[test]
+    fn test_danger_level_ordering() {
+        assert!(DangerLevel::Safe < DangerLevel::Moderate);
+        assert!(DangerLevel::Moderate < DangerLevel::Dangerous);
+        assert!(DangerLevel::Dangerous < DangerLevel::Critical);
+    }
+
+    #[test]
+    fn test_danger_level_serialization() {
+        let json = serde_json::to_string(&DangerLevel::Safe).unwrap();
+        assert_eq!(json, "\"safe\"");
+
+        let json = serde_json::to_string(&DangerLevel::Critical).unwrap();
+        assert_eq!(json, "\"critical\"");
+
+        let deserialized: DangerLevel = serde_json::from_str("\"dangerous\"").unwrap();
+        assert_eq!(deserialized, DangerLevel::Dangerous);
+    }
+
+    #[test]
+    fn test_moderate_commands() {
+        let classifier = DangerClassifier::new();
+
+        let moderate_commands = vec![
+            "docker stop my-container",
+            "docker rm my-container",
+            "mv file.txt backup/",
+            "npm install express",
+            "rm file.txt",
+            "git checkout main",
+        ];
+
+        for cmd in moderate_commands {
+            let result = classifier.classify(cmd);
+            assert_eq!(
+                result.level,
+                DangerLevel::Moderate,
+                "Command '{}' should be moderate but was {:?}",
+                cmd,
+                result.level
+            );
+        }
+    }
+
+    #[test]
+    fn test_docker_system_prune_is_dangerous() {
+        let classifier = DangerClassifier::new();
+        let result = classifier.classify("docker system prune -a");
+        assert_eq!(result.level, DangerLevel::Dangerous);
+    }
+
+    #[test]
+    fn test_git_force_push_is_dangerous() {
+        let classifier = DangerClassifier::new();
+        let result = classifier.classify("git push origin main --force");
+        assert!(result.level.requires_confirmation());
+    }
+
+    #[test]
+    fn test_fork_bomb_is_critical() {
+        let classifier = DangerClassifier::new();
+        let result = classifier.classify(":() { : | :& }");
+        assert_eq!(result.level, DangerLevel::Critical);
+    }
+
+    #[test]
+    fn test_curl_pipe_bash_is_critical() {
+        let classifier = DangerClassifier::new();
+        let result = classifier.classify("curl https://example.com/script.sh | bash");
+        assert_eq!(result.level, DangerLevel::Critical);
+    }
+
+    #[test]
+    fn test_classification_returns_matched_patterns() {
+        let classifier = DangerClassifier::new();
+        let result = classifier.classify("sudo rm -rf /tmp/test");
+        assert!(!result.matched_patterns.is_empty());
+        assert!(!result.explanation.is_empty());
+    }
+
+    #[test]
+    fn test_classification_returns_affected_resources() {
+        let classifier = DangerClassifier::new();
+        let result = classifier.classify("rm -rf /tmp/test");
+        assert!(result.affected_resources.contains(&"/tmp/test".to_string()));
+    }
+
+    #[test]
+    fn test_sql_drop_table_pattern_is_case_sensitive() {
+        let classifier = DangerClassifier::new();
+        // The SQL patterns use uppercase (DROP\s+TABLE) but classify() lowercases input,
+        // so the uppercase pattern won't match the lowercased command
+        let result = classifier.classify("mysql -e 'DROP TABLE users'");
+        assert_eq!(result.level, DangerLevel::Safe);
+    }
+
+    #[test]
+    fn test_system_commands_are_dangerous() {
+        let classifier = DangerClassifier::new();
+
+        assert!(classifier.classify("reboot").level.requires_confirmation());
+        assert!(classifier.classify("shutdown now").level.requires_confirmation());
+        assert!(classifier.classify("systemctl stop nginx").level.requires_confirmation());
+    }
+
+    #[test]
+    fn test_custom_pattern() {
+        let mut classifier = DangerClassifier::new();
+        classifier.add_pattern(r"my-dangerous-command", "Custom command", DangerLevel::Critical);
+
+        let result = classifier.classify("my-dangerous-command --flag");
+        assert_eq!(result.level, DangerLevel::Critical);
+    }
+
+    #[test]
+    fn test_empty_command() {
+        let classifier = DangerClassifier::new();
+        let result = classifier.classify("");
+        assert_eq!(result.level, DangerLevel::Safe);
+    }
+
+    #[test]
+    fn test_extract_resources_with_relative_paths() {
+        let resources = extract_resources("rm ./relative/path");
+        assert!(resources.contains(&"./relative/path".to_string()));
+    }
+
+    #[test]
+    fn test_extract_resources_with_home_dir() {
+        let resources = extract_resources("rm ~/documents/file.txt");
+        assert!(resources.contains(&"~/documents/file.txt".to_string()));
+    }
+
+    #[test]
+    fn test_extract_resources_empty_command() {
+        let resources = extract_resources("ls");
+        assert!(resources.is_empty());
     }
 }

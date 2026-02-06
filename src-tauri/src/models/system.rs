@@ -172,3 +172,135 @@ pub struct ExtendedSystemInfo {
     /// Container runtime version (e.g., "Docker 24.0.5")
     pub runtime_version: Option<String>,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::container::ContainerRuntime;
+
+    #[test]
+    fn test_system_id_creation() {
+        let id = SystemId("test-123".to_string());
+        assert_eq!(id.0, "test-123");
+    }
+
+    #[test]
+    fn test_connection_type_serialization() {
+        let json = serde_json::to_string(&ConnectionType::Local).unwrap();
+        assert_eq!(json, "\"local\"");
+
+        let json = serde_json::to_string(&ConnectionType::Remote).unwrap();
+        assert_eq!(json, "\"remote\"");
+
+        let ct: ConnectionType = serde_json::from_str("\"local\"").unwrap();
+        assert_eq!(ct, ConnectionType::Local);
+    }
+
+    #[test]
+    fn test_connection_state_serialization() {
+        let json = serde_json::to_string(&ConnectionState::Connected).unwrap();
+        assert_eq!(json, "\"connected\"");
+
+        let state: ConnectionState = serde_json::from_str("\"disconnected\"").unwrap();
+        assert_eq!(state, ConnectionState::Disconnected);
+    }
+
+    #[test]
+    fn test_ssh_auth_method_serialization() {
+        let json = serde_json::to_string(&SshAuthMethod::Password).unwrap();
+        assert_eq!(json, "\"password\"");
+
+        let method: SshAuthMethod = serde_json::from_str("\"publicKey\"").unwrap();
+        assert_eq!(method, SshAuthMethod::PublicKey);
+    }
+
+    #[test]
+    fn test_ssh_config_default() {
+        let config = SshConfig::default();
+        assert_eq!(config.username, "");
+        assert_eq!(config.port, 22);
+        assert_eq!(config.auth_method, SshAuthMethod::Password);
+        assert!(config.private_key_path.is_none());
+        assert!(config.private_key_content.is_none());
+        assert_eq!(config.connection_timeout, 30);
+        assert!(config.proxy_command.is_none());
+        assert!(config.proxy_jump.is_none());
+        assert!(config.ssh_config_host.is_none());
+    }
+
+    #[test]
+    fn test_os_type_serialization() {
+        let json = serde_json::to_string(&OsType::Linux).unwrap();
+        assert_eq!(json, "\"linux\"");
+
+        let json = serde_json::to_string(&OsType::Macos).unwrap();
+        assert_eq!(json, "\"macos\"");
+
+        let os: OsType = serde_json::from_str("\"windows\"").unwrap();
+        assert_eq!(os, OsType::Windows);
+    }
+
+    #[test]
+    fn test_container_system_serialization() {
+        let system = ContainerSystem {
+            id: SystemId("sys-1".to_string()),
+            name: "My Server".to_string(),
+            hostname: "192.168.1.100".to_string(),
+            connection_type: ConnectionType::Remote,
+            primary_runtime: ContainerRuntime::Docker,
+            available_runtimes: HashSet::from([ContainerRuntime::Docker, ContainerRuntime::Podman]),
+            ssh_config: Some(SshConfig {
+                username: "admin".to_string(),
+                port: 2222,
+                ..SshConfig::default()
+            }),
+            auto_connect: true,
+        };
+
+        let json = serde_json::to_string(&system).unwrap();
+        assert!(json.contains("My Server"));
+        assert!(json.contains("192.168.1.100"));
+
+        let deserialized: ContainerSystem = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.name, "My Server");
+        assert_eq!(deserialized.hostname, "192.168.1.100");
+        assert!(deserialized.auto_connect);
+        assert!(deserialized.available_runtimes.contains(&ContainerRuntime::Docker));
+    }
+
+    #[test]
+    fn test_jump_host_serialization() {
+        let jump = JumpHost {
+            hostname: "bastion.example.com".to_string(),
+            port: 22,
+            username: "jump-user".to_string(),
+            identity_file: Some("/home/user/.ssh/id_rsa".to_string()),
+        };
+
+        let json = serde_json::to_string(&jump).unwrap();
+        assert!(json.contains("bastion.example.com"));
+
+        let deserialized: JumpHost = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.hostname, "bastion.example.com");
+        assert_eq!(deserialized.username, "jump-user");
+    }
+
+    #[test]
+    fn test_live_system_metrics_serialization() {
+        let metrics = LiveSystemMetrics {
+            system_id: "sys-1".to_string(),
+            timestamp: 1700000000000,
+            cpu_usage_percent: 45.5,
+            memory_usage_percent: 72.3,
+            memory_used: Some("8.5G".to_string()),
+            memory_total: Some("16G".to_string()),
+            load_average: Some([1.5, 2.0, 1.8]),
+            swap_usage_percent: Some(10.0),
+        };
+
+        let json = serde_json::to_string(&metrics).unwrap();
+        let deserialized: LiveSystemMetrics = serde_json::from_str(&json).unwrap();
+        assert!((deserialized.cpu_usage_percent - 45.5).abs() < f32::EPSILON);
+        assert_eq!(deserialized.memory_used.as_deref(), Some("8.5G"));
+    }
+}
