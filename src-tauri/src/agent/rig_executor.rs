@@ -9,7 +9,7 @@ use std::sync::Arc;
 use futures::StreamExt;
 use rig::agent::{AgentBuilder, MultiTurnStreamItem};
 use rig::client::{CompletionClient, ProviderClient};
-use rig::providers::{anthropic, ollama, openai};
+use rig::providers::{anthropic, azure, deepseek, gemini, groq, mistral, ollama, openai};
 use rig::streaming::{StreamedAssistantContent, StreamingPrompt};
 use tokio::sync::{mpsc, RwLock};
 
@@ -404,7 +404,7 @@ pub async fn run_rig_agent(
     };
 
     // Helper to process streaming items and emit thinking events
-    async fn process_stream_item<R: std::fmt::Debug>(
+    async fn process_stream_item<R>(
         item: MultiTurnStreamItem<R>,
         event_tx: &mpsc::Sender<AgentEvent>,
         agent_session_id: &str,
@@ -546,6 +546,181 @@ pub async fn run_rig_agent(
                 .build();
 
             // Use streaming API to capture intermediate reasoning
+            let mut stream = agent.stream_prompt(query).multi_turn(10).await;
+
+            let mut final_response = String::new();
+            while let Some(item_result) = stream.next().await {
+                match item_result {
+                    Ok(item) => {
+                        process_stream_item(
+                            item,
+                            &event_tx,
+                            agent_session_id,
+                            query_id,
+                            &mut final_response,
+                        )
+                        .await;
+                    }
+                    Err(e) => {
+                        return Err(format!("Streaming error: {}", e));
+                    }
+                }
+            }
+            Ok(final_response)
+        }
+        AiProviderType::AzureOpenAi => {
+            let api_key = settings.api_key.clone().unwrap_or_default();
+            let api_ver = settings.api_version.as_deref().unwrap_or("2024-10-21");
+            let client = azure::Client::<reqwest::Client>::builder()
+                .api_key(azure::AzureOpenAIAuth::ApiKey(api_key))
+                .azure_endpoint(settings.endpoint_url.clone())
+                .api_version(api_ver)
+                .build()
+                .map_err(|e| format!("Failed to create Azure OpenAI client: {}", e))?;
+            let model = client.completion_model(&settings.model_name);
+            let agent = AgentBuilder::new(model)
+                .preamble(&preamble)
+                .tool(shell_tool)
+                .tool(state_tool)
+                .tool(history_tool)
+                .build();
+
+            let mut stream = agent.stream_prompt(query).multi_turn(10).await;
+
+            let mut final_response = String::new();
+            while let Some(item_result) = stream.next().await {
+                match item_result {
+                    Ok(item) => {
+                        process_stream_item(
+                            item,
+                            &event_tx,
+                            agent_session_id,
+                            query_id,
+                            &mut final_response,
+                        )
+                        .await;
+                    }
+                    Err(e) => {
+                        return Err(format!("Streaming error: {}", e));
+                    }
+                }
+            }
+            Ok(final_response)
+        }
+        AiProviderType::Groq => {
+            let client: groq::Client = groq::Client::new(
+                &settings.api_key.clone().unwrap_or_default()
+            ).map_err(|e| format!("Failed to create Groq client: {}", e))?;
+            let model = client.completion_model(&settings.model_name);
+            let agent = AgentBuilder::new(model)
+                .preamble(&preamble)
+                .tool(shell_tool)
+                .tool(state_tool)
+                .tool(history_tool)
+                .build();
+
+            let mut stream = agent.stream_prompt(query).multi_turn(10).await;
+
+            let mut final_response = String::new();
+            while let Some(item_result) = stream.next().await {
+                match item_result {
+                    Ok(item) => {
+                        process_stream_item(
+                            item,
+                            &event_tx,
+                            agent_session_id,
+                            query_id,
+                            &mut final_response,
+                        )
+                        .await;
+                    }
+                    Err(e) => {
+                        return Err(format!("Streaming error: {}", e));
+                    }
+                }
+            }
+            Ok(final_response)
+        }
+        AiProviderType::Gemini => {
+            let client: gemini::Client = gemini::Client::new(
+                &settings.api_key.clone().unwrap_or_default()
+            ).map_err(|e| format!("Failed to create Gemini client: {}", e))?;
+            let model = client.completion_model(&settings.model_name);
+            let agent = AgentBuilder::new(model)
+                .preamble(&preamble)
+                .tool(shell_tool)
+                .tool(state_tool)
+                .tool(history_tool)
+                .build();
+
+            let mut stream = agent.stream_prompt(query).multi_turn(10).await;
+
+            let mut final_response = String::new();
+            while let Some(item_result) = stream.next().await {
+                match item_result {
+                    Ok(item) => {
+                        process_stream_item(
+                            item,
+                            &event_tx,
+                            agent_session_id,
+                            query_id,
+                            &mut final_response,
+                        )
+                        .await;
+                    }
+                    Err(e) => {
+                        return Err(format!("Streaming error: {}", e));
+                    }
+                }
+            }
+            Ok(final_response)
+        }
+        AiProviderType::DeepSeek => {
+            let client: deepseek::Client = deepseek::Client::new(
+                &settings.api_key.clone().unwrap_or_default()
+            ).map_err(|e| format!("Failed to create DeepSeek client: {}", e))?;
+            let model = client.completion_model(&settings.model_name);
+            let agent = AgentBuilder::new(model)
+                .preamble(&preamble)
+                .tool(shell_tool)
+                .tool(state_tool)
+                .tool(history_tool)
+                .build();
+
+            let mut stream = agent.stream_prompt(query).multi_turn(10).await;
+
+            let mut final_response = String::new();
+            while let Some(item_result) = stream.next().await {
+                match item_result {
+                    Ok(item) => {
+                        process_stream_item(
+                            item,
+                            &event_tx,
+                            agent_session_id,
+                            query_id,
+                            &mut final_response,
+                        )
+                        .await;
+                    }
+                    Err(e) => {
+                        return Err(format!("Streaming error: {}", e));
+                    }
+                }
+            }
+            Ok(final_response)
+        }
+        AiProviderType::Mistral => {
+            let client: mistral::Client = mistral::Client::new(
+                &settings.api_key.clone().unwrap_or_default()
+            ).map_err(|e| format!("Failed to create Mistral client: {}", e))?;
+            let model = client.completion_model(&settings.model_name);
+            let agent = AgentBuilder::new(model)
+                .preamble(&preamble)
+                .tool(shell_tool)
+                .tool(state_tool)
+                .tool(history_tool)
+                .build();
+
             let mut stream = agent.stream_prompt(query).multi_turn(10).await;
 
             let mut final_response = String::new();

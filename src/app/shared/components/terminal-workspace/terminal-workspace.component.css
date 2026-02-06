@@ -1,7 +1,14 @@
+:host {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
 .terminal-workspace {
   display: flex;
   flex-direction: column;
-  height: 100%;
+  flex: 1;
+  min-height: 0;
   background: #09090b;
 }
 
@@ -9,9 +16,10 @@
 .workspace-grid {
   display: grid;
   flex: 1;
-  gap: 2px;
-  background: #27272a;
-  min-height: 200px;
+  gap: 0;
+  background: #09090b;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .workspace-grid.single {
@@ -39,11 +47,19 @@
   background: #09090b;
   overflow: hidden;
   position: relative;
+  border: 1px solid #27272a;
+  border-radius: 8px;
+  margin: 4px;
 }
 
 .terminal-slot.active {
-  outline: 2px solid #3b82f6;
-  outline-offset: -2px;
+  border-color: #3b82f6;
+}
+
+.terminal-slot.slot-drop-target {
+  border-color: #3b82f6;
+  border-style: dashed;
+  background: rgba(59, 130, 246, 0.08);
 }
 
 .terminal-host {
@@ -51,6 +67,8 @@
   height: 100%;
   position: absolute;
   inset: 0;
+  border-radius: 8px;
+  overflow: hidden;
 }
 
 .terminal-host :host ::ng-deep .xterm {
@@ -78,6 +96,21 @@
   height: 100%;
 }
 
+/* File browser in a slot */
+.file-browser-slot-content {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.file-browser-slot-content app-file-browser-view {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+}
+
 .empty-slot-overlay {
   position: absolute;
   inset: 0;
@@ -87,6 +120,61 @@
   background: #09090b;
   border: 1px dashed #3f3f46;
   z-index: 1;
+  overflow: hidden;
+  padding: 8px;
+}
+
+.empty-slot-menu {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 240px;
+  max-height: 100%;
+  min-height: 0;
+}
+
+.empty-slot-scroll {
+  width: 100%;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #3f3f46 transparent;
+}
+
+.slot-menu-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 4px 6px;
+  border-radius: 4px;
+  transition: background 0.15s ease;
+}
+
+.slot-menu-row:hover {
+  background: #27272a;
+}
+
+.slot-menu-indent {
+  padding-left: 24px;
+}
+
+.slot-menu-chevron {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: #71717a;
+  flex-shrink: 0;
+  transition: color 0.15s ease;
+}
+
+.slot-menu-chevron:hover {
+  color: #fafafa;
 }
 
 /* Dock bar */
@@ -189,6 +277,20 @@
   border-color: #3b82f6;
 }
 
+.slot-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  background: #3b82f6;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
 .close-btn {
   display: flex;
   align-items: center;
@@ -206,6 +308,138 @@
 .close-btn:hover {
   background: #52525b;
   color: #fafafa;
+}
+
+/* New menu popout (+ button with hover sub-menus) */
+.new-menu-popout {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  margin-bottom: 4px;
+  background: #1c1c1f;
+  border: 1px solid #3f3f46;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  min-width: 200px;
+  z-index: 50;
+  padding: 4px;
+}
+
+.new-menu-system-wrapper {
+  position: relative;
+}
+
+.new-menu-system {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 5px 6px;
+  font-size: 12px;
+  color: #e4e4e7;
+  border-radius: 6px;
+  cursor: default;
+  transition: background 0.15s ease;
+}
+
+.new-menu-system-wrapper:hover > .new-menu-system {
+  background: #27272a;
+}
+
+/* Sub-menu: hidden by default, shown on hover to the right */
+.new-menu-submenu {
+  display: none;
+  position: absolute;
+  left: calc(100% + 4px);
+  bottom: -4px;
+  background: #1c1c1f;
+  border: 1px solid #3f3f46;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  min-width: 220px;
+  max-height: 280px;
+  overflow-y: auto;
+  z-index: 51;
+  padding: 4px;
+  scrollbar-width: thin;
+  scrollbar-color: #3f3f46 transparent;
+}
+
+.new-menu-system-wrapper:hover > .new-menu-submenu {
+  display: block;
+}
+
+.new-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 10px;
+  font-size: 12px;
+  color: #a1a1aa;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-align: left;
+}
+
+.new-menu-item:hover {
+  background: #27272a;
+  color: #fafafa;
+}
+
+/* Container row: name + inline terminal/files icons */
+.new-menu-container-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  font-size: 12px;
+  color: #d4d4d8;
+}
+
+.new-menu-icon-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  border-radius: 4px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: #71717a;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+
+.new-menu-icon-btn:hover {
+  background: #3f3f46;
+  color: #fafafa;
+}
+
+.new-menu-divider {
+  height: 1px;
+  background: #27272a;
+  margin: 3px 8px;
+}
+
+.new-menu-empty {
+  padding: 10px;
+  font-size: 11px;
+  color: #52525b;
+  text-align: center;
+}
+
+/* Drag and drop styles */
+.terminal-tab.dragging {
+  opacity: 0.4;
+}
+
+.terminal-tab.drag-over {
+  border-color: #3b82f6;
+  background: #1e3a5f;
 }
 
 /* Minimize button */

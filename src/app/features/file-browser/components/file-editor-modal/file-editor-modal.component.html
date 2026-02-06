@@ -1,0 +1,62 @@
+<!-- Backdrop -->
+<div
+  class="fixed inset-0 z-50 flex items-center justify-center bg-black/70"
+  (click)="onBackdropClick($event)"
+>
+  <!-- Modal -->
+  <div class="bg-zinc-900 border border-zinc-700 rounded-xl w-[95vw] h-[90vh] max-w-6xl flex flex-col shadow-2xl">
+    <!-- Header -->
+    <div class="flex items-center justify-between px-4 py-3 border-b border-zinc-700 flex-shrink-0">
+      <div class="flex items-center gap-2 min-w-0">
+        <lucide-icon [img]="FileText" class="w-4 h-4 text-blue-400 flex-shrink-0"></lucide-icon>
+        <span class="text-sm font-medium truncate">{{ getFileName() }}</span>
+        <span class="text-xs text-zinc-500 truncate hidden sm:inline">{{ state.editorContent()?.path }}</span>
+        @if (state.editorDirty()) {
+          <span class="px-1.5 py-0.5 text-[10px] rounded bg-amber-900/50 text-amber-400 flex-shrink-0">Modified</span>
+        }
+      </div>
+      <div class="flex items-center gap-2 flex-shrink-0">
+        @if (state.editorContent() && !state.editorContent()!.isBinary) {
+          <button
+            (click)="save()"
+            [disabled]="!state.editorDirty() || state.editorLoading()"
+            class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm transition-colors"
+            [class]="state.editorDirty() ? 'bg-blue-600 hover:bg-blue-500 text-white' : 'bg-zinc-800 text-zinc-500 cursor-not-allowed'"
+          >
+            <lucide-icon [img]="Save" class="w-3.5 h-3.5"></lucide-icon>
+            Save
+          </button>
+        }
+        <button
+          (click)="closeEditor()"
+          class="p-1.5 rounded-lg hover:bg-zinc-800 transition-colors text-zinc-400 hover:text-white"
+        >
+          <lucide-icon [img]="X" class="w-4 h-4"></lucide-icon>
+        </button>
+      </div>
+    </div>
+
+    <!-- Content -->
+    <div class="flex-1 min-h-0 overflow-hidden">
+      @if (state.editorLoading()) {
+        <div class="flex items-center justify-center h-full">
+          <div class="text-zinc-500 text-sm">Loading file...</div>
+        </div>
+      } @else if (state.editorContent()?.isBinary) {
+        <div class="flex flex-col items-center justify-center h-full gap-3 text-zinc-400">
+          <lucide-icon [img]="AlertTriangle" class="w-8 h-8 text-amber-500"></lucide-icon>
+          <p class="text-sm">This is a binary file and cannot be edited in the browser.</p>
+          <p class="text-xs text-zinc-500">Use the download option to save it locally.</p>
+        </div>
+      } @else {
+        <textarea
+          [value]="editableContent()"
+          (input)="onContentChange($any($event.target).value)"
+          class="w-full h-full p-4 bg-zinc-950 text-zinc-200 font-mono text-sm resize-none focus:outline-none leading-relaxed"
+          spellcheck="false"
+          wrap="off"
+        ></textarea>
+      }
+    </div>
+  </div>
+</div>

@@ -1,4 +1,5 @@
 pub mod client;
+pub mod config;
 pub mod pool;
 pub mod port_forward;
 
@@ -11,6 +12,7 @@ use crate::models::error::ContainerError;
 use crate::models::system::ContainerSystem;
 
 pub use client::SshClient;
+pub use config::{has_ssh_config, list_hosts, list_hosts_multi, resolve_host, resolve_host_multi, resolve_jump_hosts, SshHostEntry};
 pub use pool::SshConnectionPool;
 pub use port_forward::PortForwardManager;
 

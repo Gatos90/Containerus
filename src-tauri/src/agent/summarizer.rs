@@ -7,7 +7,7 @@
 use rig::agent::AgentBuilder;
 use rig::client::{CompletionClient, ProviderClient};
 use rig::completion::Prompt;
-use rig::providers::{anthropic, ollama, openai};
+use rig::providers::{anthropic, azure, deepseek, gemini, groq, mistral, ollama, openai};
 use serde::{Deserialize, Serialize};
 
 use crate::ai::{AiProviderType, AiSettings};
@@ -164,6 +164,80 @@ async fn call_summary_model(settings: &AiSettings, user_input: &str) -> Result<S
                 .prompt(&prompt)
                 .await
                 .map_err(|e| format!("Ollama summarization failed: {}", e))
+        }
+        AiProviderType::AzureOpenAi => {
+            let api_key = settings.api_key.clone().unwrap_or_default();
+            let api_ver = settings.api_version.as_deref().unwrap_or("2024-10-21");
+            let client = azure::Client::<reqwest::Client>::builder()
+                .api_key(azure::AzureOpenAIAuth::ApiKey(api_key))
+                .azure_endpoint(settings.endpoint_url.clone())
+                .api_version(api_ver)
+                .build()
+                .map_err(|e| format!("Failed to create Azure OpenAI client: {}", e))?;
+
+            let model = client.completion_model(&summary_model);
+            let agent = AgentBuilder::new(model).build();
+
+            agent
+                .prompt(&prompt)
+                .await
+                .map_err(|e| format!("Azure OpenAI summarization failed: {}", e))
+        }
+        AiProviderType::Groq => {
+            let client: groq::Client = groq::Client::new(
+                &settings.api_key.clone().unwrap_or_default(),
+            )
+            .map_err(|e| format!("Failed to create Groq client: {}", e))?;
+
+            let model = client.completion_model(&summary_model);
+            let agent = AgentBuilder::new(model).build();
+
+            agent
+                .prompt(&prompt)
+                .await
+                .map_err(|e| format!("Groq summarization failed: {}", e))
+        }
+        AiProviderType::Gemini => {
+            let client: gemini::Client = gemini::Client::new(
+                &settings.api_key.clone().unwrap_or_default(),
+            )
+            .map_err(|e| format!("Failed to create Gemini client: {}", e))?;
+
+            let model = client.completion_model(&summary_model);
+            let agent = AgentBuilder::new(model).build();
+
+            agent
+                .prompt(&prompt)
+                .await
+                .map_err(|e| format!("Gemini summarization failed: {}", e))
+        }
+        AiProviderType::DeepSeek => {
+            let client: deepseek::Client = deepseek::Client::new(
+                &settings.api_key.clone().unwrap_or_default(),
+            )
+            .map_err(|e| format!("Failed to create DeepSeek client: {}", e))?;
+
+            let model = client.completion_model(&summary_model);
+            let agent = AgentBuilder::new(model).build();
+
+            agent
+                .prompt(&prompt)
+                .await
+                .map_err(|e| format!("DeepSeek summarization failed: {}", e))
+        }
+        AiProviderType::Mistral => {
+            let client: mistral::Client = mistral::Client::new(
+                &settings.api_key.clone().unwrap_or_default(),
+            )
+            .map_err(|e| format!("Failed to create Mistral client: {}", e))?;
+
+            let model = client.completion_model(&summary_model);
+            let agent = AgentBuilder::new(model).build();
+
+            agent
+                .prompt(&prompt)
+                .await
+                .map_err(|e| format!("Mistral summarization failed: {}", e))
         }
     }
 }

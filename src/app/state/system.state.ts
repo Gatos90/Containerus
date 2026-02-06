@@ -42,6 +42,15 @@ export class SystemState {
     )
   );
 
+  readonly disconnectedSystems = computed(() =>
+    this._systems().filter(
+      (s) => {
+        const state = this._connectionStates()[s.id];
+        return state === 'disconnected' || state === 'error';
+      }
+    )
+  );
+
   /** Filtered systems based on search query and status filter */
   readonly filteredSystems = computed(() => {
     let systems = this._systems();

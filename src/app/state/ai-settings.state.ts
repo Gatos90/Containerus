@@ -71,7 +71,8 @@ export class AiSettingsState {
     maxTokens: number,
     memoryEnabled: boolean = true,
     summaryModel?: string,
-    summaryMaxTokens: number = 100
+    summaryMaxTokens: number = 100,
+    apiVersion?: string
   ): Promise<void> {
     await this.aiService.updateSettings({
       provider: provider as 'ollama' | 'openai' | 'anthropic',
@@ -83,6 +84,7 @@ export class AiSettingsState {
       memoryEnabled,
       summaryModel,
       summaryMaxTokens,
+      apiVersion,
     });
   }
 
@@ -99,12 +101,14 @@ export class AiSettingsState {
   async testConnectionWithSettings(
     provider: string,
     apiKey?: string,
-    endpointUrl?: string
+    endpointUrl?: string,
+    apiVersion?: string
   ): Promise<boolean> {
     return this.aiService.testConnectionWithSettings(
       provider as 'ollama' | 'openai' | 'anthropic',
       apiKey,
-      endpointUrl
+      endpointUrl,
+      apiVersion
     );
   }
 
@@ -114,12 +118,14 @@ export class AiSettingsState {
   async loadModelsForProvider(
     provider: string,
     apiKey?: string,
-    endpointUrl?: string
+    endpointUrl?: string,
+    apiVersion?: string
   ) {
     return this.aiService.loadModelsForProvider(
       provider as 'ollama' | 'openai' | 'anthropic',
       apiKey,
-      endpointUrl
+      endpointUrl,
+      apiVersion
     );
   }
 

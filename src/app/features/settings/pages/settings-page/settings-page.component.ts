@@ -2,6 +2,7 @@ import {
   ChangeDetectionStrategy,
   Component,
   computed,
+  HostListener,
   inject,
   OnInit,
   signal,
@@ -25,9 +26,15 @@ import {
   Plus,
   Brain,
   MessageSquare,
+  FolderOpen,
+  Link,
+  Minus,
 } from 'lucide-angular';
+import { open } from '@tauri-apps/plugin-dialog';
 import { AiService } from '../../../../core/services/ai.service';
+import { SystemService } from '../../../../core/services/system.service';
 import { AiSettingsState } from '../../../../state/ai-settings.state';
+import { UpdateState } from '../../../../state/update.state';
 import {
   AI_PROVIDERS,
   AiModel,
@@ -45,6 +52,8 @@ import {
 export class SettingsPageComponent implements OnInit {
   private aiState = inject(AiSettingsState);
   private aiService = inject(AiService);
+  private systemService = inject(SystemService);
+  readonly updateState = inject(UpdateState);
 
   // Icons
   readonly Settings = Settings;
@@ -63,6 +72,15 @@ export class SettingsPageComponent implements OnInit {
   readonly Plus = Plus;
   readonly Brain = Brain;
   readonly MessageSquare = MessageSquare;
+  readonly FolderOpen = FolderOpen;
+  readonly Link = Link;
+  readonly Minus = Minus;
+
+  // Tab state
+  activeTab = signal<'ai' | 'ssh' | 'general'>('ai');
+
+  // App version
+  appVersion = signal<string>('');
 
   // Available providers
   readonly providers = AI_PROVIDERS;
@@ -79,6 +97,9 @@ export class SettingsPageComponent implements OnInit {
   memoryEnabled = signal<boolean>(true);
   summaryModel = signal<string>('');
   summaryMaxTokens = signal<number>(100);
+
+  // Azure-specific settings
+  apiVersion = signal<string>('');
 
   // UI state
   availableModels = signal<AiModel[]>([]);
@@ -97,6 +118,46 @@ export class SettingsPageComponent implements OnInit {
 
   // Custom model input (OpenAI-compatible)
   customModelName = signal<string>('');
+
+  // SSH settings
+  sshConfigPaths = signal<string[]>([]);
+  sshSaveMessage = signal<string>('');
+  isSavingSsh = signal(false);
+
+  // Saved state tracking for dirty detection
+  private savedAi = signal<{ provider: string; apiKey: string; endpoint: string; model: string; temp: number; maxTokens: number; memoryEnabled: boolean; summaryModel: string; summaryMaxTokens: number; apiVersion: string } | null>(null);
+  private savedSshPaths = signal<string[]>([]);
+
+  readonly isAiDirty = computed(() => {
+    const saved = this.savedAi();
+    if (!saved) return false;
+    return saved.provider !== this.selectedProvider()
+      || saved.apiKey !== this.apiKey()
+      || saved.endpoint !== this.endpointUrl()
+      || saved.model !== this.modelName()
+      || saved.temp !== this.temperature()
+      || saved.maxTokens !== this.maxTokens()
+      || saved.memoryEnabled !== this.memoryEnabled()
+      || saved.summaryModel !== this.summaryModel()
+      || saved.summaryMaxTokens !== this.summaryMaxTokens()
+      || saved.apiVersion !== this.apiVersion();
+  });
+
+  readonly isSshDirty = computed(() => {
+    const saved = this.savedSshPaths();
+    const current = this.sshConfigPaths();
+    if (saved.length !== current.length) return true;
+    return saved.some((p, i) => p !== current[i]);
+  });
+
+  readonly hasUnsavedChanges = computed(() => this.isAiDirty() || this.isSshDirty());
+
+  @HostListener('window:beforeunload', ['$event'])
+  onBeforeUnload(event: BeforeUnloadEvent): void {
+    if (this.hasUnsavedChanges()) {
+      event.preventDefault();
+    }
+  }
 
   // Computed
   get currentProviderInfo(): ProviderInfo {
@@ -120,6 +181,17 @@ export class SettingsPageComponent implements OnInit {
 
   ngOnInit(): void {
     this.loadSettings();
+    this.loadSshSettings();
+    this.loadVersion();
+  }
+
+  private async loadVersion(): Promise<void> {
+    try {
+      const { getVersion } = await import('@tauri-apps/api/app');
+      this.appVersion.set(await getVersion());
+    } catch {
+      this.appVersion.set('unknown');
+    }
   }
 
   async loadSettings(): Promise<void> {
@@ -144,30 +216,65 @@ export class SettingsPageComponent implements OnInit {
         this.memoryEnabled.set(settings.memoryEnabled ?? true);
         this.summaryModel.set(settings.summaryModel ?? '');
         this.summaryMaxTokens.set(settings.summaryMaxTokens ?? 100);
+        this.apiVersion.set(settings.apiVersion ?? '');
       }
       await this.loadModels();
+      this.snapshotAiState();
     } catch (err) {
       console.error('Failed to load settings:', err);
     }
+  }
+
+  private snapshotAiState(): void {
+    this.savedAi.set({
+      provider: this.selectedProvider(),
+      apiKey: this.apiKey(),
+      endpoint: this.endpointUrl(),
+      model: this.modelName(),
+      temp: this.temperature(),
+      maxTokens: this.maxTokens(),
+      memoryEnabled: this.memoryEnabled(),
+      summaryModel: this.summaryModel(),
+      summaryMaxTokens: this.summaryMaxTokens(),
+      apiVersion: this.apiVersion(),
+    });
   }
 
   private isDefaultEndpoint(url: string): boolean {
     return this.providers.some((p) => p.defaultEndpoint === url);
   }
 
-  onProviderChange(providerId: string): void {
+  async onProviderChange(providerId: string): Promise<void> {
     this.selectedProvider.set(providerId as AiProviderType);
     const provider = this.providers.find((p) => p.id === providerId);
-    if (provider) {
-      if (provider.defaultEndpoint) {
-        this.endpointUrl.set(provider.defaultEndpoint);
-      }
+    if (!provider) return;
+
+    // Freshly reload saved settings from DB
+    const saved = await this.aiService.loadSettings();
+
+    if (saved.provider === providerId) {
+      // Switching back to the saved provider — restore all saved values
+      this.apiKey.set(saved.apiKey ?? '');
+      this.endpointUrl.set(saved.endpointUrl);
+      this.modelName.set(saved.modelName);
+      this.apiVersion.set(saved.apiVersion ?? '');
+      this.summaryModel.set(saved.summaryModel ?? '');
+      this.temperature.set(saved.temperature);
+      this.maxTokens.set(saved.maxTokens);
+      this.memoryEnabled.set(saved.memoryEnabled ?? true);
+      this.summaryMaxTokens.set(saved.summaryMaxTokens ?? 100);
+    } else {
+      // Different provider — use defaults
+      this.endpointUrl.set(provider.defaultEndpoint ?? '');
       this.modelName.set(provider.defaultModel);
-      this.summaryModel.set(''); // Reset to use default for new provider
       this.apiKey.set('');
-      this.testResult.set(null);
-      this.availableModels.set([]);
+      this.apiVersion.set('');
+      this.summaryModel.set('');
     }
+
+    this.testResult.set(null);
+    this.availableModels.set([]);
+    await this.loadModels();
   }
 
   async loadModels(): Promise<void> {
@@ -180,7 +287,8 @@ export class SettingsPageComponent implements OnInit {
       const models = await this.aiState.loadModelsForProvider(
         this.selectedProvider(),
         this.apiKey() || undefined,
-        endpointToSend
+        endpointToSend,
+        this.apiVersion() || undefined
       );
       this.availableModels.set(models);
 
@@ -236,7 +344,8 @@ export class SettingsPageComponent implements OnInit {
       const success = await this.aiState.testConnectionWithSettings(
         this.selectedProvider(),
         this.apiKey() || undefined,
-        endpointToSend
+        endpointToSend,
+        this.apiVersion() || undefined
       );
 
       if (success) {
@@ -269,8 +378,10 @@ export class SettingsPageComponent implements OnInit {
         this.maxTokens(),
         this.memoryEnabled(),
         this.summaryModel() || undefined,
-        this.summaryMaxTokens()
+        this.summaryMaxTokens(),
+        this.apiVersion() || undefined
       );
+      this.snapshotAiState();
       this.saveMessage.set('Settings saved successfully!');
       setTimeout(() => this.saveMessage.set(''), 3000);
     } catch (err) {
@@ -347,5 +458,70 @@ export class SettingsPageComponent implements OnInit {
     this.availableModels.update((models) => [...models, customModel]);
     this.modelName.set(modelId);
     this.customModelName.set('');
+  }
+
+  // ========================================================================
+  // SSH Settings
+  // ========================================================================
+
+  async loadSshSettings(): Promise<void> {
+    try {
+      const settings = await this.systemService.getAppSettings();
+      const paths = settings.sshConfigPaths ?? [];
+      this.sshConfigPaths.set(paths);
+      this.savedSshPaths.set([...paths]);
+    } catch (err) {
+      console.warn('Failed to load SSH settings:', err);
+    }
+  }
+
+  async saveSshSettings(): Promise<void> {
+    this.isSavingSsh.set(true);
+    this.sshSaveMessage.set('');
+
+    try {
+      const paths = this.sshConfigPaths().filter(p => p.trim());
+      await this.systemService.updateAppSettings({
+        sshConfigPaths: paths,
+      });
+      this.sshConfigPaths.set(paths);
+      this.savedSshPaths.set([...paths]);
+      this.sshSaveMessage.set('SSH settings saved!');
+      setTimeout(() => this.sshSaveMessage.set(''), 3000);
+    } catch (err) {
+      this.sshSaveMessage.set(err instanceof Error ? err.message : 'Failed to save SSH settings');
+    } finally {
+      this.isSavingSsh.set(false);
+    }
+  }
+
+  addSshConfigPath(): void {
+    this.sshConfigPaths.update(paths => [...paths, '']);
+  }
+
+  removeSshConfigPath(index: number): void {
+    this.sshConfigPaths.update(paths => paths.filter((_, i) => i !== index));
+  }
+
+  updateSshConfigPath(index: number, value: string): void {
+    this.sshConfigPaths.update(paths =>
+      paths.map((p, i) => i === index ? value : p)
+    );
+  }
+
+  async browseSshConfigPath(index: number): Promise<void> {
+    try {
+      const selected = await open({
+        title: 'Select SSH Config File',
+        multiple: false,
+        directory: false,
+        defaultPath: '~/.ssh/',
+      });
+      if (selected) {
+        this.updateSshConfigPath(index, selected);
+      }
+    } catch (err) {
+      console.error('Failed to browse for SSH config:', err);
+    }
   }
 }

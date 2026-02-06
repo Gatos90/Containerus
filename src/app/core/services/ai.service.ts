@@ -61,6 +61,7 @@ export class AiService {
         memory_enabled: boolean;
         summary_model?: string;
         summary_max_tokens: number;
+        api_version?: string;
       }>('get_ai_settings_cmd');
 
       const settings: AiSettings = {
@@ -73,6 +74,7 @@ export class AiService {
         memoryEnabled: response.memory_enabled ?? true,
         summaryModel: response.summary_model,
         summaryMaxTokens: response.summary_max_tokens ?? 100,
+        apiVersion: response.api_version,
       };
 
       this._settings.set(settings);
@@ -104,6 +106,7 @@ export class AiService {
         memory_enabled: settings.memoryEnabled,
         summary_model: settings.summaryModel,
         summary_max_tokens: settings.summaryMaxTokens,
+        api_version: settings.apiVersion,
       };
 
       await this.tauri.invoke<void>('update_ai_settings_cmd', { request });
@@ -144,7 +147,8 @@ export class AiService {
   async testConnectionWithSettings(
     provider: AiProviderType,
     apiKey?: string,
-    endpointUrl?: string
+    endpointUrl?: string,
+    apiVersion?: string
   ): Promise<boolean> {
     this._isLoading.set(true);
     this._error.set(null);
@@ -154,6 +158,7 @@ export class AiService {
         providerType: provider,
         apiKey,
         endpointUrl,
+        apiVersion,
       });
       return true;
     } catch (err) {
@@ -191,13 +196,15 @@ export class AiService {
   async loadModelsForProvider(
     provider: AiProviderType,
     apiKey?: string,
-    endpointUrl?: string
+    endpointUrl?: string,
+    apiVersion?: string
   ): Promise<AiModel[]> {
     try {
       const models = await this.tauri.invoke<AiModel[]>('list_models_for_provider', {
         providerType: provider,
         apiKey,
         endpointUrl,
+        apiVersion,
       });
       return models;
     } catch (err) {

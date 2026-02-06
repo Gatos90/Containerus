@@ -1,9 +1,11 @@
 import { CommonModule, DecimalPipe } from '@angular/common';
 import { Component, inject, signal, computed } from '@angular/core';
 import { Router, RouterLink, RouterLinkActive } from '@angular/router';
-import { LucideAngularModule, LucideIconData, Box, Image, HardDrive, Network, Server, Settings, MoreHorizontal, Command, ChevronDown, ChevronUp, Terminal, Unplug, ExternalLink, Crown, ShieldCheck, Activity, Cpu, MemoryStick } from 'lucide-angular';
+import { LucideAngularModule, LucideIconData, Box, Image, HardDrive, Network, Server, Settings, MoreHorizontal, Command, ChevronDown, ChevronUp, Terminal, Unplug, ExternalLink, Crown, ShieldCheck, Activity, Cpu, MemoryStick, FolderOpen, RefreshCw } from 'lucide-angular';
 import { SystemState } from '../../state/system.state';
 import { ContainerState } from '../../state/container.state';
+import { TerminalState, DEFAULT_TERMINAL_OPTIONS } from '../../state/terminal.state';
+import { TerminalService } from '../../core/services/terminal.service';
 import { ContainerSystem, ExtendedSystemInfo, LiveSystemMetrics, OsType } from '../../core/models/system.model';
 
 export interface LoadLevelInfo {
@@ -32,6 +34,8 @@ export class SidebarComponent {
   private router = inject(Router);
   readonly systemState = inject(SystemState);
   readonly containerState = inject(ContainerState);
+  private readonly terminalState = inject(TerminalState);
+  private readonly terminalService = inject(TerminalService);
 
   // State for "More" bottom sheet
   showMoreSheet = signal(false);
@@ -57,13 +61,17 @@ export class SidebarComponent {
   readonly Activity = Activity;
   readonly Cpu = Cpu;
   readonly MemoryStick = MemoryStick;
+  readonly FolderOpen = FolderOpen;
+  readonly RefreshCw = RefreshCw;
+
+  reconnecting = signal<string | null>(null);
 
   navItems: NavItem[] = [
     {
       label: 'Containers',
       route: '/containers',
       icon: Box,
-      badge: () => this.containerState.stats().total,
+      badge: () => this.containerState.stats().running || this.containerState.stats().total,
       showInMobile: true,
     },
     {
@@ -81,6 +89,11 @@ export class SidebarComponent {
       label: 'Networks',
       route: '/networks',
       icon: Network,
+    },
+    {
+      label: 'Files',
+      route: '/files',
+      icon: FolderOpen,
     },
     {
       label: 'Systems',
@@ -125,10 +138,18 @@ export class SidebarComponent {
     await this.systemState.disconnectSystem(system.id);
   }
 
-  openTerminal(event: Event, system: ContainerSystem): void {
+  async openTerminal(event: Event, system: ContainerSystem): Promise<void> {
     event.stopPropagation();
-    this.systemState.selectSystem(system.id);
-    this.router.navigate(['/commands']);
+    const session = await this.terminalService.startSession(system.id);
+    const id = this.terminalState.generateTerminalId();
+    this.terminalState.addTerminal({
+      id,
+      session,
+      systemId: system.id,
+      systemName: system.name,
+      serializedState: '',
+      terminalOptions: DEFAULT_TERMINAL_OPTIONS,
+    });
   }
 
   viewSystem(event: Event, system: ContainerSystem): void {
@@ -243,4 +264,14 @@ export class SidebarComponent {
 
   /** Array for load dots rendering */
   readonly loadDots = [1, 2, 3, 4, 5];
+
+  async reconnectSystem(event: Event, system: ContainerSystem): Promise<void> {
+    event.stopPropagation();
+    this.reconnecting.set(system.id);
+    try {
+      await this.systemState.connectSystem(system.id);
+    } finally {
+      this.reconnecting.set(null);
+    }
+  }
 }

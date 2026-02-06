@@ -2,6 +2,32 @@
   <app-sidebar></app-sidebar>
 
   <main class="flex-1 flex flex-col overflow-hidden">
+    @if (updateState.updateAvailable()) {
+      <div class="bg-blue-900/50 border-b border-blue-800 px-4 py-2 flex items-center justify-between">
+        <span class="text-blue-200 text-sm">
+          A new version is available: v{{ updateState.updateVersion() }}
+        </span>
+        <div class="flex items-center gap-2">
+          @if (updateState.downloading()) {
+            <span class="text-blue-300 text-sm animate-pulse">Downloading update...</span>
+          } @else {
+            <button
+              (click)="updateState.downloadAndInstall()"
+              class="px-3 py-1 text-sm bg-blue-600 hover:bg-blue-500 rounded-lg transition-colors text-white"
+            >
+              Update Now
+            </button>
+            <button
+              (click)="updateState.dismiss()"
+              class="text-blue-400 hover:text-blue-300 text-sm"
+            >
+              Later
+            </button>
+          }
+        </div>
+      </div>
+    }
+
     @if (appState.globalError()) {
       <div class="bg-red-900/50 border-b border-red-800 px-4 py-2 flex items-center justify-between">
         <span class="text-red-200 text-sm">{{ appState.globalError() }}</span>
@@ -15,30 +41,38 @@
     }
 
     @if (showTerminalWorkspace()) {
-      @if (terminalState.isDockFullscreen()) {
+      @if (terminalState.isDockFullscreen() && showDockGrid()) {
         <!-- Fullscreen: workspace takes all content area -->
         <app-terminal-workspace class="flex-1"></app-terminal-workspace>
       } @else {
-        <!-- Split view: content + terminal workspace -->
+        <!-- Content + dock bar (always visible) -->
         <div class="flex-1 min-w-0 flex flex-col overflow-hidden">
-          <!-- Main content area (adjusts based on dock minimized state) -->
+          <!-- Main content area -->
           <div
             class="min-w-0 overflow-auto pb-16 md:pb-0"
-            [class.flex-1]="terminalState.isDockMinimized()"
-            [style.height]="terminalState.isDockMinimized() ? 'auto' : '50%'"
+            [class.flex-1]="terminalState.isDockMinimized() || !showDockGrid()"
+            [style.height]="(!terminalState.isDockMinimized() && showDockGrid()) ? (100 - terminalState.dockHeightPercent()) + '%' : 'auto'"
           >
             <router-outlet></router-outlet>
           </div>
 
-          <!-- Terminal workspace dock -->
+          <!-- Resize handle -->
+          @if (!terminalState.isDockMinimized() && showDockGrid()) {
+            <div
+              class="h-1 bg-zinc-800 hover:bg-blue-500/50 cursor-row-resize flex-shrink-0 transition-colors"
+              (mousedown)="onResizeStart($event)"
+            ></div>
+          }
+
+          <!-- Terminal workspace dock (bar always shown) -->
           <app-terminal-workspace
             class="flex-shrink-0"
-            [style.height]="terminalState.isDockMinimized() ? 'auto' : '50%'"
+            [style.height]="(!terminalState.isDockMinimized() && showDockGrid()) ? terminalState.dockHeightPercent() + '%' : 'auto'"
           ></app-terminal-workspace>
         </div>
       }
     } @else {
-      <!-- Normal layout without workspace -->
+      <!-- Terminal route — no workspace -->
       <div class="flex-1 min-w-0 overflow-auto pb-16 md:pb-0">
         <router-outlet></router-outlet>
       </div>

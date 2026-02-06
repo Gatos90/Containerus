@@ -418,16 +418,29 @@ impl CommandBuilder {
         }
     }
 
-    /// Build exec command without TTY (for scripting)
+    /// Build exec command without TTY (for scripting).
+    /// Wraps in `sh -c` so shell operators (||, >, 2>/dev/null, |) work inside the container.
     pub fn exec_command(
         runtime: ContainerRuntime,
         container_id: &str,
         command: &str,
     ) -> String {
+        // Escape characters that have special meaning inside double quotes
+        let escaped = command
+            .replace('\\', "\\\\")
+            .replace('"', "\\\"")
+            .replace('$', "\\$")
+            .replace('`', "\\`");
         match runtime {
-            ContainerRuntime::Docker => format!("docker exec {} {}", container_id, command),
-            ContainerRuntime::Podman => format!("podman exec {} {}", container_id, command),
-            ContainerRuntime::Apple => format!("container exec {} {}", container_id, command),
+            ContainerRuntime::Docker => {
+                format!("docker exec {} sh -c \"{}\"", container_id, escaped)
+            }
+            ContainerRuntime::Podman => {
+                format!("podman exec {} sh -c \"{}\"", container_id, escaped)
+            }
+            ContainerRuntime::Apple => {
+                format!("container exec {} sh -c \"{}\"", container_id, escaped)
+            }
         }
     }
 
@@ -540,6 +553,84 @@ echo "===END===""#
     /// Get Unix live metrics command (for SSH/remote systems)
     pub fn get_live_metrics_for_remote() -> &'static str {
         Self::get_live_metrics_unix()
+    }
+
+    // ========================================================================
+    // File Browser Commands
+    // ========================================================================
+
+    /// Shell-escape a path for safe use in commands.
+    /// Wraps in single quotes, escaping any embedded single quotes.
+    pub fn shell_escape(path: &str) -> String {
+        format!("'{}'", path.replace('\'', "'\\''"))
+    }
+
+    /// List directory contents with full metadata.
+    /// Tries GNU ls first (Linux), falls back to BSD ls (macOS).
+    pub fn list_directory(path: &str) -> String {
+        let escaped = Self::shell_escape(path);
+        format!(
+            "ls -la --time-style=long-iso {} 2>/dev/null || ls -la {}",
+            escaped, escaped
+        )
+    }
+
+    /// Read a text file with a size guard.
+    pub fn read_file(path: &str, max_size_bytes: u64) -> String {
+        let escaped = Self::shell_escape(path);
+        format!(
+            "FILE_SIZE=$(stat -c%s {0} 2>/dev/null || stat -f%z {0} 2>/dev/null); \
+             if [ \"$FILE_SIZE\" -gt {1} ] 2>/dev/null; then \
+               echo \"__FILE_TOO_LARGE__:$FILE_SIZE\"; \
+             else \
+               cat {0}; \
+             fi",
+            escaped, max_size_bytes
+        )
+    }
+
+    /// Write content to a file using base64 transport (safe for special chars).
+    pub fn write_file_from_base64(path: &str, base64_content: &str) -> String {
+        let escaped = Self::shell_escape(path);
+        format!(
+            "printf '%s' '{}' | base64 -d > {}",
+            base64_content, escaped
+        )
+    }
+
+    /// Create a directory (and parents).
+    pub fn create_directory(path: &str) -> String {
+        format!("mkdir -p {}", Self::shell_escape(path))
+    }
+
+    /// Delete a single file.
+    pub fn delete_file(path: &str) -> String {
+        format!("rm {}", Self::shell_escape(path))
+    }
+
+    /// Delete a directory recursively.
+    pub fn delete_directory(path: &str) -> String {
+        format!("rm -rf {}", Self::shell_escape(path))
+    }
+
+    /// Rename / move a file or directory.
+    pub fn rename_path(old_path: &str, new_path: &str) -> String {
+        format!(
+            "mv {} {}",
+            Self::shell_escape(old_path),
+            Self::shell_escape(new_path)
+        )
+    }
+
+    /// Read a file as base64 (for binary download).
+    pub fn read_file_base64(path: &str) -> String {
+        format!("base64 {}", Self::shell_escape(path))
+    }
+
+    /// Write base64-encoded data to a file (for upload).
+    pub fn write_file_base64(path: &str, base64_data: &str) -> String {
+        let escaped = Self::shell_escape(path);
+        format!("printf '%s' '{}' | base64 -d > {}", base64_data, escaped)
     }
 }
 

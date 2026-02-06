@@ -3,6 +3,7 @@ use std::path::Path;
 
 use base64::Engine;
 use rusqlite::{Connection, Result as SqliteResult};
+use serde::{Deserialize, Serialize};
 
 use crate::ai::AiSettings;
 use crate::models::command_template::{
@@ -89,10 +90,39 @@ pub fn init_database(path: &Path) -> SqliteResult<Connection> {
         "ALTER TABLE ai_settings ADD COLUMN summary_max_tokens INTEGER NOT NULL DEFAULT 100",
         [],
     );
+    let _ = conn.execute(
+        "ALTER TABLE ai_settings ADD COLUMN api_version TEXT",
+        [],
+    );
 
     // Migration: Add private_key_enc column for SSH key content storage (mobile support)
     let _ = conn.execute(
         "ALTER TABLE ssh_credentials ADD COLUMN private_key_enc TEXT",
+        [],
+    );
+
+    // App settings table (singleton pattern)
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS app_settings (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            ssh_config_path TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )",
+        [],
+    )?;
+
+    // Migration: Add ssh_config_paths column (JSON array) for multiple SSH config paths
+    let _ = conn.execute(
+        "ALTER TABLE app_settings ADD COLUMN ssh_config_paths TEXT",
+        [],
+    );
+
+    // Migration: Migrate single ssh_config_path to ssh_config_paths array
+    let _ = conn.execute(
+        "UPDATE app_settings SET ssh_config_paths = json_array(ssh_config_path)
+         WHERE ssh_config_path IS NOT NULL AND ssh_config_path != ''
+         AND (ssh_config_paths IS NULL OR ssh_config_paths = '')",
         [],
     );
 
@@ -474,7 +504,7 @@ pub fn toggle_command_favorite(conn: &Connection, id: &str) -> SqliteResult<bool
 pub fn get_ai_settings(conn: &Connection) -> SqliteResult<AiSettings> {
     let mut stmt = conn.prepare(
         "SELECT provider, api_key, model_name, endpoint_url, temperature, max_tokens,
-                memory_enabled, summary_model, summary_max_tokens
+                memory_enabled, summary_model, summary_max_tokens, api_version
          FROM ai_settings WHERE id = 1",
     )?;
 
@@ -490,6 +520,7 @@ pub fn get_ai_settings(conn: &Connection) -> SqliteResult<AiSettings> {
         let memory_enabled: i32 = row.get(6).unwrap_or(1);
         let summary_model: Option<String> = row.get(7).unwrap_or(None);
         let summary_max_tokens: i32 = row.get(8).unwrap_or(100);
+        let api_version: Option<String> = row.get(9).unwrap_or(None);
 
         Ok(AiSettings {
             provider: AiSettings::str_to_provider(&provider),
@@ -501,6 +532,7 @@ pub fn get_ai_settings(conn: &Connection) -> SqliteResult<AiSettings> {
             memory_enabled: memory_enabled != 0,
             summary_model,
             summary_max_tokens,
+            api_version,
         })
     } else {
         // Return default settings
@@ -514,8 +546,8 @@ pub fn upsert_ai_settings(conn: &Connection, settings: &AiSettings) -> SqliteRes
 
     conn.execute(
         "INSERT INTO ai_settings (id, provider, api_key, model_name, endpoint_url, temperature, max_tokens,
-            memory_enabled, summary_model, summary_max_tokens, created_at, updated_at)
-         VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?10)
+            memory_enabled, summary_model, summary_max_tokens, api_version, created_at, updated_at)
+         VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?11)
          ON CONFLICT(id) DO UPDATE SET
              provider = excluded.provider,
              api_key = excluded.api_key,
@@ -526,6 +558,7 @@ pub fn upsert_ai_settings(conn: &Connection, settings: &AiSettings) -> SqliteRes
              memory_enabled = excluded.memory_enabled,
              summary_model = excluded.summary_model,
              summary_max_tokens = excluded.summary_max_tokens,
+             api_version = excluded.api_version,
              updated_at = excluded.updated_at",
         (
             settings.provider_to_str(),
@@ -537,6 +570,7 @@ pub fn upsert_ai_settings(conn: &Connection, settings: &AiSettings) -> SqliteRes
             settings.memory_enabled as i32,
             &settings.summary_model,
             settings.summary_max_tokens,
+            &settings.api_version,
             &now,
         ),
     )?;
@@ -741,5 +775,58 @@ pub fn get_ssh_credentials(conn: &Connection, system_id: &str) -> SqliteResult<S
 /// Delete SSH credentials for a system
 pub fn delete_ssh_credentials(conn: &Connection, system_id: &str) -> SqliteResult<()> {
     conn.execute("DELETE FROM ssh_credentials WHERE system_id = ?1", [system_id])?;
+    Ok(())
+}
+
+// ============================================================================
+// App Settings Database Functions
+// ============================================================================
+
+/// App settings (singleton row, id=1)
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct AppSettings {
+    /// Multiple SSH config file paths (empty = use default ~/.ssh/config)
+    #[serde(default)]
+    pub ssh_config_paths: Vec<String>,
+}
+
+/// Get app settings from the database (returns default if not set)
+pub fn get_app_settings(conn: &Connection) -> SqliteResult<AppSettings> {
+    let mut stmt = conn.prepare(
+        "SELECT ssh_config_paths FROM app_settings WHERE id = 1",
+    )?;
+
+    let mut rows = stmt.query([])?;
+
+    if let Some(row) = rows.next()? {
+        let paths_json: Option<String> = row.get(0)?;
+        let ssh_config_paths: Vec<String> = paths_json
+            .and_then(|j| serde_json::from_str(&j).ok())
+            .unwrap_or_default();
+        Ok(AppSettings { ssh_config_paths })
+    } else {
+        Ok(AppSettings::default())
+    }
+}
+
+/// Insert or update app settings (upsert)
+pub fn upsert_app_settings(conn: &Connection, settings: &AppSettings) -> SqliteResult<()> {
+    let now = chrono::Utc::now().to_rfc3339();
+    let paths_json = serde_json::to_string(&settings.ssh_config_paths)
+        .unwrap_or_else(|_| "[]".to_string());
+
+    conn.execute(
+        "INSERT INTO app_settings (id, ssh_config_paths, created_at, updated_at)
+         VALUES (1, ?1, ?2, ?2)
+         ON CONFLICT(id) DO UPDATE SET
+             ssh_config_paths = excluded.ssh_config_paths,
+             updated_at = excluded.updated_at",
+        (
+            &paths_json,
+            &now,
+        ),
+    )?;
+
     Ok(())
 }

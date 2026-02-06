@@ -45,6 +45,13 @@ export class PortBadgeComponent {
     )
   );
 
+  activeForward = computed(() =>
+    this.portForwardState.getForward(
+      this.containerId(),
+      this.port().containerPort
+    )
+  );
+
   loading = computed(() => {
     return (
       this._localLoading() ||

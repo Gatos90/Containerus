@@ -93,7 +93,7 @@
   <!-- System Cards -->
   <div class="space-y-3">
     @for (system of systemState.filteredSystems(); track system.id) {
-      <div class="bg-zinc-800 rounded-lg p-3 sm:p-4 space-y-3">
+      <div class="bg-zinc-900 rounded-xl border border-zinc-700/50 p-3 sm:p-4 space-y-3 hover:bg-zinc-800 transition-colors">
         <!-- Mobile: Stack layout -->
         <div class="flex items-start sm:items-center gap-3 sm:gap-4">
           <lucide-icon [img]="Server" class="w-5 h-5 sm:w-6 sm:h-6 text-zinc-400 flex-shrink-0 mt-0.5 sm:mt-0"></lucide-icon>
@@ -132,13 +132,13 @@
                 <lucide-icon [img]="Unlink" class="w-4 h-4"></lucide-icon>
               </button>
 
-              <a
-                [routerLink]="['/terminal', system.id]"
+              <button
+                (click)="dockTerminal(system.id)"
                 title="Terminal"
                 class="p-2.5 sm:p-2 touch-target rounded-lg hover:bg-zinc-700 transition-colors"
               >
                 <lucide-icon [img]="Terminal" class="w-4 h-4"></lucide-icon>
-              </a>
+              </button>
             } @else {
               <button
                 (click)="connect(system.id)"
@@ -453,6 +453,43 @@
           </div>
 
           @if (addForm.connectionType === 'remote') {
+            <!-- SSH Host Selector (Desktop only) -->
+            @if (!isMobile() && sshHosts().length > 0) {
+              <div class="p-4 bg-blue-500/10 border border-blue-500/30 rounded-lg">
+                <label class="block text-sm text-zinc-300 mb-1.5">
+                  Import from SSH Config
+                  <span class="text-zinc-500 text-xs ml-1">(~/.ssh/config)</span>
+                </label>
+                <select
+                  [ngModel]="selectedSshHost"
+                  (ngModelChange)="onSshHostSelected($event)"
+                  class="w-full px-3 py-2.5 sm:py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-base sm:text-sm"
+                >
+                  <option value="">-- Manual Configuration --</option>
+                  @for (host of sshHosts(); track host.host) {
+                    <option [value]="host.host">
+                      {{ host.host }}@if (host.hostname && host.hostname !== host.host) { ({{ host.hostname }})}
+                    </option>
+                  }
+                </select>
+                @if (selectedSshHost) {
+                  <p class="text-xs text-blue-400 mt-1.5 flex items-center gap-1">
+                    <span>✓</span> Fields auto-filled from SSH config
+                  </p>
+                  @if (selectedHostProxyJump) {
+                    <p class="text-xs text-amber-400 mt-1 flex items-center gap-1">
+                      <span>↪</span> Connection via ProxyJump: {{ selectedHostProxyJump }}
+                    </p>
+                  }
+                  @if (selectedHostProxyCommand) {
+                    <p class="text-xs text-amber-400 mt-1 flex items-center gap-1">
+                      <span>↪</span> Connection via ProxyCommand
+                    </p>
+                  }
+                }
+              </div>
+            }
+
             <div class="space-y-4 p-4 bg-zinc-800/50 rounded-lg">
               <div>
                 <label class="block text-sm text-zinc-400 mb-1.5">SSH Username</label>
