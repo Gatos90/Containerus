@@ -26,6 +26,16 @@ export interface JumpHost {
   port: number;
   username: string;
   identityFile?: string | null;
+  authMethod?: SshAuthMethod;
+  /** PEM-encoded private key content (for imported keys) */
+  privateKeyContent?: string | null;
+}
+
+/** Credentials for a single jump host, stored in the vault keyed by "hostname:port" */
+export interface JumpHostCredentials {
+  password?: string | null;
+  passphrase?: string | null;
+  privateKey?: string | null;
 }
 
 /** A parsed SSH host entry from ~/.ssh/config */
@@ -52,6 +62,8 @@ export interface SshHostEntry {
 export interface AppSettings {
   /** Multiple SSH config file paths (empty = use default ~/.ssh/config) */
   sshConfigPaths?: string[];
+  /** Last app version the user has seen the "What's New" dialog for */
+  lastSeenVersion?: string | null;
 }
 
 export interface ContainerSystem {

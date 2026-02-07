@@ -7,11 +7,13 @@ import { AppState } from '../../state/app.state';
 import { AiSettingsState } from '../../state/ai-settings.state';
 import { TerminalState } from '../../state/terminal.state';
 import { UpdateState } from '../../state/update.state';
+import { ChangelogState } from '../../state/changelog.state';
 import { TerminalWorkspaceComponent } from '../../shared/components/terminal-workspace/terminal-workspace.component';
+import { WhatsNewModalComponent } from '../../shared/components/whats-new-modal/whats-new-modal.component';
 
 @Component({
   selector: 'app-main-layout',
-  imports: [CommonModule, RouterOutlet, SidebarComponent, TerminalWorkspaceComponent],
+  imports: [CommonModule, RouterOutlet, SidebarComponent, TerminalWorkspaceComponent, WhatsNewModalComponent],
   templateUrl: './main-layout.component.html',
 })
 export class MainLayoutComponent implements OnInit, OnDestroy {
@@ -19,6 +21,7 @@ export class MainLayoutComponent implements OnInit, OnDestroy {
   private aiSettingsState = inject(AiSettingsState);
   readonly terminalState = inject(TerminalState);
   readonly updateState = inject(UpdateState);
+  readonly changelogState = inject(ChangelogState);
   private router = inject(Router);
 
   private currentUrl = signal(this.router.url);
@@ -56,6 +59,8 @@ export class MainLayoutComponent implements OnInit, OnDestroy {
     ]);
     // Check for updates after app is initialized (non-blocking)
     this.updateState.checkForUpdate();
+    // Show "What's New" if version changed since last seen
+    this.changelogState.checkForChangelog();
   }
 
   ngOnDestroy(): void {

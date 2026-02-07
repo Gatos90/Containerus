@@ -29,12 +29,14 @@ import {
   FolderOpen,
   Link,
   Minus,
+  Sparkles,
 } from 'lucide-angular';
 import { open } from '@tauri-apps/plugin-dialog';
 import { AiService } from '../../../../core/services/ai.service';
 import { SystemService } from '../../../../core/services/system.service';
 import { AiSettingsState } from '../../../../state/ai-settings.state';
 import { UpdateState } from '../../../../state/update.state';
+import { ChangelogState } from '../../../../state/changelog.state';
 import {
   AI_PROVIDERS,
   AiModel,
@@ -54,6 +56,7 @@ export class SettingsPageComponent implements OnInit {
   private aiService = inject(AiService);
   private systemService = inject(SystemService);
   readonly updateState = inject(UpdateState);
+  readonly changelogState = inject(ChangelogState);
 
   // Icons
   readonly Settings = Settings;
@@ -75,6 +78,7 @@ export class SettingsPageComponent implements OnInit {
   readonly FolderOpen = FolderOpen;
   readonly Link = Link;
   readonly Minus = Minus;
+  readonly Sparkles = Sparkles;
 
   // Tab state
   activeTab = signal<'ai' | 'ssh' | 'general'>('ai');

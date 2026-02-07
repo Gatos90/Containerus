@@ -57,6 +57,9 @@ pub enum ContainerError {
 
     #[error("Invalid operation: {message}")]
     InvalidOperation { message: String },
+
+    #[error("SSH host key verification failed for {hostname}: {reason}")]
+    HostKeyVerificationFailed { hostname: String, reason: String },
 }
 
 impl ContainerError {
@@ -92,6 +95,9 @@ impl ContainerError {
             ContainerError::DatabaseError { .. } => "Try restarting the application",
             ContainerError::NotFound { .. } => "The requested resource may have been deleted",
             ContainerError::InvalidOperation { .. } => "This operation is not allowed",
+            ContainerError::HostKeyVerificationFailed { .. } => {
+                "The server's host key has changed. This could indicate a man-in-the-middle attack. If the server was reinstalled, remove the old key from ~/.ssh/known_hosts."
+            }
         }
     }
 }
@@ -174,6 +180,7 @@ mod tests {
             ContainerError::DatabaseError { message: "x".to_string() },
             ContainerError::NotFound { resource: "x".to_string(), id: "y".to_string() },
             ContainerError::InvalidOperation { message: "x".to_string() },
+            ContainerError::HostKeyVerificationFailed { hostname: "x".to_string(), reason: "y".to_string() },
         ];
 
         for err in errors {

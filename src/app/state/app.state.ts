@@ -46,15 +46,17 @@ export class AppState {
   async initialize(): Promise<void> {
     await this.system.loadSystems();
 
-    // Auto-connect systems that have autoConnect enabled
+    // Auto-connect systems that have autoConnect enabled (in parallel)
     const systemsToAutoConnect = this.system.systems().filter((s) => s.autoConnect);
-    for (const system of systemsToAutoConnect) {
-      const success = await this.system.connectSystem(system.id);
-      if (success) {
-        await this.loadAllDataForSystem(system.id);
-        await this.system.detectRuntimes(system.id);
-      }
-    }
+    await Promise.all(
+      systemsToAutoConnect.map(async (system) => {
+        const success = await this.system.connectSystem(system.id);
+        if (success) {
+          await this.loadAllDataForSystem(system.id);
+          await this.system.detectRuntimes(system.id);
+        }
+      })
+    );
 
     // Load data for any already connected systems
     const connectedSystems = this.system.connectedSystems();

@@ -9,6 +9,24 @@ use crate::ai::{
 use crate::database::{get_ai_settings, upsert_ai_settings};
 use crate::AppState;
 
+/// Load AI settings from DB and hydrate the API key from the in-memory cache on desktop.
+pub(crate) fn load_ai_settings_with_key(db: &rusqlite::Connection, app_state: &crate::AppState) -> Result<AiSettings, String> {
+    let mut settings = get_ai_settings(db).map_err(|e| format!("Database error: {}", e))?;
+
+    #[cfg(not(target_os = "android"))]
+    if settings.api_key.as_ref().map_or(true, |k| k.is_empty()) {
+        let provider_str = settings.provider_to_str();
+        if let Some(key) = app_state.get_cached_ai_api_key(provider_str) {
+            settings.api_key = Some(key);
+        }
+    }
+
+    #[cfg(target_os = "android")]
+    let _ = app_state; // suppress unused warning
+
+    Ok(settings)
+}
+
 /// Get the default endpoint URL for a provider
 fn default_endpoint(provider: AiProviderType) -> String {
     match provider {
@@ -100,7 +118,7 @@ pub struct ShellSuggestionRequest {
 #[tauri::command]
 pub async fn get_ai_settings_cmd(state: State<'_, AppState>) -> Result<AiSettingsResponse, String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
-    let settings = get_ai_settings(&db).map_err(|e| format!("Database error: {}", e))?;
+    let settings = load_ai_settings_with_key(&db, &state)?;
     Ok(settings.into())
 }
 
@@ -112,7 +130,28 @@ pub async fn update_ai_settings_cmd(
 ) -> Result<(), String> {
     info!("Updating AI settings: provider={}", request.provider);
 
-    let settings: AiSettings = request.into();
+    let mut settings: AiSettings = request.into();
+
+    // Desktop: store API key in cache + vault, not in DB
+    #[cfg(not(target_os = "android"))]
+    {
+        let provider_str = settings.provider_to_str();
+        match &settings.api_key {
+            Some(key) if !key.is_empty() => {
+                state.cache_ai_api_key(provider_str, key.clone());
+                state.flush_vault()
+                    .map_err(|e| format!("Failed to flush vault: {}", e))?;
+                settings.api_key = None; // Don't persist in DB
+            }
+            _ => {
+                // User cleared the key — remove from cache/vault
+                state.remove_cached_ai_api_key(provider_str);
+                state.flush_vault()
+                    .map_err(|e| format!("Failed to flush vault: {}", e))?;
+            }
+        }
+    }
+
     let db = state.db.lock().map_err(|e| e.to_string())?;
     upsert_ai_settings(&db, &settings).map_err(|e| format!("Database error: {}", e))?;
 
@@ -124,7 +163,7 @@ pub async fn update_ai_settings_cmd(
 pub async fn list_ai_models(state: State<'_, AppState>) -> Result<Vec<AiModel>, String> {
     let settings = {
         let db = state.db.lock().map_err(|e| e.to_string())?;
-        get_ai_settings(&db).map_err(|e| format!("Database error: {}", e))?
+        load_ai_settings_with_key(&db, &state)?
     };
 
     let provider = create_provider(&settings);
@@ -163,7 +202,7 @@ pub async fn list_models_for_provider(
 pub async fn test_ai_connection(state: State<'_, AppState>) -> Result<(), String> {
     let settings = {
         let db = state.db.lock().map_err(|e| e.to_string())?;
-        get_ai_settings(&db).map_err(|e| format!("Database error: {}", e))?
+        load_ai_settings_with_key(&db, &state)?
     };
 
     info!("Testing AI connection for provider: {}", settings.provider);
@@ -209,7 +248,7 @@ pub async fn get_shell_suggestion(
 ) -> Result<ShellCommandResponse, String> {
     let settings = {
         let db = state.db.lock().map_err(|e| e.to_string())?;
-        get_ai_settings(&db).map_err(|e| format!("Database error: {}", e))?
+        load_ai_settings_with_key(&db, &state)?
     };
 
     info!(

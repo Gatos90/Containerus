@@ -171,8 +171,8 @@ pub async fn submit_agent_query(
             .db
             .lock()
             .map_err(|e| AgentError::Internal(e.to_string()).to_string())?;
-        database::get_ai_settings(&db)
-            .map_err(|e| AgentError::DatabaseError(e.to_string()).to_string())?
+        super::ai::load_ai_settings_with_key(&db, &state)
+            .map_err(|e| AgentError::DatabaseError(e).to_string())?
     };
 
     // Get the terminal session ID from the agent session

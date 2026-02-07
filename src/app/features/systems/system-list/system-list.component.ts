@@ -27,7 +27,7 @@ import {
   Activity,
 } from 'lucide-angular';
 import { ContainerRuntime } from '../../../core/models/container.model';
-import { ContainerSystem, ExtendedSystemInfo, JumpHost, LiveSystemMetrics, NewSystemRequest, OsType, SshAuthMethod, SshHostEntry, UpdateSystemRequest } from '../../../core/models/system.model';
+import { ContainerSystem, ExtendedSystemInfo, JumpHost, JumpHostCredentials, LiveSystemMetrics, NewSystemRequest, OsType, SshAuthMethod, SshHostEntry, UpdateSystemRequest } from '../../../core/models/system.model';
 
 export interface LoadLevelInfo {
   level: 'unknown' | 'low' | 'medium' | 'high' | 'critical';
@@ -102,7 +102,7 @@ export class SystemListComponent implements OnInit {
   addForm = {
     name: '',
     hostname: '',
-    connectionType: 'local' as 'local' | 'remote',
+    connectionType: 'remote' as 'local' | 'remote',
     primaryRuntime: 'docker' as ContainerRuntime,
     autoConnect: true,
     sshUsername: 'root',
@@ -132,15 +132,36 @@ export class SystemListComponent implements OnInit {
     availableRuntimes: [] as ContainerRuntime[],
   };
 
+  // Per-jump-host credential forms
+  jumpHostForms: {
+    hostname: string;
+    port: number;
+    username: string;
+    authMethod: SshAuthMethod;
+    password: string;
+    passphrase: string;
+    keyContent: string;
+    identityFile: string | null;
+  }[] = [];
+
+  // Per-jump-host credential forms for edit dialog
+  editJumpHostForms: {
+    hostname: string;
+    port: number;
+    username: string;
+    authMethod: SshAuthMethod;
+    password: string;
+    passphrase: string;
+    keyContent: string;
+    identityFile: string | null;
+  }[] = [];
+
   importingKey = signal(false);
 
   async ngOnInit(): Promise<void> {
     // Detect platform for mobile-specific UX
     const mobile = await this.keychainService.checkPlatform();
     this.isMobile.set(mobile);
-    if (mobile) {
-      this.addForm.connectionType = 'remote'; // Default to remote on mobile
-    }
     await this.refresh();
 
     // Load SSH hosts on desktop
@@ -210,6 +231,14 @@ export class SystemListComponent implements OnInit {
       this.selectedHostProxyCommand = config.proxyCommand ?? null;
       this.selectedHostProxyJump = config.proxyJump ?? null;
 
+      // Populate jump host credential forms
+      if (this.selectedHostProxyJump) {
+        const parsed = this.parseJumpHosts(this.selectedHostProxyJump);
+        this.jumpHostForms = this.buildJumpHostForms(parsed);
+      } else {
+        this.jumpHostForms = [];
+      }
+
       // Auto-fill system name if empty
       if (!this.addForm.name) {
         this.addForm.name = hostName;
@@ -245,20 +274,8 @@ export class SystemListComponent implements OnInit {
   async connect(systemId: string): Promise<void> {
     const system = this.systemState.systems().find(s => s.id === systemId);
 
-    // Try to connect - backend will use stored credentials from database
-    // If no credentials stored, backend will fall back to keyring (desktop) or fail (mobile)
-    let password: string | undefined;
-    let passphrase: string | undefined;
-
-    // On desktop, also try keychain for backward compatibility
-    if (!this.isMobile() && await this.keychainService.needsPasswordOnConnect()) {
-      if (system?.sshConfig?.username && system.sshConfig.authMethod === 'password') {
-        const storedPassword = await this.keychainService.getSshPassword(system.sshConfig.username);
-        password = storedPassword ?? undefined;
-      }
-    }
-
-    const success = await this.systemState.connectSystem(systemId, password, passphrase);
+    // Backend resolves credentials from keyring (desktop) or DB (mobile) automatically
+    const success = await this.systemState.connectSystem(systemId);
 
     if (success) {
       await this.appState.loadAllDataForSystem(systemId);
@@ -312,52 +329,7 @@ export class SystemListComponent implements OnInit {
     });
 
     try {
-      // On mobile, skip keychain storage - it's unreliable (hangs indefinitely)
-      // We'll pass the password directly for the initial connection
       const mobile = this.isMobile();
-
-      // Store SSH password in keychain (desktop only - mobile keychain is unreliable)
-      if (
-        !mobile &&
-        this.addForm.connectionType === 'remote' &&
-        this.addForm.sshAuthMethod === 'password' &&
-        this.addForm.sshPassword
-      ) {
-        try {
-          console.log('[SystemList] Storing SSH password in keychain...');
-          await this.keychainService.storeSshPassword(
-            this.addForm.sshUsername,
-            this.addForm.sshPassword
-          );
-          console.log('[SystemList] SSH password stored successfully');
-        } catch (err) {
-          console.error('[SystemList] Failed to store SSH password:', err);
-          this.systemState.setError('Failed to store SSH password: ' + (err instanceof Error ? err.message : String(err)));
-          return;
-        }
-      }
-
-      // Store SSH key passphrase in keychain if provided (desktop only)
-      if (
-        !mobile &&
-        this.addForm.connectionType === 'remote' &&
-        this.addForm.sshAuthMethod === 'publicKey' &&
-        this.addForm.sshKeyPath &&
-        this.addForm.sshKeyPassphrase
-      ) {
-        try {
-          console.log('[SystemList] Storing SSH key passphrase in keychain...');
-          await this.keychainService.storeSshKeyPassphrase(
-            this.addForm.sshKeyPath,
-            this.addForm.sshKeyPassphrase
-          );
-          console.log('[SystemList] SSH key passphrase stored successfully');
-        } catch (err) {
-          console.error('[SystemList] Failed to store SSH key passphrase:', err);
-          this.systemState.setError('Failed to store SSH key passphrase: ' + (err instanceof Error ? err.message : String(err)));
-          return;
-        }
-      }
 
       // Determine if we're using key content (paste or import) vs file path
       const usingKeyContent = this.addForm.sshAuthMethod === 'publicKey' &&
@@ -387,9 +359,11 @@ export class SystemListComponent implements OnInit {
                     : null,
                 connectionTimeout: 30,
                 proxyCommand: this.selectedHostProxyCommand ?? null,
-                proxyJump: this.selectedHostProxyJump
-                  ? this.parseJumpHosts(this.selectedHostProxyJump)
-                  : null,
+                proxyJump: this.jumpHostForms.length > 0
+                  ? this.buildJumpHostsFromForms(this.jumpHostForms)
+                  : this.selectedHostProxyJump
+                    ? this.parseJumpHosts(this.selectedHostProxyJump)
+                    : null,
                 sshConfigHost: this.selectedSshHost || null,
               }
             : null,
@@ -416,20 +390,23 @@ export class SystemListComponent implements OnInit {
           ? this.addForm.sshKeyContent
           : undefined;
 
+      // Collect jump host credentials before connecting
+      const jumpHostCreds = this.collectJumpHostCredentials(this.jumpHostForms);
+
       console.log('[SystemList] Calling systemState.addSystem...');
-      const system = await this.systemState.addSystem(request, passwordForConnect, passphraseForConnect, privateKeyForConnect);
+      const system = await this.systemState.addSystem(request, passwordForConnect, passphraseForConnect, privateKeyForConnect, jumpHostCreds);
       console.log('[SystemList] systemState.addSystem returned:', system);
 
       if (system) {
-        // Store credentials in database for future autoConnect (works on all platforms)
+        // Store credentials for future autoConnect (after connection so they persist)
         if (this.addForm.connectionType === 'remote') {
           const credPassword = this.addForm.sshAuthMethod === 'password' ? this.addForm.sshPassword : undefined;
           const credPassphrase = this.addForm.sshAuthMethod === 'publicKey' ? this.addForm.sshKeyPassphrase : undefined;
           const credPrivateKey = usingKeyContent ? this.addForm.sshKeyContent : undefined;
-          if (credPassword || credPassphrase || credPrivateKey) {
+          if (credPassword || credPassphrase || credPrivateKey || jumpHostCreds) {
             try {
               console.log('[SystemList] Storing SSH credentials in database...');
-              await this.systemService.storeSshCredentials(system.id, credPassword || undefined, credPassphrase || undefined, credPrivateKey || undefined);
+              await this.systemService.storeSshCredentials(system.id, credPassword || undefined, credPassphrase || undefined, credPrivateKey || undefined, jumpHostCreds);
               console.log('[SystemList] SSH credentials stored successfully');
             } catch (err) {
               // Non-fatal - just log the error, connection already succeeded
@@ -465,7 +442,7 @@ export class SystemListComponent implements OnInit {
    */
   private parseJumpHosts(proxyJumpStr: string): JumpHost[] {
     const hosts = this.sshHosts();
-    return proxyJumpStr.split(',').map(entry => {
+    const jumpHosts = proxyJumpStr.split(',').map(entry => {
       const trimmed = entry.trim();
 
       // Check if it's a known host alias
@@ -504,16 +481,79 @@ export class SystemListComponent implements OnInit {
 
       return { hostname, port, username, identityFile: null };
     });
+
+    return jumpHosts;
+  }
+
+  /**
+   * Build jump host forms from parsed JumpHost entries.
+   * Call after parseJumpHosts to populate the credential UI.
+   */
+  private buildJumpHostForms(jumpHosts: JumpHost[]): typeof this.jumpHostForms {
+    return jumpHosts.map(jh => ({
+      hostname: jh.hostname,
+      port: jh.port,
+      username: jh.username,
+      authMethod: 'publicKey' as SshAuthMethod,
+      password: '',
+      passphrase: '',
+      keyContent: '',
+      identityFile: jh.identityFile ?? null,
+    }));
+  }
+
+  /**
+   * Collect jump host credentials from forms into a Record keyed by "hostname:port"
+   */
+  private collectJumpHostCredentials(forms: typeof this.jumpHostForms): Record<string, JumpHostCredentials> | undefined {
+    const creds: Record<string, JumpHostCredentials> = {};
+    let hasAny = false;
+    for (const form of forms) {
+      const needsBrackets = form.hostname.includes(':') && !form.hostname.startsWith('[');
+      const key = needsBrackets ? `[${form.hostname}]:${form.port}` : `${form.hostname}:${form.port}`;
+      const entry: JumpHostCredentials = {};
+      if (form.authMethod === 'password' && form.password) {
+        entry.password = form.password;
+        hasAny = true;
+      }
+      if (form.passphrase) {
+        entry.passphrase = form.passphrase;
+        hasAny = true;
+      }
+      if (form.keyContent) {
+        entry.privateKey = form.keyContent;
+        hasAny = true;
+      }
+      if (entry.password || entry.passphrase || entry.privateKey) {
+        creds[key] = entry;
+      }
+    }
+    return hasAny ? creds : undefined;
+  }
+
+  /**
+   * Build JumpHost array with auth methods from forms
+   */
+  private buildJumpHostsFromForms(forms: typeof this.jumpHostForms): JumpHost[] {
+    return forms.map(f => ({
+      hostname: f.hostname,
+      port: f.port,
+      username: f.username,
+      identityFile: f.identityFile,
+      authMethod: f.authMethod,
+      privateKeyContent: f.keyContent || null,
+    }));
   }
 
   private resetForm(): void {
     this.selectedSshHost = '';
     this.selectedHostProxyCommand = null;
     this.selectedHostProxyJump = null;
+    this.jumpHostForms = [];
     this.addForm = {
       name: '',
       hostname: '',
-      connectionType: this.isMobile() ? 'remote' : 'local',
+      connectionType: 'remote',
       primaryRuntime: 'docker',
       autoConnect: true,
       sshUsername: 'root',
@@ -545,6 +585,23 @@ export class SystemListComponent implements OnInit {
       sshPassword: '',
       availableRuntimes: system.availableRuntimes,
     };
+
+    // Populate edit jump host forms from existing proxy_jump config
+    if (system.sshConfig?.proxyJump && system.sshConfig.proxyJump.length > 0) {
+      this.editJumpHostForms = system.sshConfig.proxyJump.map(jh => ({
+        hostname: jh.hostname,
+        port: jh.port,
+        username: jh.username,
+        authMethod: jh.authMethod ?? 'publicKey' as SshAuthMethod,
+        password: '',
+        passphrase: '',
+        keyContent: jh.privateKeyContent ?? '',
+        identityFile: jh.identityFile ?? null,
+      }));
+    } else {
+      this.editJumpHostForms = [];
+    }
+
     this.showEditDialog = true;
   }
 
@@ -554,52 +611,14 @@ export class SystemListComponent implements OnInit {
     // Clear any previous errors
     this.systemState.clearError();
 
-    // On mobile, skip keychain storage - it's unreliable
-    const mobile = this.isMobile();
-
-    // Store SSH password in keychain if provided (desktop only)
-    if (
-      !mobile &&
-      this.editForm.connectionType === 'remote' &&
-      this.editForm.sshAuthMethod === 'password' &&
-      this.editForm.sshPassword
-    ) {
-      try {
-        await this.keychainService.storeSshPassword(
-          this.editForm.sshUsername,
-          this.editForm.sshPassword
-        );
-      } catch (err) {
-        console.error('Failed to store SSH password:', err);
-        this.systemState.setError('Failed to store SSH password: ' + (err instanceof Error ? err.message : String(err)));
-        return;
-      }
-    }
-
-    // Store SSH key passphrase in keychain if provided (desktop only)
-    if (
-      !mobile &&
-      this.editForm.connectionType === 'remote' &&
-      this.editForm.sshAuthMethod === 'publicKey' &&
-      this.editForm.sshKeyPath &&
-      this.editForm.sshKeyPassphrase
-    ) {
-      try {
-        await this.keychainService.storeSshKeyPassphrase(
-          this.editForm.sshKeyPath,
-          this.editForm.sshKeyPassphrase
-        );
-      } catch (err) {
-        console.error('Failed to store SSH key passphrase:', err);
-        this.systemState.setError('Failed to store SSH key passphrase: ' + (err instanceof Error ? err.message : String(err)));
-        return;
-      }
-    }
-
     // Determine if we're using key content (paste or import) vs file path
     const usingKeyContent = this.editForm.sshAuthMethod === 'publicKey' &&
       (this.editForm.sshKeyImportMethod === 'paste' || this.isMobile()) &&
       this.editForm.sshKeyContent;
+
+    // Preserve existing system's proxy settings and update jump hosts from forms
+    const existingSystem = this.systemState.systems().find(s => s.id === this.editingSystemId);
+    const existingProxy = existingSystem?.sshConfig;
 
     const request: UpdateSystemRequest = {
       id: this.editingSystemId,
@@ -623,7 +642,12 @@ export class SystemListComponent implements OnInit {
                 usingKeyContent
                   ? this.editForm.sshKeyContent
                   : null,
-              connectionTimeout: 30,
+              connectionTimeout: existingProxy?.connectionTimeout ?? 30,
+              proxyCommand: existingProxy?.proxyCommand ?? null,
+              proxyJump: this.editJumpHostForms.length > 0
+                ? this.buildJumpHostsFromForms(this.editJumpHostForms)
+                : existingProxy?.proxyJump ?? null,
+              sshConfigHost: existingProxy?.sshConfigHost ?? null,
             }
           : null,
     };
@@ -635,9 +659,10 @@ export class SystemListComponent implements OnInit {
       const credPassword = this.editForm.sshAuthMethod === 'password' && this.editForm.sshPassword ? this.editForm.sshPassword : undefined;
       const credPassphrase = this.editForm.sshAuthMethod === 'publicKey' && this.editForm.sshKeyPassphrase ? this.editForm.sshKeyPassphrase : undefined;
       const credPrivateKey = usingKeyContent ? this.editForm.sshKeyContent : undefined;
-      if (credPassword || credPassphrase || credPrivateKey) {
+      const jumpHostCreds = this.collectJumpHostCredentials(this.editJumpHostForms);
+      if (credPassword || credPassphrase || credPrivateKey || jumpHostCreds) {
         try {
-          await this.systemService.storeSshCredentials(updated.id, credPassword, credPassphrase, credPrivateKey);
+          await this.systemService.storeSshCredentials(updated.id, credPassword, credPassphrase, credPrivateKey, jumpHostCreds);
         } catch (err) {
           console.warn('[SystemList] Failed to store updated SSH credentials:', err);
         }
@@ -646,6 +671,7 @@ export class SystemListComponent implements OnInit {
 
     this.showEditDialog = false;
     this.editingSystemId = null;
+    this.editJumpHostForms = [];
   }
 
   async deleteSystem(systemId: string): Promise<void> {

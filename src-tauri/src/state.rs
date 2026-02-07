@@ -6,6 +6,7 @@ use rusqlite::Connection;
 use uuid::Uuid;
 
 use crate::database;
+use crate::keyring_store::SshCredentials;
 use crate::models::command_template::{CommandTemplate, CreateCommandTemplateRequest, UpdateCommandTemplateRequest};
 use crate::models::container::ContainerRuntime;
 use crate::models::error::ContainerError;
@@ -15,6 +16,8 @@ pub struct AppState {
     pub db: Mutex<Connection>,
     systems: Mutex<Vec<ContainerSystem>>,
     connection_states: Mutex<HashMap<String, ConnectionState>>,
+    ssh_credential_cache: Mutex<HashMap<String, SshCredentials>>,
+    ai_key_cache: Mutex<HashMap<String, String>>,
 }
 
 impl AppState {
@@ -47,6 +50,8 @@ impl AppState {
             db: Mutex::new(conn),
             systems: Mutex::new(systems),
             connection_states: Mutex::new(connection_states),
+            ssh_credential_cache: Mutex::new(HashMap::new()),
+            ai_key_cache: Mutex::new(HashMap::new()),
         }
     }
 }
@@ -398,5 +403,57 @@ impl AppState {
             .map_err(|e| ContainerError::DatabaseError {
                 message: e.to_string(),
             })
+    }
+
+    // ============================================================================
+    // Credential Cache Methods (in-memory, populated at startup from keyring)
+    // ============================================================================
+
+    pub fn cache_ssh_credentials(&self, system_id: &str, creds: SshCredentials) {
+        self.ssh_credential_cache
+            .lock()
+            .unwrap()
+            .insert(system_id.to_string(), creds);
+    }
+
+    pub fn get_cached_ssh_credentials(&self, system_id: &str) -> Option<SshCredentials> {
+        self.ssh_credential_cache
+            .lock()
+            .unwrap()
+            .get(system_id)
+            .cloned()
+    }
+
+    pub fn remove_cached_ssh_credentials(&self, system_id: &str) {
+        self.ssh_credential_cache.lock().unwrap().remove(system_id);
+    }
+
+    pub fn cache_ai_api_key(&self, provider: &str, key: String) {
+        self.ai_key_cache
+            .lock()
+            .unwrap()
+            .insert(provider.to_string(), key);
+    }
+
+    pub fn get_cached_ai_api_key(&self, provider: &str) -> Option<String> {
+        self.ai_key_cache.lock().unwrap().get(provider).cloned()
+    }
+
+    pub fn remove_cached_ai_api_key(&self, provider: &str) {
+        self.ai_key_cache.lock().unwrap().remove(provider);
+    }
+
+    /// Flush the in-memory credential caches to the single keyring vault entry.
+    /// Called after every credential mutation on desktop.
+    #[cfg(not(target_os = "android"))]
+    pub fn flush_vault(&self) -> Result<(), String> {
+        let ssh = self.ssh_credential_cache.lock().unwrap().clone();
+        let ai = self.ai_key_cache.lock().unwrap().clone();
+        let vault = crate::keyring_store::CredentialVault {
+            version: 1,
+            ssh_credentials: ssh,
+            ai_api_keys: ai,
+        };
+        crate::keyring_store::save_vault(&vault)
     }
 }

@@ -11,7 +11,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::models::error::ContainerError;
-use crate::models::system::JumpHost;
+use crate::models::system::{JumpHost, SshAuthMethod};
 
 /// A parsed SSH host entry from ~/.ssh/config
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -393,6 +393,8 @@ fn resolve_single_jump_host(entry: &str, hosts: &HashMap<String, HostBlock>) -> 
             port: resolved.port.unwrap_or(22),
             username: resolved.user.unwrap_or_default(),
             identity_file: resolved.identity_file,
+            auth_method: SshAuthMethod::PublicKey,
+            private_key_content: None,
         };
     }
 
@@ -402,6 +404,8 @@ fn resolve_single_jump_host(entry: &str, hosts: &HashMap<String, HostBlock>) -> 
         port: 22,
         username: String::new(),
         identity_file: None,
+        auth_method: SshAuthMethod::PublicKey,
+        private_key_content: None,
     }
 }
 
@@ -433,6 +437,8 @@ fn parse_jump_host_explicit(entry: &str) -> JumpHost {
         port,
         username,
         identity_file: None,
+        auth_method: SshAuthMethod::PublicKey,
+        private_key_content: None,
     }
 }
 

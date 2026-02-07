@@ -126,6 +126,18 @@ pub fn init_database(path: &Path) -> SqliteResult<Connection> {
         [],
     );
 
+    // Migration: Add vault_migration_done flag for single-vault keyring consolidation
+    let _ = conn.execute(
+        "ALTER TABLE app_settings ADD COLUMN vault_migration_done INTEGER NOT NULL DEFAULT 0",
+        [],
+    );
+
+    // Migration: Add last_seen_version for "What's New" changelog tracking
+    let _ = conn.execute(
+        "ALTER TABLE app_settings ADD COLUMN last_seen_version TEXT",
+        [],
+    );
+
     // Seed built-in templates if table is empty
     seed_built_in_templates(&conn)?;
 
@@ -704,8 +716,8 @@ fn obfuscate(plaintext: &str) -> String {
     base64::engine::general_purpose::STANDARD.encode(&bytes)
 }
 
-/// Deobfuscate a credential string
-fn deobfuscate(encoded: &str) -> Option<String> {
+/// Deobfuscate a credential string (pub(crate) for migration use)
+pub(crate) fn deobfuscate_credential(encoded: &str) -> Option<String> {
     let bytes = base64::engine::general_purpose::STANDARD.decode(encoded).ok()?;
     let plaintext: Vec<u8> = bytes
         .iter()
@@ -763,9 +775,9 @@ pub fn get_ssh_credentials(conn: &Connection, system_id: &str) -> SqliteResult<S
         let private_key_enc: Option<String> = row.get(2)?;
 
         Ok(SshCredentials {
-            password: password_enc.and_then(|e| deobfuscate(&e)),
-            passphrase: passphrase_enc.and_then(|e| deobfuscate(&e)),
-            private_key: private_key_enc.and_then(|e| deobfuscate(&e)),
+            password: password_enc.and_then(|e| deobfuscate_credential(&e)),
+            passphrase: passphrase_enc.and_then(|e| deobfuscate_credential(&e)),
+            private_key: private_key_enc.and_then(|e| deobfuscate_credential(&e)),
         })
     } else {
         Ok(SshCredentials::default())
@@ -1143,7 +1155,7 @@ mod db_tests {
 
         for plaintext in test_cases {
             let encoded = obfuscate(plaintext);
-            let decoded = deobfuscate(&encoded).unwrap();
+            let decoded = deobfuscate_credential(&encoded).unwrap();
             assert_eq!(decoded, plaintext, "Roundtrip failed for: {}", plaintext);
         }
     }
@@ -1169,6 +1181,7 @@ mod db_tests {
 
         let settings = AppSettings {
             ssh_config_paths: vec!["/home/user/.ssh/config".to_string()],
+            last_seen_version: None,
         };
         upsert_app_settings(&conn, &settings).unwrap();
 
@@ -1222,22 +1235,26 @@ pub struct AppSettings {
     /// Multiple SSH config file paths (empty = use default ~/.ssh/config)
     #[serde(default)]
     pub ssh_config_paths: Vec<String>,
+    /// Last app version the user has seen the "What's New" dialog for
+    #[serde(default)]
+    pub last_seen_version: Option<String>,
 }
 
 /// Get app settings from the database (returns default if not set)
 pub fn get_app_settings(conn: &Connection) -> SqliteResult<AppSettings> {
     let mut stmt = conn.prepare(
-        "SELECT ssh_config_paths FROM app_settings WHERE id = 1",
+        "SELECT ssh_config_paths, last_seen_version FROM app_settings WHERE id = 1",
     )?;
 
     let mut rows = stmt.query([])?;
 
     if let Some(row) = rows.next()? {
         let paths_json: Option<String> = row.get(0)?;
+        let last_seen_version: Option<String> = row.get(1)?;
         let ssh_config_paths: Vec<String> = paths_json
             .and_then(|j| serde_json::from_str(&j).ok())
             .unwrap_or_default();
-        Ok(AppSettings { ssh_config_paths })
+        Ok(AppSettings { ssh_config_paths, last_seen_version })
     } else {
         Ok(AppSettings::default())
     }
@@ -1250,13 +1267,15 @@ pub fn upsert_app_settings(conn: &Connection, settings: &AppSettings) -> SqliteR
         .unwrap_or_else(|_| "[]".to_string());
 
     conn.execute(
-        "INSERT INTO app_settings (id, ssh_config_paths, created_at, updated_at)
-         VALUES (1, ?1, ?2, ?2)
+        "INSERT INTO app_settings (id, ssh_config_paths, last_seen_version, created_at, updated_at)
+         VALUES (1, ?1, ?2, ?3, ?3)
          ON CONFLICT(id) DO UPDATE SET
              ssh_config_paths = excluded.ssh_config_paths,
+             last_seen_version = excluded.last_seen_version,
              updated_at = excluded.updated_at",
         (
             &paths_json,
+            &settings.last_seen_version,
             &now,
         ),
     )?;

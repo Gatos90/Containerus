@@ -748,16 +748,18 @@ dependencies = [
 
 [[package]]
 name = "containerus"
-version = "1.0.0-beta.5"
+version = "1.0.0-beta.8"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
  "chrono",
  "dashmap",
+ "data-encoding",
  "dirs 5.0.1",
  "futures",
  "futures-util",
  "glob",
+ "hmac",
  "keyring",
  "once_cell",
  "open",
@@ -772,6 +774,10 @@ dependencies = [
  "schemars 1.2.0",
  "serde",
  "serde_json",
+ "sha1",
+ "sha2",
+ "ssh-encoding",
+ "ssh-key",
  "tauri",
  "tauri-build",
  "tauri-plugin-dialog",

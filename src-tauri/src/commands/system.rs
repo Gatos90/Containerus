@@ -1,10 +1,11 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, State};
 
 use crate::executor::local::LocalExecutor;
 use crate::executor::CommandExecutor;
+use crate::keyring_store::JumpHostCredentials;
 use crate::models::container::ContainerRuntime;
 use crate::models::error::ContainerError;
 use crate::models::system::{ConnectionState, ConnectionType, ContainerSystem, ExtendedSystemInfo, LiveSystemMetrics, SshConfig, SystemId};
@@ -52,6 +53,7 @@ pub async fn connect_system(
     password: Option<String>,
     passphrase: Option<String>,
     private_key: Option<String>,
+    jump_host_credentials: Option<HashMap<String, JumpHostCredentials>>,
 ) -> Result<ConnectionState, ContainerError> {
     let system = state
         .get_system(&system_id)
@@ -62,6 +64,7 @@ pub async fn connect_system(
 
     match system.connection_type {
         ConnectionType::Local => {
+            let _ = jump_host_credentials; // not used for local
             // For local, just verify we can execute commands
             let executor = LocalExecutor::new();
             match executor.execute("echo ok").await {
@@ -84,21 +87,87 @@ pub async fn connect_system(
             }
         }
         ConnectionType::Remote => {
-            // Try to get stored credentials from database if not provided
-            let (effective_password, effective_passphrase, effective_private_key) =
+            // Resolve jump host credentials: prefer parameter, fall back to cache
+            let provided_jhc = jump_host_credentials.unwrap_or_default();
+
+            // Try to get stored credentials if not provided
+            let (effective_password, effective_passphrase, effective_private_key, jump_host_creds) =
                 if password.is_some() || passphrase.is_some() || private_key.is_some() {
-                    // Use provided credentials
-                    (password, passphrase, private_key)
-                } else {
-                    // Try to retrieve from database
-                    match state.get_ssh_credentials(&system_id) {
-                        Ok(creds) => {
-                            tracing::debug!("Retrieved stored credentials for system {}", system_id);
-                            (creds.password, creds.passphrase, creds.private_key)
+                    // Use provided credentials; merge jump host creds from param + cache
+                    let mut jhc = state.get_cached_ssh_credentials(&system_id)
+                        .map(|c| c.jump_host_credentials)
+                        .unwrap_or_default();
+                    jhc.extend(provided_jhc);
+                    (password, passphrase, private_key, jhc)
+                } else if !provided_jhc.is_empty() {
+                    // Jump host creds provided but no target creds — resolve target from cache/DB
+                    #[cfg(not(target_os = "android"))]
+                    {
+                        let cached = state.get_cached_ssh_credentials(&system_id);
+                        let (pw, pp, pk) = match &cached {
+                            Some(kr) if kr.password.is_some() || kr.passphrase.is_some() || kr.private_key.is_some() => {
+                                (kr.password.clone(), kr.passphrase.clone(), kr.private_key.clone())
+                            }
+                            _ => {
+                                match state.get_ssh_credentials(&system_id) {
+                                    Ok(creds) => (creds.password, creds.passphrase, creds.private_key),
+                                    Err(_) => (None, None, None),
+                                }
+                            }
+                        };
+                        let mut jhc = cached.map(|c| c.jump_host_credentials).unwrap_or_default();
+                        jhc.extend(provided_jhc);
+                        (pw, pp, pk, jhc)
+                    }
+                    #[cfg(target_os = "android")]
+                    {
+                        match state.get_ssh_credentials(&system_id) {
+                            Ok(creds) => (creds.password, creds.passphrase, creds.private_key, provided_jhc),
+                            Err(_) => (None, None, None, provided_jhc),
                         }
-                        Err(e) => {
-                            tracing::debug!("No stored credentials for system {}: {}", system_id, e);
-                            (None, None, None)
+                    }
+                } else {
+                    // No credentials provided at all — resolve everything from cache/DB
+                    #[cfg(not(target_os = "android"))]
+                    {
+                        match state.get_cached_ssh_credentials(&system_id) {
+                            Some(kr) if kr.password.is_some() || kr.passphrase.is_some() || kr.private_key.is_some() => {
+                                tracing::debug!("Retrieved credentials from cache for system {}", system_id);
+                                let jhc = kr.jump_host_credentials.clone();
+                                (kr.password, kr.passphrase, kr.private_key, jhc)
+                            }
+                            Some(kr) if !kr.jump_host_credentials.is_empty() => {
+                                let jhc = kr.jump_host_credentials.clone();
+                                match state.get_ssh_credentials(&system_id) {
+                                    Ok(creds) => (creds.password, creds.passphrase, creds.private_key, jhc),
+                                    Err(_) => (None, None, None, jhc),
+                                }
+                            }
+                            _ => {
+                                match state.get_ssh_credentials(&system_id) {
+                                    Ok(creds) => {
+                                        tracing::debug!("Retrieved stored credentials from DB for system {}", system_id);
+                                        (creds.password, creds.passphrase, creds.private_key, HashMap::new())
+                                    }
+                                    Err(e) => {
+                                        tracing::debug!("No stored credentials for system {}: {}", system_id, e);
+                                        (None, None, None, HashMap::new())
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    #[cfg(target_os = "android")]
+                    {
+                        match state.get_ssh_credentials(&system_id) {
+                            Ok(creds) => {
+                                tracing::debug!("Retrieved stored credentials for system {}", system_id);
+                                (creds.password, creds.passphrase, creds.private_key, HashMap::new())
+                            }
+                            Err(e) => {
+                                tracing::debug!("No stored credentials for system {}: {}", system_id, e);
+                                (None, None, None, HashMap::new())
+                            }
                         }
                     }
                 };
@@ -109,6 +178,7 @@ pub async fn connect_system(
                 effective_password.as_deref(),
                 effective_passphrase.as_deref(),
                 effective_private_key.as_deref(),
+                &jump_host_creds,
             ).await {
                 Ok(()) => {
                     state.set_connection_state(&system_id, ConnectionState::Connected);
@@ -253,43 +323,21 @@ pub fn remove_system(
     state: State<'_, AppState>,
     system_id: String,
 ) -> Result<bool, ContainerError> {
-    Ok(state.remove_system(&system_id))
-}
+    let removed = state.remove_system(&system_id);
 
-/// Store SSH password in the system keyring
-#[tauri::command]
-pub fn store_ssh_password(username: String, password: String) -> Result<(), ContainerError> {
-    tracing::info!("Storing SSH password in keyring for user: {}", username);
-    match crate::ssh::client::store_password(&username, &password) {
-        Ok(()) => {
-            tracing::info!("Successfully stored password in keyring for user: {}", username);
-            Ok(())
-        }
-        Err(e) => {
-            tracing::error!("Failed to store password in keyring for user {}: {:?}", username, e);
-            Err(e)
+    // Remove from cache and flush vault on desktop (non-fatal)
+    #[cfg(not(target_os = "android"))]
+    if removed {
+        state.remove_cached_ssh_credentials(&system_id);
+        if let Err(e) = state.flush_vault() {
+            tracing::warn!("Failed to flush vault after removing system {}: {}", system_id, e);
         }
     }
+
+    Ok(removed)
 }
 
-/// Store SSH key passphrase in the system keyring
-#[tauri::command]
-pub fn store_ssh_key_passphrase(key_path: String, passphrase: String) -> Result<(), ContainerError> {
-    tracing::info!("Storing SSH key passphrase in keyring for key: {}", key_path);
-    match crate::ssh::client::store_key_passphrase(&key_path, &passphrase) {
-        Ok(()) => {
-            tracing::info!("Successfully stored passphrase in keyring for key: {}", key_path);
-            Ok(())
-        }
-        Err(e) => {
-            tracing::error!("Failed to store passphrase in keyring for key {}: {:?}", key_path, e);
-            Err(e)
-        }
-    }
-}
-
-/// Store SSH credentials in the database (works on all platforms including Android)
-/// This persists credentials so autoConnect works across app restarts
+/// Store SSH credentials — desktop stores in OS keyring + cache, Android stores in DB
 #[tauri::command]
 pub fn store_ssh_credentials(
     state: State<'_, AppState>,
@@ -297,19 +345,60 @@ pub fn store_ssh_credentials(
     password: Option<String>,
     passphrase: Option<String>,
     private_key: Option<String>,
+    jump_host_credentials: Option<HashMap<String, JumpHostCredentials>>,
 ) -> Result<(), ContainerError> {
-    tracing::info!("Storing SSH credentials in database for system: {}", system_id);
-    state.store_ssh_credentials(&system_id, password.as_deref(), passphrase.as_deref(), private_key.as_deref())
+    tracing::info!("Storing SSH credentials for system: {}", system_id);
+
+    #[cfg(not(target_os = "android"))]
+    {
+        // Merge with existing cached credentials
+        let existing = state.get_cached_ssh_credentials(&system_id).unwrap_or_default();
+        let mut jhc = existing.jump_host_credentials;
+        if let Some(new_jhc) = jump_host_credentials {
+            jhc.extend(new_jhc);
+        }
+        let creds = crate::keyring_store::SshCredentials {
+            password: password.or(existing.password),
+            passphrase: passphrase.or(existing.passphrase),
+            private_key: private_key.or(existing.private_key),
+            jump_host_credentials: jhc,
+        };
+        state.cache_ssh_credentials(&system_id, creds);
+        state.flush_vault().map_err(|e| ContainerError::CredentialError(e))?;
+
+        Ok(())
+    }
+
+    #[cfg(target_os = "android")]
+    {
+        let _ = jump_host_credentials; // Android: jump host creds not stored separately
+        state.store_ssh_credentials(&system_id, password.as_deref(), passphrase.as_deref(), private_key.as_deref())
+    }
 }
 
-/// Get stored SSH credentials for a system
+/// Get stored SSH credentials — desktop reads from cache (falls back to DB), Android reads from DB
 #[tauri::command]
 pub fn get_ssh_credentials(
     state: State<'_, AppState>,
     system_id: String,
 ) -> Result<(Option<String>, Option<String>, Option<String>), ContainerError> {
-    let creds = state.get_ssh_credentials(&system_id)?;
-    Ok((creds.password, creds.passphrase, creds.private_key))
+    #[cfg(not(target_os = "android"))]
+    {
+        if let Some(kr) = state.get_cached_ssh_credentials(&system_id) {
+            if kr.password.is_some() || kr.passphrase.is_some() || kr.private_key.is_some() {
+                return Ok((kr.password, kr.passphrase, kr.private_key));
+            }
+        }
+        // Fall back to DB for not-yet-migrated credentials
+        let creds = state.get_ssh_credentials(&system_id)?;
+        Ok((creds.password, creds.passphrase, creds.private_key))
+    }
+
+    #[cfg(target_os = "android")]
+    {
+        let creds = state.get_ssh_credentials(&system_id)?;
+        Ok((creds.password, creds.passphrase, creds.private_key))
+    }
 }
 
 /// Get extended system information (user, OS, hardware) for a connected system
@@ -600,10 +689,23 @@ pub fn get_app_settings(state: State<'_, AppState>) -> Result<crate::database::A
         .map_err(|e| ContainerError::Internal(format!("Failed to get app settings: {}", e)))
 }
 
+/// Remove a host key from ~/.ssh/known_hosts (used when user trusts a changed key)
+#[tauri::command]
+pub fn remove_known_host(hostname: String, port: u16) -> Result<usize, ContainerError> {
+    tracing::info!("Removing known host key for {}:{}", hostname, port);
+    crate::ssh::known_hosts::remove_host_key(&hostname, port)
+}
+
 /// Update app settings
 #[tauri::command]
 pub fn update_app_settings(state: State<'_, AppState>, settings: crate::database::AppSettings) -> Result<(), ContainerError> {
     let conn = state.db.lock().map_err(|e| ContainerError::Internal(e.to_string()))?;
     crate::database::upsert_app_settings(&conn, &settings)
         .map_err(|e| ContainerError::Internal(format!("Failed to update app settings: {}", e)))
+}
+
+/// Get the changelog content (embedded at compile time from CHANGELOG.md)
+#[tauri::command]
+pub fn get_changelog() -> String {
+    include_str!("../../../CHANGELOG.md").to_string()
 }

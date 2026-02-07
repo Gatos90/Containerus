@@ -63,14 +63,24 @@
             <span class="text-sm text-zinc-400">Version</span>
             <p class="text-zinc-100 font-mono">{{ appVersion() || '...' }}</p>
           </div>
-          <button
-            type="button"
-            (click)="updateState.checkForUpdate()"
-            class="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm border border-zinc-700 hover:bg-zinc-800 transition-colors"
-          >
-            <lucide-icon [img]="RefreshCw" class="w-3.5 h-3.5"></lucide-icon>
-            Check for Updates
-          </button>
+          <div class="flex items-center gap-2">
+            <button
+              type="button"
+              (click)="changelogState.showChangelog()"
+              class="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm border border-zinc-700 hover:bg-zinc-800 transition-colors"
+            >
+              <lucide-icon [img]="Sparkles" class="w-3.5 h-3.5"></lucide-icon>
+              What's New
+            </button>
+            <button
+              type="button"
+              (click)="updateState.checkForUpdate()"
+              class="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm border border-zinc-700 hover:bg-zinc-800 transition-colors"
+            >
+              <lucide-icon [img]="RefreshCw" class="w-3.5 h-3.5"></lucide-icon>
+              Check for Updates
+            </button>
+          </div>
         </div>
 
         <!-- Update Status -->

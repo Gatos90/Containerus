@@ -1,0 +1,68 @@
+<div class="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4" role="dialog" aria-modal="true" aria-labelledby="whats-new-title" (click)="onDismiss()">
+  <div
+    class="bg-zinc-900 border border-zinc-700 rounded-xl w-full max-w-lg shadow-2xl overflow-hidden"
+    (click)="$event.stopPropagation()"
+  >
+    <!-- Header -->
+    <div class="flex items-center justify-between p-4 border-b border-zinc-800">
+      <div class="flex items-center gap-2">
+        <lucide-icon [img]="Sparkles" class="w-5 h-5 text-blue-400"></lucide-icon>
+        <h2 id="whats-new-title" class="text-lg font-semibold">What's New</h2>
+      </div>
+      <button
+        (click)="onDismiss()"
+        aria-label="Close"
+        class="p-1.5 rounded hover:bg-zinc-800 text-zinc-400 hover:text-zinc-200 transition-colors"
+      >
+        <lucide-icon [img]="X" class="w-5 h-5"></lucide-icon>
+      </button>
+    </div>
+
+    <!-- Changelog entries -->
+    <div class="p-4 space-y-6 max-h-[60vh] overflow-y-auto">
+      @for (entry of entries(); track entry.version) {
+        <div>
+          <!-- Version header -->
+          <div class="flex items-center gap-2 mb-3">
+            <lucide-icon [img]="Tag" class="w-4 h-4 text-zinc-500"></lucide-icon>
+            <span class="text-sm font-medium text-zinc-300">v{{ entry.version }}</span>
+          </div>
+
+          <!-- Sections (Added, Changed, Fixed, etc.) -->
+          @for (section of parseSections(entry.content); track section.title) {
+            <div class="mb-3">
+              <span
+                class="inline-block text-xs font-medium px-2 py-0.5 rounded-full mb-2"
+                [ngClass]="getSectionBadge(section.title)"
+              >
+                {{ section.title }}
+              </span>
+              <ul class="space-y-1 ml-1">
+                @for (item of section.items; track $index) {
+                  <li class="text-sm text-zinc-300 flex items-start gap-2">
+                    <span class="text-zinc-600 mt-1.5 text-[6px]">&#9679;</span>
+                    <span>{{ item }}</span>
+                  </li>
+                }
+              </ul>
+            </div>
+          }
+        </div>
+
+        @if (!$last) {
+          <div class="border-t border-zinc-800"></div>
+        }
+      }
+    </div>
+
+    <!-- Footer -->
+    <div class="flex items-center justify-end p-4 border-t border-zinc-800">
+      <button
+        (click)="onDismiss()"
+        class="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-sm transition-colors text-white"
+      >
+        Got it
+      </button>
+    </div>
+  </div>
+</div>
