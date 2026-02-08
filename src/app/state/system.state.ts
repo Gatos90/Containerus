@@ -4,6 +4,7 @@ import {
   ConnectionState,
   ContainerSystem,
   ExtendedSystemInfo,
+  JumpHostCredentials,
   LiveSystemMetrics,
   NewSystemRequest,
   UpdateSystemRequest,
@@ -21,6 +22,22 @@ export class SystemState {
   private _selectedSystemId = signal<string | null>(null);
   private _searchQuery = signal<string>('');
   private _statusFilter = signal<ConnectionState | null>(null);
+  private _hostKeyMismatch = signal<{
+    systemId: string;
+    hostname: string;
+    port: number;
+    expected: string;
+    actual: string;
+  } | null>(null);
+
+  // Credentials held outside reactive state so they're not visible in Angular DevTools.
+  // Cleared immediately after use in trustNewHostKey().
+  private _pendingCredentials: {
+    password?: string;
+    passphrase?: string;
+    privateKey?: string;
+    jumpHostCredentials?: Record<string, JumpHostCredentials>;
+  } | null = null;
 
   readonly systems = this._systems.asReadonly();
   readonly connectionStates = this._connectionStates.asReadonly();
@@ -30,6 +47,7 @@ export class SystemState {
   readonly selectedSystemId = this._selectedSystemId.asReadonly();
   readonly searchQuery = this._searchQuery.asReadonly();
   readonly statusFilter = this._statusFilter.asReadonly();
+  readonly hostKeyMismatch = this._hostKeyMismatch.asReadonly();
 
   readonly selectedSystem = computed(() => {
     const id = this._selectedSystemId();
@@ -120,7 +138,7 @@ export class SystemState {
       );
       this._connectionStates.set(states);
     } catch (err) {
-      this._error.set(err instanceof Error ? err.message : 'Failed to load systems');
+      this._error.set(this.extractError(err) || 'Failed to load systems');
     } finally {
       this._loading.set(false);
     }
@@ -133,7 +151,7 @@ export class SystemState {
    * @param passphrase Optional passphrase for SSH key authentication on autoConnect (required on mobile)
    * @param privateKey Optional PEM-encoded private key content for SSH authentication
    */
-  async addSystem(request: NewSystemRequest, password?: string, passphrase?: string, privateKey?: string): Promise<ContainerSystem | null> {
+  async addSystem(request: NewSystemRequest, password?: string, passphrase?: string, privateKey?: string, jumpHostCredentials?: Record<string, JumpHostCredentials>): Promise<ContainerSystem | null> {
     this._loading.set(true);
     this._error.set(null);
 
@@ -146,14 +164,12 @@ export class SystemState {
       }));
 
       if (request.autoConnect) {
-        await this.connectSystem(system.id, password, passphrase, privateKey);
+        await this.connectSystem(system.id, password, passphrase, privateKey, jumpHostCredentials);
       }
 
       return system;
     } catch (err) {
-      const message = err instanceof Error ? err.message :
-        typeof err === 'string' ? err : 'Failed to add system';
-      this._error.set(message);
+      this._error.set(this.extractError(err) || 'Failed to add system');
       return null;
     } finally {
       this._loading.set(false);
@@ -167,14 +183,14 @@ export class SystemState {
    * @param passphrase Optional passphrase for SSH key authentication (required on mobile)
    * @param privateKey Optional PEM-encoded private key content for SSH authentication
    */
-  async connectSystem(systemId: string, password?: string, passphrase?: string, privateKey?: string): Promise<boolean> {
+  async connectSystem(systemId: string, password?: string, passphrase?: string, privateKey?: string, jumpHostCredentials?: Record<string, JumpHostCredentials>): Promise<boolean> {
     this._connectionStates.update((states) => ({
       ...states,
       [systemId]: 'connecting',
     }));
 
     try {
-      const state = await this.systemService.connectSystem(systemId, password, passphrase, privateKey);
+      const state = await this.systemService.connectSystem(systemId, password, passphrase, privateKey, jumpHostCredentials);
       this._connectionStates.update((states) => ({
         ...states,
         [systemId]: state,
@@ -193,7 +209,27 @@ export class SystemState {
         ...states,
         [systemId]: 'error',
       }));
-      this._error.set(err instanceof Error ? err.message : 'Connection failed');
+
+      const hostKeyErr = this.extractHostKeyError(err);
+      if (hostKeyErr) {
+        const system = this._systems().find(s => s.id === systemId);
+        const port = system?.sshConfig?.port ?? 22;
+        const hostname = hostKeyErr.hostname || system?.hostname || '';
+        const reason = hostKeyErr.reason;
+        const expectedMatch = reason.match(/Expected:\s*(\S+)/);
+        const actualMatch = reason.match(/Received:\s*(\S+)/);
+        this._pendingCredentials = { password, passphrase, privateKey, jumpHostCredentials };
+        this._hostKeyMismatch.set({
+          systemId,
+          hostname,
+          port,
+          expected: expectedMatch?.[1] ?? 'unknown',
+          actual: actualMatch?.[1] ?? 'unknown',
+        });
+      } else {
+        const errStr = this.extractError(err);
+        this._error.set(errStr || 'Connection failed');
+      }
       return false;
     }
   }
@@ -276,7 +312,7 @@ export class SystemState {
         return newMap;
       });
     } catch (err) {
-      this._error.set(err instanceof Error ? err.message : 'Disconnect failed');
+      this._error.set(this.extractError(err) || 'Disconnect failed');
     }
   }
 
@@ -290,7 +326,7 @@ export class SystemState {
       );
       return runtimes;
     } catch (err) {
-      this._error.set(err instanceof Error ? err.message : 'Failed to detect runtimes');
+      this._error.set(this.extractError(err) || 'Failed to detect runtimes');
       return [];
     }
   }
@@ -306,7 +342,7 @@ export class SystemState {
       );
       return system;
     } catch (err) {
-      this._error.set(err instanceof Error ? err.message : 'Failed to update system');
+      this._error.set(this.extractError(err) || 'Failed to update system');
       return null;
     } finally {
       this._loading.set(false);
@@ -329,7 +365,7 @@ export class SystemState {
       }
       return removed;
     } catch (err) {
-      this._error.set(err instanceof Error ? err.message : 'Failed to remove system');
+      this._error.set(this.extractError(err) || 'Failed to remove system');
       return false;
     } finally {
       this._loading.set(false);
@@ -337,6 +373,11 @@ export class SystemState {
   }
 
   selectSystem(systemId: string | null): void {
+    // Clear stale credentials from a previous host key mismatch flow
+    if (this._hostKeyMismatch() && this._hostKeyMismatch()?.systemId !== systemId) {
+      this._pendingCredentials = null;
+      this._hostKeyMismatch.set(null);
+    }
     this._selectedSystemId.set(systemId);
   }
 
@@ -358,5 +399,87 @@ export class SystemState {
 
   setStatusFilter(status: ConnectionState | null): void {
     this._statusFilter.set(status);
+  }
+
+  /**
+   * Extract a human-readable error message from Tauri command errors.
+   * Tauri serializes Rust enums as objects like { "VariantName": data }.
+   */
+  private extractError(err: unknown): string {
+    if (typeof err === 'string') return err;
+    if (err instanceof Error) return err.message;
+    if (err && typeof err === 'object') {
+      // Tauri serializes Rust enums as { VariantName: data }
+      const entries = Object.entries(err as Record<string, unknown>);
+      if (entries.length === 1) {
+        const [, value] = entries[0];
+        if (typeof value === 'string') return value;
+        if (Array.isArray(value)) return value.filter(v => typeof v === 'string').join(': ');
+        if (value && typeof value === 'object') {
+          const inner = value as Record<string, unknown>;
+          // Struct variants: try common fields
+          if (typeof inner['reason'] === 'string') return inner['reason'] as string;
+          if (typeof inner['message'] === 'string') return inner['message'] as string;
+          if (typeof inner['stderr'] === 'string') return `${inner['command'] ?? 'Command'}: ${inner['stderr']}`;
+          return JSON.stringify(value);
+        }
+      }
+      return JSON.stringify(err);
+    }
+    return String(err);
+  }
+
+  /**
+   * Check if a Tauri error is a HostKeyVerificationFailed variant.
+   * Returns the parsed hostname/reason if so, null otherwise.
+   */
+  private extractHostKeyError(err: unknown): { hostname: string; reason: string } | null {
+    if (err && typeof err === 'object' && !Array.isArray(err)) {
+      const obj = err as Record<string, unknown>;
+      const hk = obj['HostKeyVerificationFailed'] as Record<string, string> | undefined;
+      if (hk && typeof hk === 'object' && typeof hk['reason'] === 'string') {
+        return { hostname: hk['hostname'] ?? '', reason: hk['reason'] };
+      }
+    }
+    // Fallback: check if string contains the phrase
+    const str = typeof err === 'string' ? err : (err instanceof Error ? err.message : '');
+    if (str.toLowerCase().includes('host key verification failed')) {
+      return { hostname: '', reason: str };
+    }
+    return null;
+  }
+
+  async trustNewHostKey(): Promise<void> {
+    const mismatch = this._hostKeyMismatch();
+    if (!mismatch) return;
+    if (!mismatch.hostname) {
+      this._error.set('Cannot trust host key: hostname is unknown');
+      this._hostKeyMismatch.set(null);
+      this._pendingCredentials = null;
+      return;
+    }
+    const creds = this._pendingCredentials;
+    // Clear immediately — if retry hits another host key mismatch (e.g. jump host),
+    // user must provide credentials again (intentional single-trust-per-action).
+    this._pendingCredentials = null;
+    try {
+      await this.systemService.removeKnownHost(mismatch.hostname, mismatch.port);
+      this._hostKeyMismatch.set(null);
+      await this.connectSystem(
+        mismatch.systemId,
+        creds?.password,
+        creds?.passphrase,
+        creds?.privateKey,
+        creds?.jumpHostCredentials,
+      );
+    } catch (err) {
+      this._error.set(this.extractError(err) || 'Failed to remove known host');
+      this._hostKeyMismatch.set(null);
+    }
+  }
+
+  dismissHostKeyMismatch(): void {
+    this._pendingCredentials = null;
+    this._hostKeyMismatch.set(null);
   }
 }

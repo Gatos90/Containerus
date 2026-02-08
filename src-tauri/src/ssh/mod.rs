@@ -1,13 +1,16 @@
 pub mod client;
 pub mod config;
+pub mod known_hosts;
 pub mod pool;
 pub mod port_forward;
 
 use once_cell::sync::Lazy;
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use crate::executor::CommandResult;
+use crate::keyring_store::JumpHostCredentials;
 use crate::models::error::ContainerError;
 use crate::models::system::ContainerSystem;
 
@@ -29,14 +32,16 @@ pub fn get_pool() -> Arc<RwLock<SshConnectionPool>> {
 /// password: Optional password for authentication (used on mobile where keyring isn't available)
 /// passphrase: Optional passphrase for SSH key authentication (used on mobile where keyring isn't available)
 /// private_key_content: Optional PEM-encoded private key content (for mobile/imported keys)
+/// jump_host_creds: Per-jump-host credentials keyed by "hostname:port"
 pub async fn connect(
     system: &ContainerSystem,
     password: Option<&str>,
     passphrase: Option<&str>,
     private_key_content: Option<&str>,
+    jump_host_creds: &HashMap<String, JumpHostCredentials>,
 ) -> Result<(), ContainerError> {
     let mut pool = SSH_POOL.write().await;
-    pool.connect(system, password, passphrase, private_key_content).await
+    pool.connect(system, password, passphrase, private_key_content, jump_host_creds).await
 }
 
 /// Disconnect from a system

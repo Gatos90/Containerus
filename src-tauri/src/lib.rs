@@ -1,8 +1,10 @@
 pub mod agent;
 pub mod ai;
 pub mod commands;
+pub mod credential_migration;
 pub mod database;
 pub mod executor;
+pub mod keyring_store;
 pub mod models;
 pub mod monitoring;
 pub mod runtime;
@@ -42,6 +44,38 @@ pub fn run() {
             let app_state = state::AppState::new(db_path);
             app.manage(app_state);
 
+            // Migrate credentials from DB to vault (desktop only).
+            // If migration ran, it returns the vault directly (no extra keyring read).
+            // Otherwise, load from keyring once to populate the in-memory cache.
+            #[cfg(not(target_os = "android"))]
+            {
+                let state = app.state::<AppState>();
+                let migrated_vault = {
+                    let conn = state.db.lock().unwrap();
+                    credential_migration::migrate_credentials_to_keychain(&conn)
+                };
+
+                let vault = match migrated_vault {
+                    Some(v) => v,
+                    None => keyring_store::load_vault().unwrap_or_else(|e| {
+                        tracing::warn!("Failed to load vault from keyring: {e}");
+                        Default::default()
+                    }),
+                };
+
+                for (id, creds) in &vault.ssh_credentials {
+                    state.cache_ssh_credentials(id, creds.clone());
+                }
+                for (provider, key) in &vault.ai_api_keys {
+                    state.cache_ai_api_key(provider, key.clone());
+                }
+                tracing::info!(
+                    "Loaded vault: {} SSH systems, {} AI keys",
+                    vault.ssh_credentials.len(),
+                    vault.ai_api_keys.len()
+                );
+            }
+
             // Initialize terminal sessions
             app.manage(commands::terminal::TerminalSessions::default());
 
@@ -71,8 +105,6 @@ pub fn run() {
             commands::connect_system,
             commands::disconnect_system,
             commands::get_connection_state,
-            commands::store_ssh_password,
-            commands::store_ssh_key_passphrase,
             commands::store_ssh_credentials,
             commands::get_ssh_credentials,
             commands::import_ssh_key_from_file,
@@ -82,6 +114,8 @@ pub fn run() {
             commands::get_ssh_host_config,
             commands::get_app_settings,
             commands::update_app_settings,
+            commands::get_changelog,
+            commands::remove_known_host,
             // Container commands
             commands::list_containers,
             commands::perform_container_action,

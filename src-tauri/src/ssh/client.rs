@@ -4,17 +4,74 @@ use russh::keys::key;
 use russh::ChannelMsg;
 use russh_keys::{decode_secret_key, load_secret_key};
 use std::pin::Pin;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 
+use std::collections::HashMap;
+
 use crate::executor::CommandResult;
+use crate::keyring_store::JumpHostCredentials;
 use crate::models::error::ContainerError;
 use crate::models::system::{ContainerSystem, JumpHost, SshAuthMethod, SshConfig};
 
-/// SSH connection handler
-pub struct SshHandler;
+/// Format a host:port pair, bracketing IPv6 addresses to avoid ambiguity.
+fn host_port(hostname: &str, port: u16) -> String {
+    if hostname.contains(':') {
+        format!("[{}]:{}", hostname, port)
+    } else {
+        format!("{}:{}", hostname, port)
+    }
+}
+
+/// Reason a host key was rejected during verification.
+pub enum HostKeyRejection {
+    Mismatch { expected: String, actual: String },
+    Revoked,
+}
+
+/// Handle to observe host key rejections after the SSH handshake.
+/// Because russh takes ownership of `SshHandler`, we use `Arc<Mutex<>>` to
+/// share the rejection state so the caller can inspect it after connection failure.
+pub struct HostKeyWatcher(Arc<Mutex<Option<HostKeyRejection>>>);
+
+impl HostKeyWatcher {
+    /// If a host key rejection was recorded, convert it to a `ContainerError`.
+    pub fn check(&self, hostname: &str, port: u16) -> Option<ContainerError> {
+        let reason = self.0.lock().unwrap().take()?;
+        Some(match reason {
+            HostKeyRejection::Mismatch { expected, actual } => {
+                ContainerError::HostKeyVerificationFailed {
+                    hostname: hostname.to_string(),
+                    reason: format!(
+                        "Host key has changed!\nPort: {}\nExpected: {}\nReceived: {}",
+                        port, expected, actual
+                    ),
+                }
+            }
+            HostKeyRejection::Revoked => ContainerError::HostKeyVerificationFailed {
+                hostname: hostname.to_string(),
+                reason: "Host key has been revoked".to_string(),
+            },
+        })
+    }
+}
+
+/// SSH connection handler with host key verification.
+pub struct SshHandler {
+    hostname: String,
+    port: u16,
+    rejection: Arc<Mutex<Option<HostKeyRejection>>>,
+}
+
+impl SshHandler {
+    pub fn new(hostname: String, port: u16) -> (Self, HostKeyWatcher) {
+        let rejection = Arc::new(Mutex::new(None));
+        let watcher = HostKeyWatcher(rejection.clone());
+        (Self { hostname, port, rejection }, watcher)
+    }
+}
 
 #[async_trait]
 impl client::Handler for SshHandler {
@@ -22,11 +79,52 @@ impl client::Handler for SshHandler {
 
     async fn check_server_key(
         &mut self,
-        _server_public_key: &key::PublicKey,
+        server_public_key: &key::PublicKey,
     ) -> Result<bool, Self::Error> {
-        // TODO: In production, implement proper host key verification
-        // For now, accept all keys (not secure for production)
-        Ok(true)
+        use crate::ssh::known_hosts::{self, HostKeyCheckResult};
+
+        match known_hosts::check_host_key(&self.hostname, self.port, server_public_key) {
+            Ok(HostKeyCheckResult::Matched) => {
+                tracing::debug!("Host key verified for {}:{}", self.hostname, self.port);
+                Ok(true)
+            }
+            Ok(HostKeyCheckResult::Unknown { key_type, fingerprint }) => {
+                tracing::info!(
+                    "Unknown host key for {}:{} ({} {}), auto-accepting",
+                    self.hostname, self.port, key_type, fingerprint
+                );
+                if let Err(e) = known_hosts::add_host_key(&self.hostname, self.port, server_public_key) {
+                    tracing::warn!("Failed to save host key to known_hosts: {}", e);
+                }
+                Ok(true)
+            }
+            Ok(HostKeyCheckResult::Mismatch { expected_fingerprint, actual_fingerprint }) => {
+                tracing::error!(
+                    "HOST KEY MISMATCH for {}:{} — possible MITM attack! Expected {}, got {}",
+                    self.hostname, self.port, expected_fingerprint, actual_fingerprint
+                );
+                *self.rejection.lock().unwrap() = Some(HostKeyRejection::Mismatch {
+                    expected: expected_fingerprint,
+                    actual: actual_fingerprint,
+                });
+                Ok(false)
+            }
+            Ok(HostKeyCheckResult::Revoked) => {
+                tracing::error!(
+                    "Host key for {}:{} has been REVOKED",
+                    self.hostname, self.port
+                );
+                *self.rejection.lock().unwrap() = Some(HostKeyRejection::Revoked);
+                Ok(false)
+            }
+            Err(e) => {
+                tracing::error!(
+                    "Host key verification failed for {}:{}: {} — rejecting connection",
+                    self.hostname, self.port, e
+                );
+                Ok(false)
+            }
+        }
     }
 }
 
@@ -105,23 +203,27 @@ impl SshClient {
 
         let config = Config::default();
 
-        let addr = format!("{}:{}", system.hostname, ssh_config.port);
+        let addr = host_port(&system.hostname, ssh_config.port);
         let timeout_duration = Duration::from_secs(ssh_config.connection_timeout);
 
         tracing::info!("Connecting to SSH server at {}", addr);
 
         // Apply timeout using tokio
-        let connect_future = client::connect(Arc::new(config), &addr, SshHandler);
+        let (handler, watcher) = SshHandler::new(system.hostname.clone(), ssh_config.port);
+        let connect_future = client::connect(Arc::new(config), &addr, handler);
         let mut session = tokio::time::timeout(timeout_duration, connect_future)
             .await
             .map_err(|_| ContainerError::NetworkTimeout(format!(
                 "SSH connection to {} timed out after {} seconds",
                 system.hostname, ssh_config.connection_timeout
             )))?
-            .map_err(|e| ContainerError::ConnectionFailed(
-                system.hostname.clone(),
-                e.to_string(),
-            ))?;
+            .map_err(|e| {
+                watcher.check(&system.hostname, ssh_config.port)
+                    .unwrap_or_else(|| ContainerError::ConnectionFailed(
+                        system.hostname.clone(),
+                        e.to_string(),
+                    ))
+            })?;
 
         // Authenticate
         Self::authenticate(&mut session, ssh_config, &system.hostname, password, passphrase, private_key_content).await?;
@@ -147,6 +249,7 @@ impl SshClient {
         password: Option<&str>,
         passphrase: Option<&str>,
         private_key_content: Option<&str>,
+        jump_host_creds: &HashMap<String, JumpHostCredentials>,
     ) -> Result<Self, ContainerError> {
         let ssh_config = system
             .ssh_config
@@ -164,25 +267,30 @@ impl SshClient {
 
         // Step 1: Connect to the first jump host via TCP
         let first_jump = &jump_hosts[0];
-        let first_addr = format!("{}:{}", first_jump.hostname, first_jump.port);
+        let first_addr = host_port(&first_jump.hostname, first_jump.port);
         tracing::info!("ProxyJump: connecting to first jump host at {}", first_addr);
 
         let config = Config::default();
+        let (handler, watcher) = SshHandler::new(first_jump.hostname.clone(), first_jump.port);
         let mut current_session = tokio::time::timeout(
             timeout_duration,
-            client::connect(Arc::new(config), &first_addr, SshHandler),
+            client::connect(Arc::new(config), &first_addr, handler),
         )
         .await
         .map_err(|_| ContainerError::NetworkTimeout(format!(
             "Connection to jump host {} timed out", first_jump.hostname
         )))?
-        .map_err(|e| ContainerError::ConnectionFailed(
-            first_jump.hostname.clone(),
-            e.to_string(),
-        ))?;
+        .map_err(|e| {
+            watcher.check(&first_jump.hostname, first_jump.port)
+                .unwrap_or_else(|| ContainerError::ConnectionFailed(
+                    first_jump.hostname.clone(),
+                    e.to_string(),
+                ))
+        })?;
 
         // Authenticate on the first jump host
-        Self::authenticate_jump_host(&mut current_session, first_jump, password, passphrase).await?;
+        let first_cred_key = host_port(&first_jump.hostname, first_jump.port);
+        Self::authenticate_jump_host(&mut current_session, first_jump, jump_host_creds.get(&first_cred_key)).await?;
 
         // Step 2: Chain through remaining jump hosts (if any)
         for (i, jump) in jump_hosts.iter().enumerate().skip(1) {
@@ -209,21 +317,26 @@ impl SshClient {
 
             // Connect SSH over the tunnel
             let config = Config::default();
+            let (handler, watcher) = SshHandler::new(jump.hostname.clone(), jump.port);
             current_session = tokio::time::timeout(
                 timeout_duration,
-                client::connect_stream(Arc::new(config), stream, SshHandler),
+                client::connect_stream(Arc::new(config), stream, handler),
             )
             .await
             .map_err(|_| ContainerError::NetworkTimeout(format!(
                 "Connection to jump host {} timed out", jump.hostname
             )))?
-            .map_err(|e| ContainerError::ConnectionFailed(
-                jump.hostname.clone(),
-                e.to_string(),
-            ))?;
+            .map_err(|e| {
+                watcher.check(&jump.hostname, jump.port)
+                    .unwrap_or_else(|| ContainerError::ConnectionFailed(
+                        jump.hostname.clone(),
+                        e.to_string(),
+                    ))
+            })?;
 
             // Authenticate on this jump host
-            Self::authenticate_jump_host(&mut current_session, jump, password, passphrase).await?;
+            let cred_key = host_port(&jump.hostname, jump.port);
+            Self::authenticate_jump_host(&mut current_session, jump, jump_host_creds.get(&cred_key)).await?;
         }
 
         // Step 3: Open tunnel from last jump host to the target
@@ -249,18 +362,22 @@ impl SshClient {
 
         // Step 4: Connect SSH to the target over the tunnel
         let config = Config::default();
+        let (handler, watcher) = SshHandler::new(system.hostname.clone(), ssh_config.port);
         let mut target_session = tokio::time::timeout(
             timeout_duration,
-            client::connect_stream(Arc::new(config), stream, SshHandler),
+            client::connect_stream(Arc::new(config), stream, handler),
         )
         .await
         .map_err(|_| ContainerError::NetworkTimeout(format!(
             "SSH connection to {} timed out", target_host
         )))?
-        .map_err(|e| ContainerError::ConnectionFailed(
-            target_host.clone(),
-            e.to_string(),
-        ))?;
+        .map_err(|e| {
+            watcher.check(&system.hostname, ssh_config.port)
+                .unwrap_or_else(|| ContainerError::ConnectionFailed(
+                    target_host.clone(),
+                    e.to_string(),
+                ))
+        })?;
 
         // Authenticate on the target
         Self::authenticate(&mut target_session, ssh_config, target_host, password, passphrase, private_key_content).await?;
@@ -337,18 +454,22 @@ impl SshClient {
 
         // Connect SSH over the proxy stream
         let config = Config::default();
+        let (handler, watcher) = SshHandler::new(system.hostname.clone(), ssh_config.port);
         let mut session = tokio::time::timeout(
             timeout_duration,
-            client::connect_stream(Arc::new(config), stream, SshHandler),
+            client::connect_stream(Arc::new(config), stream, handler),
         )
         .await
         .map_err(|_| ContainerError::NetworkTimeout(format!(
             "SSH connection via ProxyCommand to {} timed out", system.hostname
         )))?
-        .map_err(|e| ContainerError::ConnectionFailed(
-            system.hostname.clone(),
-            format!("SSH over ProxyCommand failed: {}", e),
-        ))?;
+        .map_err(|e| {
+            watcher.check(&system.hostname, ssh_config.port)
+                .unwrap_or_else(|| ContainerError::ConnectionFailed(
+                    system.hostname.clone(),
+                    format!("SSH over ProxyCommand failed: {}", e),
+                ))
+        })?;
 
         // Authenticate on the target
         Self::authenticate(&mut session, ssh_config, &system.hostname, password, passphrase, private_key_content).await?;
@@ -365,12 +486,12 @@ impl SshClient {
         })
     }
 
-    /// Authenticate on a jump host using its identity file (public key auth only)
+    /// Authenticate on a jump host using its own independent credentials.
+    /// Supports both password and public key authentication per hop.
     async fn authenticate_jump_host(
         session: &mut Handle<SshHandler>,
         jump: &JumpHost,
-        _password: Option<&str>,
-        passphrase: Option<&str>,
+        jump_creds: Option<&JumpHostCredentials>,
     ) -> Result<(), ContainerError> {
         if jump.username.is_empty() {
             return Err(ContainerError::InvalidConfiguration(
@@ -378,51 +499,85 @@ impl SshClient {
             ));
         }
 
-        // Try to load identity file for the jump host
-        if let Some(key_path) = &jump.identity_file {
-            tracing::debug!("Authenticating on jump host {} with key {}", jump.hostname, key_path);
+        match jump.auth_method {
+            SshAuthMethod::Password => {
+                let password = jump_creds
+                    .and_then(|c| c.password.as_deref())
+                    .ok_or_else(|| ContainerError::CredentialError(format!(
+                        "Password required for jump host {} but not provided", jump.hostname
+                    )))?;
 
-            let expanded_path = if key_path.starts_with("~") {
-                let home = dirs::home_dir()
-                    .ok_or_else(|| ContainerError::InvalidConfiguration(
-                        "Could not determine home directory".to_string(),
-                    ))?;
-                key_path.replacen("~", &home.to_string_lossy(), 1)
-            } else {
-                key_path.clone()
-            };
+                tracing::debug!("Authenticating on jump host {} with password", jump.hostname);
 
-            // Try passphrase from keyring first, then from parameter
-            let effective_passphrase = if let Some(pp) = passphrase {
-                Some(pp.to_string())
-            } else {
-                get_key_passphrase(&expanded_path)?
-            };
+                let auth_result = session
+                    .authenticate_password(&jump.username, password)
+                    .await
+                    .map_err(|e| ContainerError::SshAuthenticationFailed(format!(
+                        "Jump host {} password auth error: {}", jump.hostname, e
+                    )))?;
 
-            let key = load_secret_key(&expanded_path, effective_passphrase.as_deref())
-                .map_err(|e| ContainerError::CredentialError(format!(
-                    "Failed to load jump host key from {}: {}", expanded_path, e
-                )))?;
-
-            let auth_result = session
-                .authenticate_publickey(&jump.username, Arc::new(key))
-                .await
-                .map_err(|e| ContainerError::SshAuthenticationFailed(format!(
-                    "Jump host {} auth error: {}", jump.hostname, e
-                )))?;
-
-            if !auth_result {
-                return Err(ContainerError::SshAuthenticationFailed(format!(
-                    "Public key authentication failed on jump host {}", jump.hostname
-                )));
+                if !auth_result {
+                    return Err(ContainerError::SshAuthenticationFailed(format!(
+                        "Password authentication failed on jump host {}", jump.hostname
+                    )));
+                }
             }
-        } else {
-            // No identity file - try agent or password auth
-            // For now, return an error since we don't have credentials for the jump host
-            return Err(ContainerError::InvalidConfiguration(format!(
-                "Jump host {} has no identity file configured. ProxyJump requires key-based authentication on jump hosts.",
-                jump.hostname
-            )));
+            SshAuthMethod::PublicKey => {
+                let effective_passphrase = jump_creds.and_then(|c| c.passphrase.clone());
+
+                // Try key sources in priority order:
+                // 1. Imported key content from JumpHost config
+                // 2. Imported key content from vault credentials
+                // 3. Identity file path
+                let key = if let Some(key_content) = &jump.private_key_content {
+                    tracing::debug!("Authenticating on jump host {} with imported key content", jump.hostname);
+                    decode_secret_key(key_content, effective_passphrase.as_deref())
+                        .map_err(|e| ContainerError::CredentialError(format!(
+                            "Failed to parse jump host {} key content: {}", jump.hostname, e
+                        )))?
+                } else if let Some(key_content) = jump_creds.and_then(|c| c.private_key.as_deref()) {
+                    tracing::debug!("Authenticating on jump host {} with vault key content", jump.hostname);
+                    decode_secret_key(key_content, effective_passphrase.as_deref())
+                        .map_err(|e| ContainerError::CredentialError(format!(
+                            "Failed to parse jump host {} vault key: {}", jump.hostname, e
+                        )))?
+                } else if let Some(key_path) = &jump.identity_file {
+                    tracing::debug!("Authenticating on jump host {} with key file {}", jump.hostname, key_path);
+
+                    let expanded_path = if key_path.starts_with("~") {
+                        let home = dirs::home_dir()
+                            .ok_or_else(|| ContainerError::InvalidConfiguration(
+                                "Could not determine home directory".to_string(),
+                            ))?;
+                        key_path.replacen("~", &home.to_string_lossy(), 1)
+                    } else {
+                        key_path.clone()
+                    };
+
+                    load_secret_key(&expanded_path, effective_passphrase.as_deref())
+                        .map_err(|e| ContainerError::CredentialError(format!(
+                            "Failed to load jump host key from {}: {}", expanded_path, e
+                        )))?
+                } else {
+                    return Err(ContainerError::InvalidConfiguration(format!(
+                        "Jump host {} requires public key auth but no key is configured (no identity file, no imported key)",
+                        jump.hostname
+                    )));
+                };
+
+                let auth_result = session
+                    .authenticate_publickey(&jump.username, Arc::new(key))
+                    .await
+                    .map_err(|e| ContainerError::SshAuthenticationFailed(format!(
+                        "Jump host {} auth error: {}", jump.hostname, e
+                    )))?;
+
+                if !auth_result {
+                    return Err(ContainerError::SshAuthenticationFailed(format!(
+                        "Public key authentication failed on jump host {}", jump.hostname
+                    )));
+                }
+            }
         }
 
         tracing::info!("Authenticated on jump host {}", jump.hostname);
@@ -443,38 +598,14 @@ impl SshClient {
     ) -> Result<(), ContainerError> {
         match config.auth_method {
             SshAuthMethod::Password => {
-                // Try to get password: first from parameter, then from keyring (desktop only)
+                // Password must be provided by the caller (resolved from keyring/DB in connect_system)
                 let password_to_use = if let Some(pwd) = password {
-                    tracing::debug!("Using password provided by frontend");
+                    tracing::debug!("Using password provided by caller");
                     pwd.to_string()
                 } else {
-                    #[cfg(not(target_os = "android"))]
-                    {
-                        // Get password from keyring on desktop
-                        tracing::debug!("Attempting to retrieve password from keyring for user: {}", config.username);
-
-                        let keyring_entry = keyring::Entry::new("containerus", &config.username)
-                            .map_err(|e| {
-                                tracing::error!("Failed to create keyring entry for {}: {}", config.username, e);
-                                ContainerError::CredentialError(e.to_string())
-                            })?;
-
-                        keyring_entry
-                            .get_password()
-                            .map_err(|e| {
-                                tracing::error!("Failed to get password from keyring for {}: {}", config.username, e);
-                                ContainerError::CredentialError(format!(
-                                    "Failed to get password from keyring: {}. Please store the password first.",
-                                    e
-                                ))
-                            })?
-                    }
-                    #[cfg(target_os = "android")]
-                    {
-                        return Err(ContainerError::CredentialError(
-                            "Password required. Please provide password when connecting.".to_string(),
-                        ));
-                    }
+                    return Err(ContainerError::CredentialError(
+                        "Password required. Please provide password when connecting.".to_string(),
+                    ));
                 };
 
                 tracing::debug!("Attempting password authentication...");
@@ -537,14 +668,8 @@ impl SshClient {
                         key_path.clone()
                     };
 
-                    // Try to get passphrase from keyring if not provided (desktop only)
-                    let final_passphrase = if effective_passphrase.is_some() {
-                        effective_passphrase
-                    } else {
-                        get_key_passphrase(&expanded_path)?
-                    };
-
-                    load_secret_key(&expanded_path, final_passphrase.as_deref())
+                    // Passphrase should be provided by the caller (resolved from keyring/DB in connect_system)
+                    load_secret_key(&expanded_path, effective_passphrase.as_deref())
                         .map_err(|e| ContainerError::CredentialError(format!(
                             "Failed to load SSH key from {}: {}",
                             expanded_path, e
@@ -681,83 +806,3 @@ impl SshClient {
     }
 }
 
-// ===== Keyring functions (desktop only) =====
-
-/// Store a password in the system keyring
-#[cfg(not(target_os = "android"))]
-pub fn store_password(username: &str, password: &str) -> Result<(), ContainerError> {
-    let entry = keyring::Entry::new("containerus", username)
-        .map_err(|e| ContainerError::CredentialError(e.to_string()))?;
-
-    entry
-        .set_password(password)
-        .map_err(|e| ContainerError::CredentialError(e.to_string()))?;
-
-    Ok(())
-}
-
-#[cfg(target_os = "android")]
-pub fn store_password(_username: &str, _password: &str) -> Result<(), ContainerError> {
-    // Keyring not available on Android - silently succeed (password won't persist)
-    tracing::warn!("Keyring not available on Android - password will not be persisted");
-    Ok(())
-}
-
-/// Delete a password from the system keyring
-#[cfg(not(target_os = "android"))]
-pub fn delete_password(username: &str) -> Result<(), ContainerError> {
-    let entry = keyring::Entry::new("containerus", username)
-        .map_err(|e| ContainerError::CredentialError(e.to_string()))?;
-
-    entry
-        .delete_password()
-        .map_err(|e| ContainerError::CredentialError(e.to_string()))?;
-
-    Ok(())
-}
-
-#[cfg(target_os = "android")]
-pub fn delete_password(_username: &str) -> Result<(), ContainerError> {
-    // Keyring not available on Android - nothing to delete
-    Ok(())
-}
-
-/// Store an SSH key passphrase in the system keyring
-/// Uses "containerus-keypass" as the service to differentiate from user passwords
-#[cfg(not(target_os = "android"))]
-pub fn store_key_passphrase(key_path: &str, passphrase: &str) -> Result<(), ContainerError> {
-    let entry = keyring::Entry::new("containerus-keypass", key_path)
-        .map_err(|e| ContainerError::CredentialError(e.to_string()))?;
-
-    entry
-        .set_password(passphrase)
-        .map_err(|e| ContainerError::CredentialError(e.to_string()))?;
-
-    Ok(())
-}
-
-#[cfg(target_os = "android")]
-pub fn store_key_passphrase(_key_path: &str, _passphrase: &str) -> Result<(), ContainerError> {
-    Err(ContainerError::CredentialError(
-        "Keyring not available on Android".to_string(),
-    ))
-}
-
-/// Retrieve an SSH key passphrase from the system keyring
-#[cfg(not(target_os = "android"))]
-pub fn get_key_passphrase(key_path: &str) -> Result<Option<String>, ContainerError> {
-    let entry = keyring::Entry::new("containerus-keypass", key_path)
-        .map_err(|e| ContainerError::CredentialError(e.to_string()))?;
-
-    match entry.get_password() {
-        Ok(passphrase) => Ok(Some(passphrase)),
-        Err(keyring::Error::NoEntry) => Ok(None),
-        Err(e) => Err(ContainerError::CredentialError(e.to_string())),
-    }
-}
-
-#[cfg(target_os = "android")]
-pub fn get_key_passphrase(_key_path: &str) -> Result<Option<String>, ContainerError> {
-    // On Android, no keyring available, so no passphrase stored
-    Ok(None)
-}

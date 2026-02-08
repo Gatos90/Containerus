@@ -399,7 +399,7 @@
       <div class="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 border-b border-zinc-800 flex-shrink-0">
         <h2 class="text-lg sm:text-xl font-bold">Add System</h2>
         <button
-          (click)="showAddDialog = false"
+          (click)="showAddDialog = false; jumpHostForms = []"
           class="p-2.5 sm:p-2 touch-target text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 rounded-lg transition-colors"
         >
           <lucide-icon [img]="X" class="w-5 h-5"></lucide-icon>
@@ -420,35 +420,15 @@
 
         <div class="space-y-4">
           <div>
-            <label class="block text-sm text-zinc-400 mb-1.5">System Name</label>
-            <input
-              type="text"
-              [(ngModel)]="addForm.name"
-              placeholder="My Server"
-              class="w-full px-3 py-2.5 sm:py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-base sm:text-sm"
-            />
-          </div>
-
-          <div>
-            <label class="block text-sm text-zinc-400 mb-1.5">Hostname / IP</label>
-            <input
-              type="text"
-              [(ngModel)]="addForm.hostname"
-              placeholder="localhost or 192.168.1.100"
-              class="w-full px-3 py-2.5 sm:py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-base sm:text-sm"
-            />
-          </div>
-
-          <div>
             <label class="block text-sm text-zinc-400 mb-1.5">Connection Type</label>
             <select
               [(ngModel)]="addForm.connectionType"
               class="w-full px-3 py-2.5 sm:py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-base sm:text-sm"
             >
+              <option value="remote">Remote (SSH)</option>
               @if (!isMobile()) {
                 <option value="local">Local</option>
               }
-              <option value="remote">Remote (SSH)</option>
             </select>
           </div>
 
@@ -486,6 +466,101 @@
                       <span>↪</span> Connection via ProxyCommand
                     </p>
                   }
+                }
+              </div>
+            }
+          }
+
+          <div>
+            <label class="block text-sm text-zinc-400 mb-1.5">System Name</label>
+            <input
+              type="text"
+              [(ngModel)]="addForm.name"
+              placeholder="My Server"
+              class="w-full px-3 py-2.5 sm:py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-base sm:text-sm"
+            />
+          </div>
+
+          <div>
+            <label class="block text-sm text-zinc-400 mb-1.5">Hostname / IP</label>
+            <input
+              type="text"
+              [(ngModel)]="addForm.hostname"
+              placeholder="localhost or 192.168.1.100"
+              class="w-full px-3 py-2.5 sm:py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-base sm:text-sm"
+            />
+          </div>
+
+          @if (addForm.connectionType === 'remote') {
+
+            <!-- Jump Host Credentials -->
+            @if (jumpHostForms.length > 0) {
+              <div class="space-y-3 p-4 bg-zinc-800/50 rounded-lg border border-amber-500/20">
+                <h4 class="text-sm font-medium text-amber-400 flex items-center gap-1.5">
+                  <span>&#8618;</span> Jump Host Credentials
+                </h4>
+                @for (jh of jumpHostForms; track jh.hostname + ':' + jh.port; let i = $index) {
+                  <div class="p-3 bg-zinc-900/50 rounded-lg space-y-2">
+                    <div class="text-xs text-zinc-400 font-medium">{{ jh.username }}&#64;{{ jh.hostname }}:{{ jh.port }}</div>
+
+                    <div>
+                      <label class="block text-xs text-zinc-500 mb-1">Auth Method</label>
+                      <div class="flex gap-2">
+                        <button
+                          type="button"
+                          (click)="jh.authMethod = 'publicKey'"
+                          class="px-3 py-1.5 text-xs rounded-lg border transition-colors"
+                          [class]="jh.authMethod === 'publicKey' ? 'bg-blue-500/20 border-blue-500/50 text-blue-400' : 'bg-zinc-800 border-zinc-700 text-zinc-400'"
+                        >Public Key</button>
+                        <button
+                          type="button"
+                          (click)="jh.authMethod = 'password'"
+                          class="px-3 py-1.5 text-xs rounded-lg border transition-colors"
+                          [class]="jh.authMethod === 'password' ? 'bg-blue-500/20 border-blue-500/50 text-blue-400' : 'bg-zinc-800 border-zinc-700 text-zinc-400'"
+                        >Password</button>
+                      </div>
+                    </div>
+
+                    @if (jh.authMethod === 'password') {
+                      <div>
+                        <label class="block text-xs text-zinc-500 mb-1">Password</label>
+                        <input
+                          type="password"
+                          [(ngModel)]="jh.password"
+                          placeholder="Jump host password"
+                          class="w-full px-3 py-1.5 bg-zinc-800 border border-zinc-700 rounded-lg text-sm"
+                        />
+                      </div>
+                    }
+
+                    @if (jh.authMethod === 'publicKey') {
+                      @if (jh.identityFile) {
+                        <div class="text-xs text-zinc-500">
+                          Key: <span class="text-zinc-400">{{ jh.identityFile }}</span>
+                        </div>
+                      }
+                      <div>
+                        <label class="block text-xs text-zinc-500 mb-1">Key Passphrase</label>
+                        <input
+                          type="password"
+                          [(ngModel)]="jh.passphrase"
+                          placeholder="Leave empty if key has no passphrase"
+                          class="w-full px-3 py-1.5 bg-zinc-800 border border-zinc-700 rounded-lg text-sm"
+                        />
+                      </div>
+                      @if (!jh.identityFile) {
+                        <div>
+                          <label class="block text-xs text-zinc-500 mb-1">Private Key (PEM)</label>
+                          <textarea
+                            [(ngModel)]="jh.keyContent"
+                            placeholder="Paste PEM private key..."
+                            rows="3"
+                            class="w-full px-3 py-1.5 bg-zinc-800 border border-zinc-700 rounded-lg text-xs font-mono"
+                          ></textarea>
+                        </div>
+                      }
+                    }
+                  </div>
                 }
               </div>
             }
@@ -663,7 +738,7 @@
       <!-- Footer (fixed) -->
       <div class="flex justify-end gap-3 px-4 sm:px-6 py-3 sm:py-4 border-t border-zinc-800 flex-shrink-0 safe-bottom">
         <button
-          (click)="showAddDialog = false"
+          (click)="showAddDialog = false; jumpHostForms = []"
           class="px-4 py-2.5 sm:py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 transition-colors text-sm"
           [disabled]="addingSystem()"
         >
@@ -695,7 +770,7 @@
       <div class="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 border-b border-zinc-800 flex-shrink-0">
         <h2 class="text-lg sm:text-xl font-bold">Edit System</h2>
         <button
-          (click)="showEditDialog = false"
+          (click)="showEditDialog = false; editJumpHostForms = []"
           class="p-2.5 sm:p-2 touch-target text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 rounded-lg transition-colors"
         >
           <lucide-icon [img]="X" class="w-5 h-5"></lucide-icon>
@@ -741,14 +816,86 @@
               [(ngModel)]="editForm.connectionType"
               class="w-full px-3 py-2.5 sm:py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-base sm:text-sm"
             >
+              <option value="remote">Remote (SSH)</option>
               @if (!isMobile()) {
                 <option value="local">Local</option>
               }
-              <option value="remote">Remote (SSH)</option>
             </select>
           </div>
 
           @if (editForm.connectionType === 'remote') {
+            <!-- Edit: Jump Host Credentials -->
+            @if (editJumpHostForms.length > 0) {
+              <div class="space-y-3 p-4 bg-zinc-800/50 rounded-lg border border-amber-500/20">
+                <h4 class="text-sm font-medium text-amber-400 flex items-center gap-1.5">
+                  <span>&#8618;</span> Jump Host Credentials
+                </h4>
+                @for (jh of editJumpHostForms; track jh.hostname + ':' + jh.port; let i = $index) {
+                  <div class="p-3 bg-zinc-900/50 rounded-lg space-y-2">
+                    <div class="text-xs text-zinc-400 font-medium">{{ jh.username }}&#64;{{ jh.hostname }}:{{ jh.port }}</div>
+
+                    <div>
+                      <label class="block text-xs text-zinc-500 mb-1">Auth Method</label>
+                      <div class="flex gap-2">
+                        <button
+                          type="button"
+                          (click)="jh.authMethod = 'publicKey'"
+                          class="px-3 py-1.5 text-xs rounded-lg border transition-colors"
+                          [class]="jh.authMethod === 'publicKey' ? 'bg-blue-500/20 border-blue-500/50 text-blue-400' : 'bg-zinc-800 border-zinc-700 text-zinc-400'"
+                        >Public Key</button>
+                        <button
+                          type="button"
+                          (click)="jh.authMethod = 'password'"
+                          class="px-3 py-1.5 text-xs rounded-lg border transition-colors"
+                          [class]="jh.authMethod === 'password' ? 'bg-blue-500/20 border-blue-500/50 text-blue-400' : 'bg-zinc-800 border-zinc-700 text-zinc-400'"
+                        >Password</button>
+                      </div>
+                    </div>
+
+                    @if (jh.authMethod === 'password') {
+                      <div>
+                        <label class="block text-xs text-zinc-500 mb-1">Password</label>
+                        <input
+                          type="password"
+                          [(ngModel)]="jh.password"
+                          placeholder="Jump host password"
+                          class="w-full px-3 py-1.5 bg-zinc-800 border border-zinc-700 rounded-lg text-sm"
+                        />
+                      </div>
+                    }
+
+                    @if (jh.authMethod === 'publicKey') {
+                      @if (jh.identityFile) {
+                        <div class="text-xs text-zinc-500">
+                          Key: <span class="text-zinc-400">{{ jh.identityFile }}</span>
+                        </div>
+                      }
+                      <div>
+                        <label class="block text-xs text-zinc-500 mb-1">Key Passphrase</label>
+                        <input
+                          type="password"
+                          [(ngModel)]="jh.passphrase"
+                          placeholder="Leave empty if key has no passphrase"
+                          class="w-full px-3 py-1.5 bg-zinc-800 border border-zinc-700 rounded-lg text-sm"
+                        />
+                      </div>
+                      @if (!jh.identityFile) {
+                        <div>
+                          <label class="block text-xs text-zinc-500 mb-1">Private Key (PEM)</label>
+                          <textarea
+                            [(ngModel)]="jh.keyContent"
+                            placeholder="Paste PEM private key..."
+                            rows="3"
+                            class="w-full px-3 py-1.5 bg-zinc-800 border border-zinc-700 rounded-lg text-xs font-mono"
+                          ></textarea>
+                        </div>
+                      }
+                    }
+                  </div>
+                }
+              </div>
+            }
+
             <div class="space-y-4 p-4 bg-zinc-800/50 rounded-lg">
               <div>
                 <label class="block text-sm text-zinc-400 mb-1.5">SSH Username</label>
@@ -922,7 +1069,7 @@
       <!-- Footer (fixed) -->
       <div class="flex justify-end gap-3 px-4 sm:px-6 py-3 sm:py-4 border-t border-zinc-800 flex-shrink-0 safe-bottom">
         <button
-          (click)="showEditDialog = false"
+          (click)="showEditDialog = false; editJumpHostForms = []"
           class="px-4 py-2.5 sm:py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 transition-colors text-sm"
         >
           Cancel
@@ -933,6 +1080,36 @@
           [disabled]="!editForm.name || !editForm.hostname"
         >
           Save Changes
+        </button>
+      </div>
+    </div>
+  </div>
+}
+
+@if (systemState.hostKeyMismatch(); as mismatch) {
+  <div class="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+    <div class="bg-zinc-900 border border-red-500/50 rounded-xl max-w-md w-full p-6 space-y-4 shadow-2xl">
+      <h3 class="text-lg font-bold text-red-400">Host Key Changed</h3>
+      <p class="text-sm text-zinc-300">
+        The host key for <strong>{{ mismatch.hostname }}:{{ mismatch.port }}</strong>
+        has changed. This could mean the server was reinstalled,
+        or it could indicate a man-in-the-middle attack.
+      </p>
+      <div class="space-y-2 text-xs font-mono bg-zinc-800 p-3 rounded-lg overflow-x-auto">
+        <div><span class="text-zinc-500">Expected:</span> <span class="text-red-400 break-all">{{ mismatch.expected }}</span></div>
+        <div><span class="text-zinc-500">Received:</span> <span class="text-amber-400 break-all">{{ mismatch.actual }}</span></div>
+      </div>
+      <p class="text-xs text-zinc-500">
+        If you trust this change, click "Trust New Key" to update your known hosts and reconnect.
+      </p>
+      <div class="flex gap-3 justify-end pt-2">
+        <button (click)="systemState.dismissHostKeyMismatch()"
+          class="px-4 py-2.5 sm:py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-sm transition-colors">
+          Cancel
+        </button>
+        <button (click)="systemState.trustNewHostKey()"
+          class="px-4 py-2.5 sm:py-2 rounded-lg bg-red-500/20 hover:bg-red-500/30 text-red-400 border border-red-500/50 text-sm transition-colors">
+          Trust New Key
         </button>
       </div>
     </div>

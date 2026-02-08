@@ -78,4 +78,11 @@
       </div>
     }
   </main>
+
+  @if (changelogState.showModal()) {
+    <app-whats-new-modal
+      [entries]="changelogState.entries()"
+      (dismiss)="changelogState.dismiss()"
+    />
+  }
 </div>

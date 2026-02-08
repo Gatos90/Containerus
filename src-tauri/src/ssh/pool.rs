@@ -1,10 +1,12 @@
 use dashmap::DashMap;
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
 
 use super::client::SshClient;
 use crate::executor::CommandResult;
+use crate::keyring_store::JumpHostCredentials;
 use crate::models::error::ContainerError;
 use crate::models::system::ContainerSystem;
 
@@ -59,6 +61,7 @@ impl SshConnectionPool {
         password: Option<&str>,
         passphrase: Option<&str>,
         private_key_content: Option<&str>,
+        jump_host_creds: &HashMap<String, JumpHostCredentials>,
     ) -> Result<(), ContainerError> {
         let system_id = system.id.0.clone();
 
@@ -73,7 +76,7 @@ impl SshConnectionPool {
             if let Some(ref jump_hosts) = ssh_config.proxy_jump {
                 if !jump_hosts.is_empty() {
                     tracing::info!("Connecting via ProxyJump ({} hop(s)) for system {}", jump_hosts.len(), system_id);
-                    SshClient::connect_via_jump(system, jump_hosts, password, passphrase, private_key_content).await?
+                    SshClient::connect_via_jump(system, jump_hosts, password, passphrase, private_key_content, jump_host_creds).await?
                 } else {
                     SshClient::connect(system, password, passphrase, private_key_content).await?
                 }
@@ -177,6 +180,7 @@ impl SshConnectionPool {
         password: Option<&str>,
         passphrase: Option<&str>,
         private_key_content: Option<&str>,
+        jump_host_creds: &HashMap<String, JumpHostCredentials>,
     ) -> Result<(), ContainerError> {
         let system_id = &system.id.0;
 
@@ -191,7 +195,7 @@ impl SshConnectionPool {
         }
 
         // Reconnect
-        self.connect(system, password, passphrase, private_key_content).await
+        self.connect(system, password, passphrase, private_key_content, jump_host_creds).await
     }
 
     /// Get a reference to an SSH client by system ID

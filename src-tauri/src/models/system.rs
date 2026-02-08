@@ -58,6 +58,15 @@ pub struct JumpHost {
     pub port: u16,
     pub username: String,
     pub identity_file: Option<String>,
+    #[serde(default = "default_public_key")]
+    pub auth_method: SshAuthMethod,
+    /// PEM-encoded private key content (for imported keys)
+    #[serde(default)]
+    pub private_key_content: Option<String>,
+}
+
+fn default_public_key() -> SshAuthMethod {
+    SshAuthMethod::PublicKey
 }
 
 impl Default for SshConfig {
@@ -275,6 +284,8 @@ mod tests {
             port: 22,
             username: "jump-user".to_string(),
             identity_file: Some("/home/user/.ssh/id_rsa".to_string()),
+            auth_method: SshAuthMethod::PublicKey,
+            private_key_content: None,
         };
 
         let json = serde_json::to_string(&jump).unwrap();
@@ -283,6 +294,16 @@ mod tests {
         let deserialized: JumpHost = serde_json::from_str(&json).unwrap();
         assert_eq!(deserialized.hostname, "bastion.example.com");
         assert_eq!(deserialized.username, "jump-user");
+        assert_eq!(deserialized.auth_method, SshAuthMethod::PublicKey);
+    }
+
+    #[test]
+    fn test_jump_host_backward_compat() {
+        // Old JSON without auth_method/private_key_content should still deserialize
+        let json = r#"{"hostname":"bastion","port":22,"username":"root","identityFile":null}"#;
+        let jump: JumpHost = serde_json::from_str(json).unwrap();
+        assert_eq!(jump.auth_method, SshAuthMethod::PublicKey);
+        assert!(jump.private_key_content.is_none());
     }
 
     #[test]

@@ -104,7 +104,7 @@ describe('SystemState', () => {
 
     await state.addSystem({ name: 'Test', hostname: 'test.local', port: 22, username: 'admin', primaryRuntime: 'docker' as any, authMethod: 'password' as any, autoConnect: true });
 
-    expect(mockSystemService.connectSystem).toHaveBeenCalledWith('sys-1', undefined, undefined, undefined);
+    expect(mockSystemService.connectSystem).toHaveBeenCalledWith('sys-1', undefined, undefined, undefined, undefined);
   });
 
   it('should handle add system error', async () => {

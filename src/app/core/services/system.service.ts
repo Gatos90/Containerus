@@ -6,6 +6,7 @@ import {
   ConnectionState,
   ContainerSystem,
   ExtendedSystemInfo,
+  JumpHostCredentials,
   NewSystemRequest,
   SshHostEntry,
   UpdateSystemRequest,
@@ -34,8 +35,8 @@ export class SystemService {
     return this.tauri.invoke<boolean>('remove_system', { systemId });
   }
 
-  connectSystem(systemId: string, password?: string, passphrase?: string, privateKey?: string): Promise<ConnectionState> {
-    return this.tauri.invoke<ConnectionState>('connect_system', { systemId, password, passphrase, privateKey });
+  connectSystem(systemId: string, password?: string, passphrase?: string, privateKey?: string, jumpHostCredentials?: Record<string, JumpHostCredentials>): Promise<ConnectionState> {
+    return this.tauri.invoke<ConnectionState>('connect_system', { systemId, password, passphrase, privateKey, jumpHostCredentials });
   }
 
   disconnectSystem(systemId: string): Promise<ConnectionState> {
@@ -56,20 +57,12 @@ export class SystemService {
     });
   }
 
-  storeSshPassword(username: string, password: string): Promise<void> {
-    return this.tauri.invoke<void>('store_ssh_password', { username, password });
-  }
-
-  storeSshKeyPassphrase(keyPath: string, passphrase: string): Promise<void> {
-    return this.tauri.invoke<void>('store_ssh_key_passphrase', { keyPath, passphrase });
-  }
-
   /**
    * Store SSH credentials in the database (works on all platforms including Android)
    * This persists credentials so autoConnect works across app restarts
    */
-  storeSshCredentials(systemId: string, password?: string, passphrase?: string, privateKey?: string): Promise<void> {
-    return this.tauri.invoke<void>('store_ssh_credentials', { systemId, password, passphrase, privateKey });
+  storeSshCredentials(systemId: string, password?: string, passphrase?: string, privateKey?: string, jumpHostCredentials?: Record<string, JumpHostCredentials>): Promise<void> {
+    return this.tauri.invoke<void>('store_ssh_credentials', { systemId, password, passphrase, privateKey, jumpHostCredentials });
   }
 
   /**
@@ -117,6 +110,13 @@ export class SystemService {
     return this.tauri.invoke<ExtendedSystemInfo>('get_extended_system_info', {
       systemId,
     });
+  }
+
+  /**
+   * Remove a host key from ~/.ssh/known_hosts (for trust-new-key flow)
+   */
+  removeKnownHost(hostname: string, port: number): Promise<number> {
+    return this.tauri.invoke<number>('remove_known_host', { hostname, port });
   }
 
   // ========================================================================
