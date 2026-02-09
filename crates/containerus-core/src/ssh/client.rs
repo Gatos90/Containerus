@@ -1,8 +1,6 @@
-use async_trait::async_trait;
 use russh::client::{self, Config, Handle};
-use russh::keys::key;
+use russh::keys::{decode_secret_key, load_secret_key, PrivateKeyWithHashAlg, PublicKey};
 use russh::ChannelMsg;
-use russh_keys::{decode_secret_key, load_secret_key};
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
@@ -12,7 +10,7 @@ use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use std::collections::HashMap;
 
 use crate::executor::CommandResult;
-use crate::keyring_store::JumpHostCredentials;
+use crate::models::credentials::JumpHostCredentials;
 use crate::models::error::ContainerError;
 use crate::models::system::{ContainerSystem, JumpHost, SshAuthMethod, SshConfig};
 
@@ -73,13 +71,12 @@ impl SshHandler {
     }
 }
 
-#[async_trait]
 impl client::Handler for SshHandler {
     type Error = russh::Error;
 
     async fn check_server_key(
         &mut self,
-        server_public_key: &key::PublicKey,
+        server_public_key: &PublicKey,
     ) -> Result<bool, Self::Error> {
         use crate::ssh::known_hosts::{self, HostKeyCheckResult};
 
@@ -516,7 +513,7 @@ impl SshClient {
                         "Jump host {} password auth error: {}", jump.hostname, e
                     )))?;
 
-                if !auth_result {
+                if !auth_result.success() {
                     return Err(ContainerError::SshAuthenticationFailed(format!(
                         "Password authentication failed on jump host {}", jump.hostname
                     )));
@@ -566,13 +563,16 @@ impl SshClient {
                 };
 
                 let auth_result = session
-                    .authenticate_publickey(&jump.username, Arc::new(key))
+                    .authenticate_publickey(
+                        &jump.username,
+                        PrivateKeyWithHashAlg::new(Arc::new(key), None),
+                    )
                     .await
                     .map_err(|e| ContainerError::SshAuthenticationFailed(format!(
                         "Jump host {} auth error: {}", jump.hostname, e
                     )))?;
 
-                if !auth_result {
+                if !auth_result.success() {
                     return Err(ContainerError::SshAuthenticationFailed(format!(
                         "Public key authentication failed on jump host {}", jump.hostname
                     )));
@@ -618,7 +618,7 @@ impl SshClient {
                         ContainerError::SshAuthenticationFailed(e.to_string())
                     })?;
 
-                if !auth_result {
+                if !auth_result.success() {
                     tracing::error!("SSH password authentication rejected by server for user: {}", config.username);
                     return Err(ContainerError::SshAuthenticationFailed(
                         "Password authentication failed - server rejected credentials".to_string(),
@@ -681,11 +681,14 @@ impl SshClient {
                 };
 
                 let auth_result = session
-                    .authenticate_publickey(&config.username, Arc::new(key))
+                    .authenticate_publickey(
+                        &config.username,
+                        PrivateKeyWithHashAlg::new(Arc::new(key), None),
+                    )
                     .await
                     .map_err(|e| ContainerError::SshAuthenticationFailed(e.to_string()))?;
 
-                if !auth_result {
+                if !auth_result.success() {
                     return Err(ContainerError::SshAuthenticationFailed(
                         "Public key authentication failed".to_string(),
                     ));
@@ -769,6 +772,35 @@ impl SshClient {
     /// Open an interactive PTY channel for terminal sessions
     /// This creates a new channel on the existing SSH connection (subterminal)
     /// Returns the raw channel for the caller to manage
+    /// Open a direct-tcpip channel for port forwarding / HTTP proxying.
+    pub async fn open_direct_tcpip(
+        &mut self,
+        remote_host: &str,
+        remote_port: u16,
+    ) -> Result<russh::Channel<russh::client::Msg>, ContainerError> {
+        self.last_used = Instant::now();
+
+        tokio::time::timeout(
+            Duration::from_secs(10),
+            self.session.channel_open_direct_tcpip(
+                remote_host,
+                remote_port as u32,
+                "127.0.0.1",
+                0,
+            ),
+        )
+        .await
+        .map_err(|_| {
+            ContainerError::NetworkTimeout(format!(
+                "Timeout opening tunnel to {}:{}",
+                remote_host, remote_port
+            ))
+        })?
+        .map_err(|e| {
+            ContainerError::Internal(format!("Failed to open direct-tcpip channel: {}", e))
+        })
+    }
+
     pub async fn open_pty_channel_raw(
         &mut self,
         cols: u32,
@@ -791,8 +823,12 @@ impl SshClient {
 
         // Start shell or run command
         if let Some(cmd) = command {
+            // Wrap in login shell so profile scripts are sourced and PATH
+            // includes directories like /usr/local/bin where runtimes live
+            let escaped = cmd.replace('\'', "'\\''");
+            let wrapped = format!("bash -lc '{}'", escaped);
             channel
-                .exec(true, cmd)
+                .exec(true, wrapped)
                 .await
                 .map_err(|e| ContainerError::Internal(format!("Failed to exec: {}", e)))?;
         } else {

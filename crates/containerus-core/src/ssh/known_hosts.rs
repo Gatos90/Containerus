@@ -13,8 +13,7 @@ use std::path::PathBuf;
 use hmac::{Hmac, Mac};
 use sha1::Sha1;
 
-use russh_keys::key::PublicKey as RusshPublicKey;
-use russh_keys::PublicKeyBase64;
+use russh::keys::{PublicKey as RusshPublicKey, PublicKeyBase64, HashAlg};
 
 use crate::models::error::ContainerError;
 
@@ -50,8 +49,8 @@ pub fn check_host_key(
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
             // No known_hosts file — everything is unknown
             return Ok(HostKeyCheckResult::Unknown {
-                key_type: server_key.name().to_string(),
-                fingerprint: server_key.fingerprint(),
+                key_type: server_key.algorithm().to_string(),
+                fingerprint: server_key.fingerprint(HashAlg::Sha256).to_string(),
             });
         }
         Err(e) => {
@@ -116,14 +115,14 @@ fn check_host_key_against_content(
     if let Some(expected_fp) = first_mismatch_fingerprint {
         return Ok(HostKeyCheckResult::Mismatch {
             expected_fingerprint: expected_fp,
-            actual_fingerprint: server_key.fingerprint(),
+            actual_fingerprint: server_key.fingerprint(HashAlg::Sha256).to_string(),
         });
     }
 
     // No matching host found
     Ok(HostKeyCheckResult::Unknown {
-        key_type: server_key.name().to_string(),
-        fingerprint: server_key.fingerprint(),
+        key_type: server_key.algorithm().to_string(),
+        fingerprint: server_key.fingerprint(HashAlg::Sha256).to_string(),
     })
 }
 
@@ -156,7 +155,7 @@ pub fn add_host_key(
         format!("[{}]:{}", hostname, port)
     };
 
-    let algo = server_key.name();
+    let algo = server_key.algorithm();
     let key_base64 = server_key.public_key_base64();
     let line = format!("{} {} {}\n", host_label, algo, key_base64);
 
@@ -443,6 +442,7 @@ fn known_hosts_path() -> Result<PathBuf, ContainerError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rand::rngs::OsRng;
 
     #[test]
     fn test_glob_match_exact() {
@@ -523,18 +523,18 @@ mod tests {
     #[test]
     fn test_check_unknown_host() {
         // Empty known_hosts → everything is unknown
-        let key = russh_keys::key::KeyPair::generate_ed25519();
-        let pub_key = key.clone_public_key().unwrap();
+        let key = russh::keys::PrivateKey::random(&mut OsRng, russh::keys::Algorithm::Ed25519).unwrap();
+        let pub_key = key.public_key().clone();
         let result = check_host_key_against_content("newhost.com", 22, &pub_key, "").unwrap();
         assert!(matches!(result, HostKeyCheckResult::Unknown { .. }));
     }
 
     #[test]
     fn test_check_matched_host() {
-        let key = russh_keys::key::KeyPair::generate_ed25519();
-        let pub_key = key.clone_public_key().unwrap();
+        let key = russh::keys::PrivateKey::random(&mut OsRng, russh::keys::Algorithm::Ed25519).unwrap();
+        let pub_key = key.public_key().clone();
         let base64 = pub_key.public_key_base64();
-        let algo = pub_key.name();
+        let algo = pub_key.algorithm();
 
         let content = format!("myhost.com {} {}\n", algo, base64);
         let result = check_host_key_against_content("myhost.com", 22, &pub_key, &content).unwrap();
@@ -543,13 +543,13 @@ mod tests {
 
     #[test]
     fn test_check_mismatched_host() {
-        let key1 = russh_keys::key::KeyPair::generate_ed25519();
-        let pub_key1 = key1.clone_public_key().unwrap();
+        let key1 = russh::keys::PrivateKey::random(&mut OsRng, russh::keys::Algorithm::Ed25519).unwrap();
+        let pub_key1 = key1.public_key().clone();
         let base64_1 = pub_key1.public_key_base64();
-        let algo_1 = pub_key1.name();
+        let algo_1 = pub_key1.algorithm();
 
-        let key2 = russh_keys::key::KeyPair::generate_ed25519();
-        let pub_key2 = key2.clone_public_key().unwrap();
+        let key2 = russh::keys::PrivateKey::random(&mut OsRng, russh::keys::Algorithm::Ed25519).unwrap();
+        let pub_key2 = key2.public_key().clone();
 
         let content = format!("myhost.com {} {}\n", algo_1, base64_1);
         let result = check_host_key_against_content("myhost.com", 22, &pub_key2, &content).unwrap();
@@ -558,10 +558,10 @@ mod tests {
 
     #[test]
     fn test_check_nonstandard_port() {
-        let key = russh_keys::key::KeyPair::generate_ed25519();
-        let pub_key = key.clone_public_key().unwrap();
+        let key = russh::keys::PrivateKey::random(&mut OsRng, russh::keys::Algorithm::Ed25519).unwrap();
+        let pub_key = key.public_key().clone();
         let base64 = pub_key.public_key_base64();
-        let algo = pub_key.name();
+        let algo = pub_key.algorithm();
 
         // Entry uses [hostname]:port format for non-22 ports
         let content = format!("[myhost.com]:2222 {} {}\n", algo, base64);
@@ -575,10 +575,10 @@ mod tests {
 
     #[test]
     fn test_check_revoked_key() {
-        let key = russh_keys::key::KeyPair::generate_ed25519();
-        let pub_key = key.clone_public_key().unwrap();
+        let key = russh::keys::PrivateKey::random(&mut OsRng, russh::keys::Algorithm::Ed25519).unwrap();
+        let pub_key = key.public_key().clone();
         let base64 = pub_key.public_key_base64();
-        let algo = pub_key.name();
+        let algo = pub_key.algorithm();
 
         let content = format!("@revoked myhost.com {} {}\n", algo, base64);
         let result = check_host_key_against_content("myhost.com", 22, &pub_key, &content).unwrap();
@@ -587,15 +587,15 @@ mod tests {
 
     #[test]
     fn test_remove_host_key_removes_matching() {
-        let key1 = russh_keys::key::KeyPair::generate_ed25519();
-        let pub_key1 = key1.clone_public_key().unwrap();
+        let key1 = russh::keys::PrivateKey::random(&mut OsRng, russh::keys::Algorithm::Ed25519).unwrap();
+        let pub_key1 = key1.public_key().clone();
         let base64_1 = pub_key1.public_key_base64();
-        let algo_1 = pub_key1.name();
+        let algo_1 = pub_key1.algorithm();
 
-        let key2 = russh_keys::key::KeyPair::generate_ed25519();
-        let pub_key2 = key2.clone_public_key().unwrap();
+        let key2 = russh::keys::PrivateKey::random(&mut OsRng, russh::keys::Algorithm::Ed25519).unwrap();
+        let pub_key2 = key2.public_key().clone();
         let base64_2 = pub_key2.public_key_base64();
-        let algo_2 = pub_key2.name();
+        let algo_2 = pub_key2.algorithm();
 
         let content = format!(
             "host1.com {} {}\nhost2.com {} {}\n",
@@ -610,10 +610,10 @@ mod tests {
 
     #[test]
     fn test_remove_host_key_preserves_comments() {
-        let key = russh_keys::key::KeyPair::generate_ed25519();
-        let pub_key = key.clone_public_key().unwrap();
+        let key = russh::keys::PrivateKey::random(&mut OsRng, russh::keys::Algorithm::Ed25519).unwrap();
+        let pub_key = key.public_key().clone();
         let base64 = pub_key.public_key_base64();
-        let algo = pub_key.name();
+        let algo = pub_key.algorithm();
 
         let content = format!(
             "# This is a comment\n\nmyhost.com {} {}\n# Another comment\n",
@@ -629,10 +629,10 @@ mod tests {
 
     #[test]
     fn test_remove_host_key_nonstandard_port() {
-        let key = russh_keys::key::KeyPair::generate_ed25519();
-        let pub_key = key.clone_public_key().unwrap();
+        let key = russh::keys::PrivateKey::random(&mut OsRng, russh::keys::Algorithm::Ed25519).unwrap();
+        let pub_key = key.public_key().clone();
         let base64 = pub_key.public_key_base64();
-        let algo = pub_key.name();
+        let algo = pub_key.algorithm();
 
         let content = format!(
             "[myhost.com]:2222 {} {}\nmyhost.com {} {}\n",
@@ -648,10 +648,10 @@ mod tests {
 
     #[test]
     fn test_remove_host_key_no_match() {
-        let key = russh_keys::key::KeyPair::generate_ed25519();
-        let pub_key = key.clone_public_key().unwrap();
+        let key = russh::keys::PrivateKey::random(&mut OsRng, russh::keys::Algorithm::Ed25519).unwrap();
+        let pub_key = key.public_key().clone();
         let base64 = pub_key.public_key_base64();
-        let algo = pub_key.name();
+        let algo = pub_key.algorithm();
 
         let content = format!("other.com {} {}\n", algo, base64);
 
@@ -662,10 +662,10 @@ mod tests {
 
     #[test]
     fn test_check_skips_malformed_lines() {
-        let key = russh_keys::key::KeyPair::generate_ed25519();
-        let pub_key = key.clone_public_key().unwrap();
+        let key = russh::keys::PrivateKey::random(&mut OsRng, russh::keys::Algorithm::Ed25519).unwrap();
+        let pub_key = key.public_key().clone();
         let base64 = pub_key.public_key_base64();
-        let algo = pub_key.name();
+        let algo = pub_key.algorithm();
 
         let content = format!(
             "this is garbage\nmyhost.com {} {}\nalso bad\n",

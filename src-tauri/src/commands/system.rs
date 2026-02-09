@@ -272,9 +272,19 @@ pub async fn detect_runtimes(
         }
     }
 
-    // Update the system's available runtimes
+    // Update the system's available runtimes and primary runtime
     if !available_runtimes.is_empty() {
-        state.update_system_runtimes(&system_id, available_runtimes.iter().copied().collect());
+        let runtimes_set: HashSet<ContainerRuntime> =
+            available_runtimes.iter().copied().collect();
+
+        // If the current primary runtime isn't actually installed, switch to the first detected one
+        let new_primary = if !runtimes_set.contains(&system.primary_runtime) {
+            Some(available_runtimes[0])
+        } else {
+            None
+        };
+
+        state.update_system_runtimes(&system_id, runtimes_set, new_primary);
     }
 
     Ok(available_runtimes)

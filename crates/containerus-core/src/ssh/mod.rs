@@ -10,7 +10,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use crate::executor::CommandResult;
-use crate::keyring_store::JumpHostCredentials;
+use crate::models::credentials::JumpHostCredentials;
 use crate::models::error::ContainerError;
 use crate::models::system::ContainerSystem;
 

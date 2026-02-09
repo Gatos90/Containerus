@@ -1,0 +1,57 @@
+[package]
+name = "containerus-server"
+version = "0.1.0"
+edition = "2021"
+description = "Self-hosted backend server for Containerus"
+
+[[bin]]
+name = "containerus-server"
+path = "src/main.rs"
+
+[dependencies]
+# Core library
+containerus-core = { path = "../containerus-core" }
+
+# Web framework
+axum = { version = "0.8", features = ["ws", "macros"] }
+axum-extra = { version = "0.10", features = ["typed-header"] }
+tower = { version = "0.5", features = ["util"] }
+tower-http = { version = "0.6", features = ["cors", "trace", "catch-panic"] }
+
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+chrono = { version = "0.4", features = ["serde"] }
+
+# Database
+sqlx = { version = "0.8", features = ["runtime-tokio", "tls-rustls", "postgres", "uuid", "chrono", "json"] }
+
+# Authentication
+jsonwebtoken = "9"
+argon2 = "0.5"
+
+# Kubernetes
+kube = { version = "0.98", features = ["runtime", "client", "derive", "ws"] }
+k8s-openapi = { version = "0.24", features = ["v1_31"] }
+
+# Encryption / Hashing
+aes-gcm = "0.10"
+sha2 = "0.10"
+rand = "0.8"
+base64 = "0.22"
+
+# SSH (for WebSocket PTY terminal proxy)
+russh = "0.57"
+
+# Utilities
+uuid = { version = "1", features = ["v4", "serde"] }
+thiserror = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+dotenvy = "0.15"
+dashmap = "6"
+futures-util = "0.3"
+serde_yaml = "0.9"

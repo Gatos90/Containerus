@@ -108,17 +108,29 @@
                 [class.bg-yellow-500]="getConnectionState(system.id) === 'connecting'"
                 [class.bg-zinc-500]="getConnectionState(system.id) === 'disconnected'"
               ></span>
-              <span class="text-xs px-1.5 py-0.5 rounded bg-zinc-700 text-zinc-400 sm:hidden">
-                {{ system.primaryRuntime }}
-              </span>
+              @for (rt of system.availableRuntimes; track rt) {
+                <span class="text-xs px-1.5 py-0.5 rounded bg-zinc-700 text-zinc-400 sm:hidden">
+                  {{ rt }}
+                </span>
+              }
+              @if (system.availableRuntimes.length === 0) {
+                <span class="text-xs px-1.5 py-0.5 rounded bg-zinc-700 text-zinc-500 sm:hidden italic">
+                  detecting…
+                </span>
+              }
             </div>
             <div class="text-xs sm:text-sm text-zinc-400 truncate">
               {{ system.hostname }} ({{ system.connectionType }})
             </div>
           </div>
 
-          <div class="text-sm text-zinc-500 hidden sm:block">
-            {{ system.primaryRuntime }}
+          <div class="text-sm text-zinc-500 hidden sm:flex sm:gap-1">
+            @for (rt of system.availableRuntimes; track rt) {
+              <span class="px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400 text-xs">{{ rt }}</span>
+            }
+            @if (system.availableRuntimes.length === 0) {
+              <span class="text-xs text-zinc-600 italic">detecting…</span>
+            }
           </div>
 
           <!-- Actions -->
@@ -172,7 +184,7 @@
           @let info = getExtendedInfo(system.id);
           @let liveMetrics = getLiveMetrics(system.id);
 
-          <!-- Extended System Info with Live Metrics -->
+          <!-- Extended System Info with Live Metrics (local systems only) -->
           @if (info) {
             <div class="p-3 bg-zinc-900/50 rounded-lg space-y-3">
               <!-- Quick Info Line: user · cores · memory · uptime -->
@@ -709,17 +721,7 @@
             </div>
           }
 
-          <div>
-            <label class="block text-sm text-zinc-400 mb-1.5">Primary Runtime</label>
-            <select
-              [(ngModel)]="addForm.primaryRuntime"
-              class="w-full px-3 py-2.5 sm:py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-base sm:text-sm"
-            >
-              <option value="docker">Docker</option>
-              <option value="podman">Podman</option>
-              <option value="apple">Apple Container</option>
-            </select>
-          </div>
+          <!-- Runtime is auto-detected on first connection -->
 
           <div class="flex items-center gap-3 py-1">
             <input
@@ -1044,12 +1046,14 @@
             <label class="block text-sm text-zinc-400 mb-1.5">Primary Runtime</label>
             <select
               [(ngModel)]="editForm.primaryRuntime"
-              class="w-full px-3 py-2.5 sm:py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-base sm:text-sm"
+              disabled
+              class="w-full px-3 py-2.5 sm:py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-base sm:text-sm opacity-60 cursor-not-allowed"
             >
               <option value="docker">Docker</option>
               <option value="podman">Podman</option>
               <option value="apple">Apple Container</option>
             </select>
+            <p class="text-xs text-zinc-500 mt-1">Runtime is auto-detected on connection.</p>
           </div>
 
           <div class="flex items-center gap-3 py-1">

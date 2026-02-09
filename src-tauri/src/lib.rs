@@ -1,14 +1,18 @@
+// Re-export core library modules
+pub use containerus_core::ai;
+pub use containerus_core::executor;
+pub use containerus_core::models;
+pub use containerus_core::runtime;
+pub use containerus_core::ssh;
+
+// Tauri-specific modules (agent stays here due to Tauri AppHandle dependencies)
 pub mod agent;
-pub mod ai;
+pub mod backend_forward;
 pub mod commands;
 pub mod credential_migration;
 pub mod database;
-pub mod executor;
 pub mod keyring_store;
-pub mod models;
 pub mod monitoring;
-pub mod runtime;
-pub mod ssh;
 pub mod state;
 
 // Re-export AppState for commands
@@ -69,10 +73,14 @@ pub fn run() {
                 for (provider, key) in &vault.ai_api_keys {
                     state.cache_ai_api_key(provider, key.clone());
                 }
+                for (id, tokens) in &vault.backend_tokens {
+                    state.cache_backend_tokens(id, tokens.clone());
+                }
                 tracing::info!(
-                    "Loaded vault: {} SSH systems, {} AI keys",
+                    "Loaded vault: {} SSH systems, {} AI keys, {} backend tokens",
                     vault.ssh_credentials.len(),
-                    vault.ai_api_keys.len()
+                    vault.ai_api_keys.len(),
+                    vault.backend_tokens.len()
                 );
             }
 
@@ -82,8 +90,9 @@ pub fn run() {
             // Initialize agent session manager
             app.manage(agent::AgentSessionManager::new());
 
-            // Initialize port forward manager
+            // Initialize port forward managers
             app.manage(Arc::new(ssh::PortForwardManager::new()));
+            app.manage(Arc::new(backend_forward::BackendPortForwardManager::new()));
 
             // Initialize monitoring manager
             app.manage(monitoring::MonitoringManager::new());
@@ -198,6 +207,11 @@ pub fn run() {
             commands::is_system_monitoring,
             commands::list_monitored_systems,
             commands::get_live_metrics,
+            // Backend connection persistence commands
+            commands::list_backend_connections,
+            commands::save_backend_connection,
+            commands::delete_backend_connection,
+            commands::delete_all_backend_connections,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

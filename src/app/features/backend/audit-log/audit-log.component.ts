@@ -1,0 +1,261 @@
+import { Component, inject, signal, Input, OnInit, OnChanges, SimpleChanges } from '@angular/core';
+import { FormsModule } from '@angular/forms';
+import { BackendService } from '../../../core/services/backend.service';
+import { AuditLogEntry, Project } from '../../../core/models/backend.model';
+import { LucideAngularModule, ScrollText, ChevronLeft, ChevronRight, Filter } from 'lucide-angular';
+
+@Component({
+  selector: 'app-audit-log',
+  imports: [FormsModule, LucideAngularModule],
+  template: `
+    <div class="p-6 max-w-6xl mx-auto space-y-6">
+      <div class="flex items-center justify-between">
+        <h1 class="text-xl font-semibold text-zinc-100 flex items-center gap-2">
+          <lucide-icon [img]="ScrollText" [size]="20" />
+          Audit Log
+        </h1>
+      </div>
+
+      <!-- Filters -->
+      <div class="flex items-center gap-3">
+        <div class="flex items-center gap-2">
+          <lucide-icon [img]="Filter" [size]="14" class="text-zinc-400" />
+          <select
+            [ngModel]="selectedProjectId()"
+            (ngModelChange)="onProjectChange($event)"
+            class="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-zinc-100 text-sm"
+          >
+            <option value="" disabled>Select Project</option>
+            @for (project of projects(); track project.id) {
+              <option [value]="project.id">{{ project.name }}</option>
+            }
+          </select>
+          <select
+            [(ngModel)]="actionFilter"
+            (ngModelChange)="onFilterChange()"
+            class="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-zinc-100 text-sm"
+          >
+            <option value="">All Actions</option>
+            <option value="system.create">System Created</option>
+            <option value="system.delete">System Deleted</option>
+            <option value="system.connect">System Connected</option>
+            <option value="container.start">Container Started</option>
+            <option value="container.stop">Container Stopped</option>
+            <option value="container.restart">Container Restarted</option>
+            <option value="container.remove">Container Removed</option>
+            <option value="member.invite">Member Invited</option>
+            <option value="member.remove">Member Removed</option>
+            <option value="member.role_change">Role Changed</option>
+            <option value="cluster.create">Cluster Created</option>
+            <option value="cluster.delete">Cluster Deleted</option>
+          </select>
+        </div>
+      </div>
+
+      @if (loading()) {
+        <div class="flex items-center gap-2 text-zinc-400 py-4">
+          Loading audit logs...
+        </div>
+      }
+
+      @if (loadError()) {
+        <div class="text-red-400 text-sm bg-red-950/30 rounded-lg p-3">
+          {{ loadError() }}
+        </div>
+      }
+
+      <!-- Log Table -->
+      <div class="bg-zinc-900 rounded-xl border border-zinc-800 overflow-hidden">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="border-b border-zinc-800 text-zinc-400 text-left">
+              <th class="px-4 py-3 font-medium">Time</th>
+              <th class="px-4 py-3 font-medium">User</th>
+              <th class="px-4 py-3 font-medium">Action</th>
+              <th class="px-4 py-3 font-medium">Resource</th>
+              <th class="px-4 py-3 font-medium">Details</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (entry of entries(); track entry.id) {
+              <tr class="border-b border-zinc-800/50 hover:bg-zinc-800/30">
+                <td class="px-4 py-2.5 text-zinc-400 text-xs whitespace-nowrap">
+                  {{ formatTime(entry.createdAt) }}
+                </td>
+                <td class="px-4 py-2.5 text-zinc-300 text-xs">
+                  {{ entry.userId ?? 'System' }}
+                </td>
+                <td class="px-4 py-2.5">
+                  <span class="text-xs px-1.5 py-0.5 rounded" [class]="getActionClass(entry.action)">
+                    {{ entry.action }}
+                  </span>
+                </td>
+                <td class="px-4 py-2.5 text-zinc-300 text-xs">
+                  @if (entry.resourceType) {
+                    <span class="text-zinc-500">{{ entry.resourceType }}:</span>
+                    {{ entry.resourceId ?? '' }}
+                  }
+                </td>
+                <td class="px-4 py-2.5 text-zinc-500 text-xs max-w-xs truncate" [title]="formatDetails(entry.details)">
+                  {{ formatDetails(entry.details) }}
+                </td>
+
+              </tr>
+            } @empty {
+              <tr>
+                <td colspan="5" class="text-center py-12 text-zinc-500">
+                  No audit log entries found
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Pagination -->
+      <div class="flex items-center justify-between">
+        <span class="text-sm text-zinc-400">
+          Showing {{ entries().length }} entries
+        </span>
+        <div class="flex items-center gap-2">
+          <button
+            (click)="prevPage()"
+            [disabled]="offset() === 0"
+            aria-label="Previous page"
+            class="p-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 disabled:cursor-not-allowed text-zinc-300"
+          >
+            <lucide-icon [img]="ChevronLeft" [size]="16" />
+          </button>
+          <span class="text-sm text-zinc-400">Page {{ page() }}</span>
+          <button
+            (click)="nextPage()"
+            [disabled]="entries().length < pageSize"
+            aria-label="Next page"
+            class="p-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 disabled:cursor-not-allowed text-zinc-300"
+          >
+            <lucide-icon [img]="ChevronRight" [size]="16" />
+          </button>
+        </div>
+      </div>
+    </div>
+  `,
+})
+export class AuditLogComponent implements OnInit, OnChanges {
+  private backend = inject(BackendService);
+
+  @Input() connectionId!: string;
+
+  readonly ScrollText = ScrollText;
+  readonly ChevronLeft = ChevronLeft;
+  readonly ChevronRight = ChevronRight;
+  readonly Filter = Filter;
+
+  entries = signal<AuditLogEntry[]>([]);
+  loadError = signal<string | null>(null);
+  loading = signal(false);
+  projects = signal<Project[]>([]);
+  selectedProjectId = signal<string>('');
+  actionFilter = '';
+  readonly pageSize = 50;
+  offset = signal(0);
+  page = signal(1);
+
+  ngOnInit(): void {
+    if (!this.connectionId) {
+      this.loadError.set('Connection ID is required');
+      return;
+    }
+    this.populateProjects();
+    this.loadLogs();
+  }
+
+  ngOnChanges(changes: SimpleChanges): void {
+    if (changes['connectionId'] && !changes['connectionId'].firstChange) {
+      this.offset.set(0);
+      this.page.set(1);
+      this.actionFilter = '';
+      this.populateProjects();
+      this.loadLogs();
+    }
+  }
+
+  private populateProjects(): void {
+    const conn = this.backend.getConnection(this.connectionId);
+    const projectList = conn?.projects ?? [];
+    this.projects.set(projectList);
+    this.selectedProjectId.set(projectList[0]?.id ?? '');
+  }
+
+  onProjectChange(projectId: string): void {
+    this.selectedProjectId.set(projectId);
+    this.offset.set(0);
+    this.page.set(1);
+    this.loadLogs();
+  }
+
+  onFilterChange(): void {
+    this.offset.set(0);
+    this.page.set(1);
+    this.loadLogs();
+  }
+
+  private loadRequestId = 0;
+
+  async loadLogs(): Promise<void> {
+    const currentRequestId = ++this.loadRequestId;
+    this.loading.set(true);
+    this.loadError.set(null);
+    try {
+      const projectId = this.selectedProjectId();
+      if (!projectId) {
+        this.entries.set([]);
+        this.loading.set(false);
+        return;
+      }
+      const entries = await this.backend.getAuditLogsFor(this.connectionId, projectId, {
+        limit: this.pageSize,
+        offset: this.offset(),
+        action: this.actionFilter || undefined,
+      });
+      if (currentRequestId !== this.loadRequestId) return;
+      this.entries.set(entries);
+    } catch (e: any) {
+      if (currentRequestId !== this.loadRequestId) return;
+      this.loadError.set('Failed to load audit logs');
+      console.error('Failed to load audit logs:', e);
+    } finally {
+      if (currentRequestId === this.loadRequestId) {
+        this.loading.set(false);
+      }
+    }
+  }
+
+  async nextPage(): Promise<void> {
+    this.offset.update(o => o + this.pageSize);
+    this.page.update(p => p + 1);
+    await this.loadLogs();
+  }
+
+  async prevPage(): Promise<void> {
+    this.offset.update(o => Math.max(0, o - this.pageSize));
+    this.page.update(p => Math.max(1, p - 1));
+    await this.loadLogs();
+  }
+
+  formatTime(iso: string): string {
+    const d = new Date(iso);
+    return d.toLocaleString();
+  }
+
+  formatDetails(details: Record<string, unknown> | null | undefined): string {
+    if (!details) return '';
+    return JSON.stringify(details);
+  }
+
+  getActionClass(action: string): string {
+    if (action.includes('delete') || action.includes('remove')) return 'bg-red-500/20 text-red-400';
+    if (action.includes('create') || action.includes('invite')) return 'bg-green-500/20 text-green-400';
+    if (action.includes('connect') || action.includes('start')) return 'bg-blue-500/20 text-blue-400';
+    return 'bg-zinc-700 text-zinc-400';
+  }
+}

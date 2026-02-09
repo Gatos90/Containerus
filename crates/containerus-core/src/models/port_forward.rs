@@ -76,6 +76,10 @@ pub struct CreatePortForwardRequest {
     pub protocol: Option<String>,
     /// Remote host - defaults to container IP or localhost
     pub remote_host: Option<String>,
+    /// WebSocket tunnel URL for backend systems (None for local SSH)
+    pub tunnel_ws_url: Option<String>,
+    /// JWT token for WebSocket auth (None for local SSH)
+    pub tunnel_token: Option<String>,
 }
 
 #[cfg(test)]

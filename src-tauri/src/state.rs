@@ -9,6 +9,7 @@ use crate::database;
 use crate::keyring_store::SshCredentials;
 use crate::models::command_template::{CommandTemplate, CreateCommandTemplateRequest, UpdateCommandTemplateRequest};
 use crate::models::container::ContainerRuntime;
+use crate::models::credentials::BackendTokens;
 use crate::models::error::ContainerError;
 use crate::models::system::{ConnectionState, ContainerSystem, SystemId};
 
@@ -18,6 +19,7 @@ pub struct AppState {
     connection_states: Mutex<HashMap<String, ConnectionState>>,
     ssh_credential_cache: Mutex<HashMap<String, SshCredentials>>,
     ai_key_cache: Mutex<HashMap<String, String>>,
+    backend_token_cache: Mutex<HashMap<String, BackendTokens>>,
 }
 
 impl AppState {
@@ -52,18 +54,25 @@ impl AppState {
             connection_states: Mutex::new(connection_states),
             ssh_credential_cache: Mutex::new(HashMap::new()),
             ai_key_cache: Mutex::new(HashMap::new()),
+            backend_token_cache: Mutex::new(HashMap::new()),
         }
     }
 }
 
 impl AppState {
-    /// Add a new system to the state
+    /// Add a new system to the state.
+    ///
+    /// Lock ordering: systems first, then db -- consistent with other methods
+    /// to avoid potential deadlocks.
     pub fn add_system(&self, mut system: ContainerSystem) -> Result<ContainerSystem, ContainerError> {
         if system.id.0.trim().is_empty() {
             system.id = SystemId(Uuid::new_v4().to_string());
         }
 
-        // Persist to database
+        // 1. Lock systems first to maintain consistent lock ordering.
+        let mut systems = self.systems.lock().unwrap();
+
+        // 2. Persist to database while holding the systems lock.
         if let Err(e) = database::insert_system(&self.db.lock().unwrap(), &system) {
             tracing::error!("Failed to persist system to database: {}", e);
             return Err(ContainerError::DatabaseError {
@@ -76,7 +85,7 @@ impl AppState {
             .unwrap()
             .insert(system.id.0.clone(), ConnectionState::Disconnected);
 
-        self.systems.lock().unwrap().push(system.clone());
+        systems.push(system.clone());
         Ok(system)
     }
 
@@ -133,21 +142,45 @@ impl AppState {
         }
     }
 
-    /// Update a system's available runtimes
+    /// Update a system's available runtimes, and optionally its primary runtime.
+    ///
+    /// Lock ordering: systems first, then db -- consistent with other methods
+    /// to avoid potential deadlocks.
     pub fn update_system_runtimes(
         &self,
         system_id: &str,
         runtimes: HashSet<ContainerRuntime>,
+        new_primary: Option<ContainerRuntime>,
     ) {
-        // Update in database
-        if let Err(e) = database::update_system_runtimes(&self.db.lock().unwrap(), system_id, &runtimes) {
+        // 1. Lock systems first, update in-memory state.
+        let mut systems = self.systems.lock().unwrap();
+        let Some(system) = systems.iter_mut().find(|s| s.id.0 == system_id) else {
+            tracing::warn!("update_system_runtimes: system {system_id} not found, skipping");
+            return;
+        };
+        system.available_runtimes = runtimes.clone();
+        if let Some(primary) = new_primary {
+            system.primary_runtime = primary;
+        }
+        drop(systems);
+
+        // 2. Persist to database. If DB writes fail we log the error but do not
+        //    roll back the in-memory state: the in-memory values reflect the true
+        //    runtime reality reported by the container engine, so keeping them is
+        //    correct. The DB will catch up on the next successful write or restart.
+        let db = self.db.lock().unwrap();
+
+        if let Err(e) = database::update_system_runtimes(&db, system_id, &runtimes) {
             tracing::error!("Failed to update runtimes in database: {}", e);
         }
 
-        let mut systems = self.systems.lock().unwrap();
-        if let Some(system) = systems.iter_mut().find(|s| s.id.0 == system_id) {
-            system.available_runtimes = runtimes;
+        if let Some(primary) = new_primary {
+            if let Err(e) = database::update_primary_runtime(&db, system_id, primary) {
+                tracing::error!("Failed to update primary runtime in database: {}", e);
+            }
         }
+
+        drop(db);
     }
 
     /// Set connection state for a system
@@ -443,16 +476,45 @@ impl AppState {
         self.ai_key_cache.lock().unwrap().remove(provider);
     }
 
+    // ============================================================================
+    // Backend Token Cache Methods
+    // ============================================================================
+
+    pub fn cache_backend_tokens(&self, id: &str, tokens: BackendTokens) {
+        self.backend_token_cache
+            .lock()
+            .unwrap()
+            .insert(id.to_string(), tokens);
+    }
+
+    pub fn get_cached_backend_tokens(&self, id: &str) -> Option<BackendTokens> {
+        self.backend_token_cache
+            .lock()
+            .unwrap()
+            .get(id)
+            .cloned()
+    }
+
+    pub fn remove_cached_backend_tokens(&self, id: &str) {
+        self.backend_token_cache.lock().unwrap().remove(id);
+    }
+
+    pub fn clear_all_backend_tokens(&self) {
+        self.backend_token_cache.lock().unwrap().clear();
+    }
+
     /// Flush the in-memory credential caches to the single keyring vault entry.
     /// Called after every credential mutation on desktop.
     #[cfg(not(target_os = "android"))]
     pub fn flush_vault(&self) -> Result<(), String> {
         let ssh = self.ssh_credential_cache.lock().unwrap().clone();
         let ai = self.ai_key_cache.lock().unwrap().clone();
+        let backend = self.backend_token_cache.lock().unwrap().clone();
         let vault = crate::keyring_store::CredentialVault {
             version: 1,
             ssh_credentials: ssh,
             ai_api_keys: ai,
+            backend_tokens: backend,
         };
         crate::keyring_store::save_vault(&vault)
     }

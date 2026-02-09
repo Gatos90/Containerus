@@ -24,6 +24,8 @@ import { TerminalService } from '../../../../core/services/terminal.service';
 import { SystemState } from '../../../../state/system.state';
 import { ToastState } from '../../../../state/toast.state';
 
+const DEFAULT_SHELL = '/bin/sh';
+
 @Component({
   selector: 'app-container-detail-modal',
   imports: [LucideAngularModule, ContainerDetailsComponent],
@@ -61,7 +63,7 @@ export class ContainerDetailModalComponent {
     const system = this.systemState.systems().find(s => s.id === c.systemId);
     if (!system) return;
     try {
-      const session = await this.terminalService.startSession(c.systemId, c.id);
+      const session = await this.terminalService.startSession(c.systemId, c.id, DEFAULT_SHELL, 80, 24, c.runtime);
       this.terminalState.addTerminal({
         id: this.terminalState.generateTerminalId(),
         session,

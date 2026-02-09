@@ -100,4 +100,47 @@ export const routes: Routes = [
         (m) => m.SettingsPageComponent
       ),
   },
+  // Backend routes
+  {
+    path: 'backends',
+    loadComponent: () =>
+      import('./features/backend/backend-view/backend-view.component').then(
+        (m) => m.BackendViewComponent
+      ),
+  },
+  {
+    path: 'backends/:connectionId',
+    loadComponent: () =>
+      import('./features/backend/project-list/project-list.component').then(
+        (m) => m.ProjectListComponent
+      ),
+  },
+  {
+    path: 'backends/:connectionId/projects/:projectId',
+    loadComponent: () =>
+      import('./features/backend/project-detail/project-detail.component').then(
+        (m) => m.ProjectDetailComponent
+      ),
+  },
+  {
+    path: 'backends/:connectionId/projects/:projectId/environments/:envId',
+    loadComponent: () =>
+      import('./features/backend/environment-detail/environment-detail.component').then(
+        (m) => m.EnvironmentDetailComponent
+      ),
+  },
+  {
+    path: 'backend-connect',
+    loadComponent: () =>
+      import('./features/backend/connect/backend-connect.component').then(
+        (m) => m.BackendConnectComponent
+      ),
+  },
+  {
+    path: 'login',
+    loadComponent: () =>
+      import('./features/backend/login/login.component').then(
+        (m) => m.LoginComponent
+      ),
+  },
 ];

@@ -80,6 +80,7 @@ export class TerminalViewComponent implements OnInit, AfterViewInit, OnDestroy {
   session: TerminalSession | null = null;
   systemId: string | null = null;
   containerId: string | null = null;
+  containerRuntime: ContainerRuntime | null = null;
   isFullscreen = false;
   showWarpTerminal = signal(false);
 
@@ -99,6 +100,10 @@ export class TerminalViewComponent implements OnInit, AfterViewInit, OnDestroy {
   ngOnInit(): void {
     this.systemId = this.route.snapshot.paramMap.get('systemId');
     this.containerId = this.route.snapshot.paramMap.get('containerId');
+    const runtimeParam = this.route.snapshot.queryParamMap.get('runtime');
+    const validRuntimes = ['docker', 'podman', 'apple'];
+    this.containerRuntime = runtimeParam && validRuntimes.includes(runtimeParam)
+        ? (runtimeParam as ContainerRuntime) : null;
   }
 
   async ngAfterViewInit(): Promise<void> {
@@ -204,7 +209,10 @@ export class TerminalViewComponent implements OnInit, AfterViewInit, OnDestroy {
       this.session = await this.terminalService.startSession(
         this.systemId,
         this.containerId ?? undefined,
-        '/bin/sh'
+        '/bin/sh',
+        this.terminal?.cols ?? 80,
+        this.terminal?.rows ?? 24,
+        this.containerRuntime ?? undefined,
       );
 
       await this.terminalService.onOutput(this.session.id, (data) => {

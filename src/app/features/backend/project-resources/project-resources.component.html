@@ -1,0 +1,386 @@
+<div class="space-y-6 p-4">
+  <!-- Loading spinner -->
+  @if (loading()) {
+    <div class="flex items-center justify-center py-12">
+      <lucide-icon [img]="Loader2" [size]="24" class="animate-spin text-zinc-400" />
+    </div>
+  }
+
+  @if (!loading()) {
+    <!-- ================================================================== -->
+    <!-- CONTAINERS SECTION                                                  -->
+    <!-- ================================================================== -->
+    <section>
+      <!-- Header -->
+      <div class="flex items-center justify-between mb-4">
+        <div class="flex items-center gap-2">
+          <lucide-icon [img]="Box" [size]="18" class="text-zinc-400" />
+          <h2 class="text-lg font-medium text-zinc-200">Containers</h2>
+          <span class="bg-zinc-800 text-zinc-400 text-xs font-medium px-2 py-0.5 rounded-full">
+            {{ stats().total }}
+          </span>
+          <!-- Status badges -->
+          @if (stats().total > 0) {
+            <div class="flex items-center gap-2 text-xs ml-2">
+              <span class="text-green-400">{{ stats().running }} running</span>
+              @if (stats().stopped > 0) {
+                <span class="text-zinc-600">|</span>
+                <span class="text-red-400">{{ stats().stopped }} stopped</span>
+              }
+              @if (stats().paused > 0) {
+                <span class="text-zinc-600">|</span>
+                <span class="text-yellow-400">{{ stats().paused }} paused</span>
+              }
+            </div>
+          }
+        </div>
+        <button
+          (click)="refresh()"
+          [disabled]="refreshing()"
+          class="flex items-center gap-1.5 text-zinc-400 hover:text-zinc-200 text-sm border border-zinc-700 rounded-lg px-3 py-1.5 hover:bg-zinc-800 transition-colors"
+        >
+          <lucide-icon [img]="RefreshCw" [size]="14" [class.animate-spin]="refreshing()" />
+          Refresh
+        </button>
+      </div>
+
+      <!-- Search + filter bar -->
+      @if (stats().total > 0) {
+        <div class="flex items-center gap-3 mb-4">
+          <div class="relative flex-1 max-w-xs">
+            <lucide-icon [img]="Search" [size]="14" class="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
+            <input
+              type="text"
+              placeholder="Search containers..."
+              [ngModel]="searchQuery()"
+              (ngModelChange)="searchQuery.set($event)"
+              class="w-full h-9 pl-9 pr-4 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-blue-500 focus:outline-none"
+            />
+          </div>
+          <select
+            [ngModel]="statusFilter()"
+            (ngModelChange)="statusFilter.set($event)"
+            class="h-9 px-3 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-zinc-100 focus:border-blue-500 focus:outline-none"
+          >
+            <option [ngValue]="null">All Status</option>
+            <option value="running">Running</option>
+            <option value="exited">Stopped</option>
+            <option value="paused">Paused</option>
+            <option value="created">Created</option>
+          </select>
+        </div>
+      }
+
+      <!-- Container cards -->
+      @if (systems().length === 0) {
+        <div class="text-center py-10 text-zinc-500">
+          <lucide-icon [img]="Server" [size]="32" class="mx-auto mb-3 opacity-50" />
+          <p class="text-sm">No systems in this environment.</p>
+          <p class="text-xs mt-1">Add systems in the <strong class="text-zinc-400">Servers</strong> tab to see containers here.</p>
+        </div>
+      } @else if (connectedSystemCount() === 0) {
+        <div class="text-center py-10 text-zinc-500">
+          <lucide-icon [img]="AlertCircle" [size]="32" class="mx-auto mb-3 opacity-50" />
+          <p class="text-sm">No connected systems.</p>
+          <p class="text-xs mt-1">Connect to a system in the <strong class="text-zinc-400">Servers</strong> tab to view its containers.</p>
+        </div>
+      } @else if (filteredContainers().length === 0 && stats().total === 0) {
+        <div class="text-center py-10 text-zinc-500 text-sm">
+          No containers found on connected systems.
+        </div>
+      } @else if (filteredContainers().length === 0) {
+        <div class="text-center py-8 text-zinc-500 text-sm">
+          No containers match current filters.
+        </div>
+      } @else {
+        <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+          @for (container of filteredContainers(); track container.id) {
+            <div class="bg-zinc-900 rounded-xl border border-zinc-700/50 p-4 hover:bg-zinc-800/50 transition-colors">
+              <!-- Name + image -->
+              <div class="mb-2">
+                <div class="font-medium text-sm text-zinc-100 truncate">{{ getDisplayName(container) }}</div>
+                <div class="text-xs text-zinc-500 truncate mt-0.5">{{ container.image }}</div>
+              </div>
+
+              <!-- Status + system -->
+              <div class="flex items-center justify-between mb-3">
+                <div class="flex items-center gap-1.5">
+                  <span
+                    class="w-1.5 h-1.5 rounded-full"
+                    [class.bg-green-400]="container.status === 'running'"
+                    [class.bg-red-400]="container.status === 'exited' || container.status === 'dead'"
+                    [class.bg-yellow-400]="container.status === 'paused'"
+                    [class.bg-orange-400]="container.status === 'created'"
+                    [class.bg-blue-400]="container.status === 'restarting'"
+                  ></span>
+                  <span
+                    class="text-xs font-medium"
+                    [class.text-green-400]="container.status === 'running'"
+                    [class.text-red-400]="container.status === 'exited' || container.status === 'dead'"
+                    [class.text-yellow-400]="container.status === 'paused'"
+                    [class.text-orange-400]="container.status === 'created'"
+                    [class.text-blue-400]="container.status === 'restarting'"
+                  >
+                    {{ getStatusText(container.status) }}
+                  </span>
+                </div>
+                <span class="text-[11px] text-zinc-600 truncate ml-2">{{ getSystemName(container.systemId) }}</span>
+              </div>
+
+              <!-- Action buttons -->
+              <div class="flex items-center gap-1.5 border-t border-zinc-700/50 pt-3">
+                @if (container.status === 'running') {
+                  <button
+                    (click)="containerAction(container, 'stop')"
+                    [disabled]="isActionLoading(container.id)"
+                    class="flex items-center gap-1 px-2.5 py-1 rounded-md text-xs text-red-400 hover:bg-red-500/10 transition-colors disabled:opacity-50"
+                  >
+                    <lucide-icon [img]="Square" [size]="12" />
+                    Stop
+                  </button>
+                  <button
+                    (click)="containerAction(container, 'restart')"
+                    [disabled]="isActionLoading(container.id)"
+                    class="flex items-center gap-1 px-2.5 py-1 rounded-md text-xs text-zinc-400 hover:bg-zinc-700/50 hover:text-zinc-200 transition-colors disabled:opacity-50"
+                  >
+                    <lucide-icon [img]="RotateCcw" [size]="12" />
+                    Restart
+                  </button>
+                } @else if (container.status === 'exited' || container.status === 'created' || container.status === 'dead') {
+                  <button
+                    (click)="containerAction(container, 'start')"
+                    [disabled]="isActionLoading(container.id)"
+                    class="flex items-center gap-1 px-2.5 py-1 rounded-md text-xs text-green-400 hover:bg-green-500/10 transition-colors disabled:opacity-50"
+                  >
+                    <lucide-icon [img]="Play" [size]="12" />
+                    Start
+                  </button>
+                  <button
+                    (click)="confirmRemove(container)"
+                    [disabled]="isActionLoading(container.id)"
+                    class="flex items-center gap-1 px-2.5 py-1 rounded-md text-xs text-zinc-400 hover:bg-red-500/10 hover:text-red-400 transition-colors disabled:opacity-50"
+                  >
+                    <lucide-icon [img]="Trash2" [size]="12" />
+                    Remove
+                  </button>
+                } @else if (container.status === 'paused') {
+                  <button
+                    (click)="containerAction(container, 'unpause')"
+                    [disabled]="isActionLoading(container.id)"
+                    class="flex items-center gap-1 px-2.5 py-1 rounded-md text-xs text-green-400 hover:bg-green-500/10 transition-colors disabled:opacity-50"
+                  >
+                    <lucide-icon [img]="Play" [size]="12" />
+                    Unpause
+                  </button>
+                }
+                @if (isActionLoading(container.id)) {
+                  <lucide-icon [img]="Loader2" [size]="14" class="animate-spin text-zinc-500 ml-auto" />
+                }
+              </div>
+            </div>
+          }
+        </div>
+      }
+    </section>
+
+    <!-- ================================================================== -->
+    <!-- KUBERNETES WORKLOADS SECTION                                        -->
+    <!-- ================================================================== -->
+    <section>
+      <div class="flex items-center justify-between mb-4">
+        <div class="flex items-center gap-2">
+          <lucide-icon [img]="Cloud" [size]="18" class="text-zinc-400" />
+          <h2 class="text-lg font-medium text-zinc-200">Kubernetes Workloads</h2>
+          <span class="bg-zinc-800 text-zinc-400 text-xs font-medium px-2 py-0.5 rounded-full">
+            {{ clusters().length }} cluster{{ clusters().length !== 1 ? 's' : '' }}
+          </span>
+        </div>
+      </div>
+
+      @if (clusters().length === 0) {
+        <div class="text-center py-10 text-zinc-500">
+          <lucide-icon [img]="Cloud" [size]="32" class="mx-auto mb-3 opacity-50" />
+          <p class="text-sm">No Kubernetes clusters in this environment.</p>
+          <p class="text-xs mt-1">Add clusters in the <strong class="text-zinc-400">Servers</strong> tab.</p>
+        </div>
+      } @else {
+        <!-- Cluster selector pills -->
+        <div class="flex flex-wrap gap-2 mb-4">
+          @for (cluster of clusters(); track cluster.id) {
+            <button
+              (click)="selectCluster(cluster)"
+              class="px-3 py-1.5 rounded-lg text-sm border transition-colors"
+              [class]="selectedCluster()?.id === cluster.id
+                ? 'bg-blue-600/20 border-blue-500 text-blue-400'
+                : 'bg-zinc-800 border-zinc-700 text-zinc-300 hover:border-zinc-600'"
+            >
+              <div class="flex items-center gap-2">
+                <span
+                  class="w-1.5 h-1.5 rounded-full"
+                  [class]="cluster.isActive ? 'bg-green-500' : 'bg-zinc-500'"
+                ></span>
+                {{ cluster.name }}
+              </div>
+            </button>
+          }
+        </div>
+
+        <!-- Cluster detail -->
+        @if (selectedCluster()) {
+          <div class="space-y-4">
+            <!-- Namespace selector + refresh -->
+            <div class="flex items-center gap-3">
+              <label class="text-sm text-zinc-300">Namespace:</label>
+              <select
+                class="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-zinc-100 text-sm focus:border-blue-500 focus:outline-none"
+                [ngModel]="selectedNs()"
+                (ngModelChange)="selectNamespace($event)"
+              >
+                @for (ns of namespaces(); track ns.name) {
+                  <option [value]="ns.name">{{ ns.name }}</option>
+                }
+              </select>
+              <button
+                (click)="refreshClusterData()"
+                class="text-zinc-400 hover:text-zinc-200 p-1"
+                title="Refresh"
+              >
+                <lucide-icon [img]="RefreshCw" [size]="14" [class.animate-spin]="refreshingK8s()" />
+              </button>
+            </div>
+
+            <!-- Sub-tabs -->
+            <div class="flex gap-1 border-b border-zinc-800">
+              @for (tab of k8sTabs; track tab.key) {
+                <button
+                  (click)="activeK8sTab.set(tab.key)"
+                  class="px-4 py-2 text-sm transition-colors border-b-2"
+                  [class]="activeK8sTab() === tab.key ? 'text-blue-400 border-blue-400' : 'text-zinc-400 border-transparent hover:text-zinc-300'"
+                >
+                  {{ tab.label }}
+                </button>
+              }
+            </div>
+
+            <!-- Pods table -->
+            @if (activeK8sTab() === 'pods') {
+              <div class="bg-zinc-900 rounded-xl border border-zinc-800 overflow-hidden">
+                <table class="w-full text-sm">
+                  <thead>
+                    <tr class="border-b border-zinc-800 text-zinc-400 text-left">
+                      <th class="px-4 py-2 font-medium">Name</th>
+                      <th class="px-4 py-2 font-medium">Ready</th>
+                      <th class="px-4 py-2 font-medium">Status</th>
+                      <th class="px-4 py-2 font-medium">Restarts</th>
+                      <th class="px-4 py-2 font-medium">Age</th>
+                      <th class="px-4 py-2 font-medium">Node</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    @for (pod of pods(); track pod.name) {
+                      <tr class="border-b border-zinc-800/50 hover:bg-zinc-800/30">
+                        <td class="px-4 py-2 text-zinc-200 font-mono text-xs">{{ pod.name }}</td>
+                        <td class="px-4 py-2 text-zinc-300">{{ pod.ready }}</td>
+                        <td class="px-4 py-2">
+                          <span class="text-xs px-1.5 py-0.5 rounded" [class]="getPodStatusClass(pod.status)">
+                            {{ pod.status }}
+                          </span>
+                        </td>
+                        <td class="px-4 py-2 text-zinc-300">{{ pod.restarts }}</td>
+                        <td class="px-4 py-2 text-zinc-400">{{ pod.age }}</td>
+                        <td class="px-4 py-2 text-zinc-400 text-xs">{{ pod.node ?? '-' }}</td>
+                      </tr>
+                    } @empty {
+                      <tr><td colspan="6" class="text-center py-8 text-zinc-500">No pods found</td></tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+            }
+
+            <!-- Deployments table -->
+            @if (activeK8sTab() === 'deployments') {
+              <div class="bg-zinc-900 rounded-xl border border-zinc-800 overflow-hidden">
+                <table class="w-full text-sm">
+                  <thead>
+                    <tr class="border-b border-zinc-800 text-zinc-400 text-left">
+                      <th class="px-4 py-2 font-medium">Name</th>
+                      <th class="px-4 py-2 font-medium">Ready</th>
+                      <th class="px-4 py-2 font-medium">Up-to-date</th>
+                      <th class="px-4 py-2 font-medium">Available</th>
+                      <th class="px-4 py-2 font-medium">Age</th>
+                      <th class="px-4 py-2 font-medium">Scale</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    @for (dep of deployments(); track dep.name) {
+                      <tr class="border-b border-zinc-800/50 hover:bg-zinc-800/30">
+                        <td class="px-4 py-2 text-zinc-200 font-mono text-xs">{{ dep.name }}</td>
+                        <td class="px-4 py-2 text-zinc-300">{{ dep.ready }}</td>
+                        <td class="px-4 py-2 text-zinc-300">{{ dep.upToDate }}</td>
+                        <td class="px-4 py-2 text-zinc-300">{{ dep.available }}</td>
+                        <td class="px-4 py-2 text-zinc-400">{{ dep.age }}</td>
+                        <td class="px-4 py-2">
+                          <div class="flex items-center gap-1">
+                            <button
+                              (click)="scaleDown(dep)"
+                              class="text-zinc-400 hover:text-zinc-200 text-xs px-1"
+                              aria-label="Scale down"
+                            >-</button>
+                            <button
+                              (click)="scaleUp(dep)"
+                              class="text-zinc-400 hover:text-zinc-200 text-xs px-1"
+                              aria-label="Scale up"
+                            >+</button>
+                          </div>
+                        </td>
+                      </tr>
+                    } @empty {
+                      <tr><td colspan="6" class="text-center py-8 text-zinc-500">No deployments found</td></tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+            }
+
+            <!-- Services table -->
+            @if (activeK8sTab() === 'services') {
+              <div class="bg-zinc-900 rounded-xl border border-zinc-800 overflow-hidden">
+                <table class="w-full text-sm">
+                  <thead>
+                    <tr class="border-b border-zinc-800 text-zinc-400 text-left">
+                      <th class="px-4 py-2 font-medium">Name</th>
+                      <th class="px-4 py-2 font-medium">Type</th>
+                      <th class="px-4 py-2 font-medium">Cluster IP</th>
+                      <th class="px-4 py-2 font-medium">External IP</th>
+                      <th class="px-4 py-2 font-medium">Ports</th>
+                      <th class="px-4 py-2 font-medium">Age</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    @for (svc of services(); track svc.name) {
+                      <tr class="border-b border-zinc-800/50 hover:bg-zinc-800/30">
+                        <td class="px-4 py-2 text-zinc-200 font-mono text-xs">{{ svc.name }}</td>
+                        <td class="px-4 py-2 text-zinc-300">{{ svc.serviceType }}</td>
+                        <td class="px-4 py-2 text-zinc-400 text-xs">{{ svc.clusterIp ?? '-' }}</td>
+                        <td class="px-4 py-2 text-zinc-400 text-xs">{{ svc.externalIp ?? '-' }}</td>
+                        <td class="px-4 py-2 text-zinc-400 text-xs">{{ svc.ports?.join(', ') || '-' }}</td>
+                        <td class="px-4 py-2 text-zinc-400">{{ svc.age }}</td>
+                      </tr>
+                    } @empty {
+                      <tr><td colspan="6" class="text-center py-8 text-zinc-500">No services found</td></tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+            }
+          </div>
+        } @else {
+          <div class="text-center py-6 text-zinc-500 text-sm">
+            Select a cluster above to view workloads.
+          </div>
+        }
+      }
+    </section>
+  }
+</div>

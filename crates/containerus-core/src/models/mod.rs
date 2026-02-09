@@ -1,17 +1,19 @@
 pub mod agent;
 pub mod command_template;
 pub mod container;
+pub mod credentials;
 pub mod error;
+pub mod file_browser;
 pub mod image;
 pub mod network;
 pub mod port_forward;
 pub mod system;
-pub mod file_browser;
 pub mod volume;
 
 pub use agent::*;
 pub use command_template::*;
 pub use container::*;
+pub use credentials::*;
 pub use error::*;
 pub use image::*;
 pub use network::*;

@@ -1,0 +1,7 @@
+[workspace]
+members = [
+    "src-tauri",
+    "crates/containerus-core",
+    "crates/containerus-server",
+]
+resolver = "2"

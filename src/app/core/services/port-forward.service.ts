@@ -4,10 +4,25 @@ import {
   CreatePortForwardRequest,
   PortForward,
 } from '../models/port-forward.model';
+import { BackendService } from './backend.service';
 
 @Injectable({ providedIn: 'root' })
 export class PortForwardService {
+  constructor(private backend: BackendService) {}
+
   async createForward(request: CreatePortForwardRequest): Promise<PortForward> {
+    // For backend systems, inject WebSocket tunnel URL + token
+    const connId = this.backend.getBackendForSystem(request.systemId);
+    if (connId) {
+      const tunnel = this.backend.getTunnelWsUrl(connId, request.systemId);
+      if (tunnel) {
+        request = {
+          ...request,
+          tunnelWsUrl: tunnel.url,
+          tunnelToken: tunnel.token,
+        };
+      }
+    }
     return invoke<PortForward>('create_port_forward', { request });
   }
 

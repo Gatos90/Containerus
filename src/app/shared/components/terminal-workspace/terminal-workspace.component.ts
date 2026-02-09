@@ -460,7 +460,7 @@ export class TerminalWorkspaceComponent implements AfterViewInit, OnDestroy {
     if (!system) return;
 
     try {
-      const session = await this.terminalService.startSession(systemId, container.id);
+      const session = await this.terminalService.startSession(systemId, container.id, '/bin/sh', 80, 24, container.runtime);
       const id = this.terminalState.generateTerminalId();
       this.terminalState.addTerminal({
         id,

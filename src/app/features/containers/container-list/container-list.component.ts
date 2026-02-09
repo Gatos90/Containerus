@@ -204,7 +204,7 @@ export class ContainerListComponent implements OnInit {
     const system = this.systemState.systems().find(s => s.id === container.systemId);
     if (!system) return;
     try {
-      const session = await this.terminalService.startSession(container.systemId, container.id);
+      const session = await this.terminalService.startSession(container.systemId, container.id, '/bin/sh', 80, 24, container.runtime);
       this.terminalState.addTerminal({
         id: this.terminalState.generateTerminalId(),
         session,

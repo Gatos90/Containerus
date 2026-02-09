@@ -1,37 +1,53 @@
 import { Injectable } from '@angular/core';
 import { ContainerRuntime } from '../models/container.model';
 import { ContainerImage } from '../models/image.model';
+import { BackendService } from './backend.service';
 import { TauriService } from './tauri.service';
 
 @Injectable({
   providedIn: 'root',
 })
 export class ImageService {
-  constructor(private tauri: TauriService) {}
+  constructor(
+    private tauri: TauriService,
+    private backend: BackendService,
+  ) {}
 
-  listImages(systemId: string): Promise<ContainerImage[]> {
+  async listImages(systemId: string): Promise<ContainerImage[]> {
+    const connId = this.backend.getBackendForSystem(systemId);
+    if (connId) {
+      return this.backend.listImagesFor(connId, systemId);
+    }
     return this.tauri.invoke<ContainerImage[]>('list_images', { systemId });
   }
 
-  pullImage(
+  async pullImage(
     systemId: string,
     name: string,
     tag: string,
     runtime: ContainerRuntime
   ): Promise<void> {
+    const connId = this.backend.getBackendForSystem(systemId);
+    if (connId) {
+      const image = tag ? `${name}:${tag}` : name;
+      return this.backend.pullImageFor(connId, systemId, image, runtime);
+    }
     return this.tauri.invoke<void>('pull_image', {
       systemId,
-      name,
-      tag,
+      image: tag ? `${name}:${tag}` : name,
       runtime,
     });
   }
 
-  removeImage(
+  async removeImage(
     systemId: string,
     imageId: string,
     runtime: ContainerRuntime
   ): Promise<void> {
+    const connId = this.backend.getBackendForSystem(systemId);
+    if (connId) {
+      return this.backend.removeImageFor(connId, systemId, imageId, runtime);
+    }
     return this.tauri.invoke<void>('remove_image', {
       systemId,
       imageId,

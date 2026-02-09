@@ -1,0 +1,310 @@
+<div class="flex flex-col h-full">
+  <!-- Header -->
+  <div class="p-3 sm:p-4 md:px-6 md:py-4 border-b border-zinc-800">
+    <div class="flex items-center justify-between">
+      <div class="flex items-center gap-3 min-w-0">
+        <button
+          (click)="goBack()"
+          class="text-zinc-400 hover:text-zinc-200 p-1.5 rounded-lg hover:bg-zinc-800 transition-colors flex-shrink-0"
+          title="Back to projects"
+        >
+          <lucide-icon [img]="ArrowLeft" [size]="18" />
+        </button>
+
+        <div class="min-w-0">
+          <!-- Breadcrumb -->
+          <div class="flex items-center gap-1.5 text-xs text-zinc-500">
+            <a
+              [routerLink]="['/backends']"
+              class="hover:text-zinc-300 transition-colors"
+            >Backends</a>
+            <lucide-icon [img]="ChevronRight" [size]="12" />
+            <a
+              [routerLink]="['/backends', connectionId()]"
+              class="hover:text-zinc-300 transition-colors truncate"
+            >{{ connection()?.label ?? 'Unknown' }}</a>
+            <lucide-icon [img]="ChevronRight" [size]="12" />
+            <span class="text-zinc-300 truncate">{{ project()?.name ?? 'Unknown Project' }}</span>
+          </div>
+
+          <h1 class="text-lg font-semibold text-zinc-100 truncate mt-0.5">
+            {{ project()?.name ?? 'Unknown Project' }}
+          </h1>
+        </div>
+      </div>
+
+      <!-- Delete Project -->
+      @if (confirmingDeleteProject()) {
+        <div class="flex items-center gap-1.5 flex-shrink-0">
+          <button
+            (click)="confirmingDeleteProject.set(false)"
+            class="text-xs text-zinc-400 hover:text-zinc-300 px-2 py-1 rounded hover:bg-zinc-800 transition-colors"
+          >Cancel</button>
+          <button
+            (click)="deleteProject()"
+            class="text-xs text-red-400 bg-red-950/40 hover:bg-red-950/60 px-2.5 py-1 rounded transition-colors"
+          >Delete</button>
+        </div>
+      } @else {
+        <button
+          (click)="promptDeleteProject()"
+          class="text-zinc-500 hover:text-red-400 p-1.5 rounded-lg hover:bg-zinc-800/50 transition-colors flex-shrink-0"
+          title="Delete project"
+        >
+          <lucide-icon [img]="Trash2" [size]="16" />
+        </button>
+      }
+    </div>
+  </div>
+
+  <!-- Loading state -->
+  @if (loading()) {
+    <div class="flex items-center justify-center gap-2 text-zinc-400 py-12">
+      <lucide-icon [img]="Loader2" [size]="16" class="animate-spin" />
+      Loading project...
+    </div>
+  }
+
+  <!-- Error state -->
+  @if (error()) {
+    <div class="p-4">
+      <div class="text-red-400 text-sm bg-red-950/30 rounded-lg p-3">
+        {{ error() }}
+      </div>
+    </div>
+  }
+
+  @if (!loading() && !error()) {
+    <!-- Tab bar -->
+    <div class="flex gap-1 px-4 border-b border-zinc-800">
+      @for (tab of tabs; track tab.key) {
+        <button
+          (click)="setTab(tab.key)"
+          class="px-4 py-2.5 text-sm transition-colors border-b-2 flex items-center gap-1.5"
+          [class]="activeTab() === tab.key ? 'text-blue-400 border-blue-400' : 'text-zinc-400 border-transparent hover:text-zinc-300'"
+        >
+          <lucide-icon [img]="tab.icon" [size]="14" />
+          {{ tab.label }}
+        </button>
+      }
+    </div>
+
+    <!-- Tab content -->
+    <div class="flex-1 overflow-auto">
+      @switch (activeTab()) {
+        @case ('environments') {
+          <div class="p-4 space-y-4">
+            <!-- Header -->
+            <div class="flex items-center justify-between">
+              <h2 class="text-lg font-medium text-zinc-200 flex items-center gap-2">
+                <lucide-icon [img]="Layers" [size]="18" />
+                Environments
+                <span class="bg-zinc-800 text-zinc-400 text-xs font-medium px-2 py-0.5 rounded-full">
+                  {{ environments().length }}
+                </span>
+              </h2>
+              <button
+                (click)="showAddEnvironment.set(true)"
+                class="bg-blue-600 hover:bg-blue-500 text-white text-sm rounded-lg px-3 py-1.5 flex items-center gap-1.5 transition-colors"
+              >
+                <lucide-icon [img]="Plus" [size]="14" />
+                Add Environment
+              </button>
+            </div>
+
+            @if (envError()) {
+              <div class="text-red-400 text-sm bg-red-950/30 rounded-lg p-3">
+                {{ envError() }}
+              </div>
+            }
+
+            <!-- Add Environment Inline Form -->
+            @if (showAddEnvironment()) {
+              <div class="border border-zinc-700 rounded-lg p-4 space-y-3 bg-zinc-900/50">
+                <div class="flex gap-2">
+                  <input
+                    type="text"
+                    [(ngModel)]="newEnvName"
+                    placeholder="Environment name (e.g. staging)"
+                    class="flex-1 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    (keydown.enter)="createEnvironment()"
+                    (keydown.escape)="showAddEnvironment.set(false)"
+                  />
+                </div>
+                <div class="flex gap-2">
+                  <input
+                    type="text"
+                    [(ngModel)]="newEnvDescription"
+                    placeholder="Description (optional)"
+                    class="flex-1 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    (keydown.enter)="createEnvironment()"
+                    (keydown.escape)="showAddEnvironment.set(false)"
+                  />
+                </div>
+                <div class="flex gap-2 justify-end">
+                  <button
+                    (click)="showAddEnvironment.set(false)"
+                    class="text-sm text-zinc-400 hover:text-zinc-300 px-3 py-1.5"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    (click)="createEnvironment()"
+                    [disabled]="!newEnvName?.trim() || saving()"
+                    class="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-sm rounded-lg px-3 py-1.5 transition-colors"
+                  >
+                    {{ saving() ? 'Creating...' : 'Create' }}
+                  </button>
+                </div>
+              </div>
+            }
+
+            <!-- Edit Environment Modal -->
+            @if (editingEnvironment()) {
+              <div class="border border-zinc-700 rounded-lg p-4 space-y-3 bg-zinc-900/50">
+                <h3 class="text-sm font-medium text-zinc-300">Edit "{{ editingEnvironment()!.name }}"</h3>
+                <div class="flex gap-2">
+                  <input
+                    type="text"
+                    [(ngModel)]="editEnvName"
+                    class="flex-1 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    (keydown.enter)="updateEnvironment()"
+                    (keydown.escape)="cancelEditEnvironment()"
+                  />
+                </div>
+                <div class="flex gap-2">
+                  <input
+                    type="text"
+                    [(ngModel)]="editEnvDescription"
+                    placeholder="Description (optional)"
+                    class="flex-1 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    (keydown.enter)="updateEnvironment()"
+                    (keydown.escape)="cancelEditEnvironment()"
+                  />
+                </div>
+                <div class="flex gap-2 justify-end">
+                  <button
+                    (click)="cancelEditEnvironment()"
+                    class="text-sm text-zinc-400 hover:text-zinc-300 px-3 py-1.5"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    (click)="updateEnvironment()"
+                    [disabled]="!editEnvName?.trim() || saving()"
+                    class="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-sm rounded-lg px-3 py-1.5 transition-colors"
+                  >
+                    {{ saving() ? 'Saving...' : 'Save' }}
+                  </button>
+                </div>
+              </div>
+            }
+
+            <!-- Environment Cards Grid -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              @for (env of environments(); track env.id) {
+                <div
+                  class="bg-zinc-900 rounded-xl border border-zinc-800 hover:border-zinc-600 cursor-pointer transition-all group relative"
+                  tabindex="0"
+                  role="button"
+                  (click)="openEnvironment(env.id)"
+                  (keydown.enter)="openEnvironment(env.id)"
+                  (keydown.space)="openEnvironment(env.id); $event.preventDefault()"
+                >
+                  <div class="p-4">
+                    <div class="flex items-start justify-between">
+                      <div class="min-w-0 flex-1">
+                        <div class="flex items-center gap-2">
+                          <h3 class="font-semibold text-zinc-100 truncate">{{ env.name }}</h3>
+                          @if (env.isDefault) {
+                            <span class="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-500/20 text-blue-400 flex-shrink-0">default</span>
+                          }
+                        </div>
+                        @if (env.description) {
+                          <p class="text-sm text-zinc-500 mt-1 line-clamp-2">{{ env.description }}</p>
+                        }
+                      </div>
+
+                      <!-- Action buttons (show on hover, or always show when confirming) -->
+                      <div class="flex items-center gap-1 ml-2 flex-shrink-0"
+                        [class]="confirmingDeleteEnvId() === env.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 transition-opacity'"
+                      >
+                        @if (confirmingDeleteEnvId() === env.id) {
+                          <button
+                            (click)="confirmingDeleteEnvId.set(null); $event.stopPropagation()"
+                            class="text-[11px] text-zinc-400 hover:text-zinc-300 px-1.5 py-0.5 rounded hover:bg-zinc-800 transition-colors"
+                          >Cancel</button>
+                          <button
+                            (click)="deleteEnvironment(env.id); $event.stopPropagation()"
+                            class="text-[11px] text-red-400 bg-red-950/40 hover:bg-red-950/60 px-1.5 py-0.5 rounded transition-colors"
+                          >Delete</button>
+                        } @else {
+                          <button
+                            (click)="startEditEnvironment(env); $event.stopPropagation()"
+                            class="text-zinc-500 hover:text-zinc-300 p-1 rounded hover:bg-zinc-800 transition-colors"
+                            title="Edit environment"
+                          >
+                            <lucide-icon [img]="Pencil" [size]="13" />
+                          </button>
+                          @if (!env.isDefault) {
+                            <button
+                              (click)="promptDeleteEnvironment(env.id, env.name); $event.stopPropagation()"
+                              class="text-zinc-500 hover:text-red-400 p-1 rounded hover:bg-zinc-800 transition-colors"
+                              title="Delete environment"
+                            >
+                              <lucide-icon [img]="Trash2" [size]="13" />
+                            </button>
+                          }
+                        }
+                      </div>
+                    </div>
+
+                    <!-- Resource counts -->
+                    <div class="flex items-center gap-3 mt-3 text-xs text-zinc-500">
+                      <span class="flex items-center gap-1">
+                        <lucide-icon [img]="Server" [size]="12" />
+                        {{ getEnvCounts(env.id).systems }} system{{ getEnvCounts(env.id).systems !== 1 ? 's' : '' }}
+                      </span>
+                      <span class="text-zinc-700">&middot;</span>
+                      <span class="flex items-center gap-1">
+                        <lucide-icon [img]="Cloud" [size]="12" />
+                        {{ getEnvCounts(env.id).clusters }} cluster{{ getEnvCounts(env.id).clusters !== 1 ? 's' : '' }}
+                      </span>
+                    </div>
+                  </div>
+
+                  <!-- Clickable indicator -->
+                  <div class="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-700 group-hover:text-zinc-500 transition-colors">
+                    <lucide-icon [img]="ChevronRightIcon" [size]="16" />
+                  </div>
+                </div>
+              } @empty {
+                <div class="col-span-full text-center py-12 text-zinc-500">
+                  <lucide-icon [img]="Layers" [size]="32" class="mx-auto mb-3 opacity-50" />
+                  <p class="text-sm">No environments yet.</p>
+                  <p class="text-xs mt-1">Create your first environment to start adding resources.</p>
+                </div>
+              }
+            </div>
+          </div>
+        }
+        @case ('members') {
+          <div class="p-4">
+            <app-project-members
+              [connectionId]="connectionId()"
+              [projectId]="projectId()"
+            />
+          </div>
+        }
+        @case ('audit') {
+          <div class="p-4">
+            <app-project-audit
+              [connectionId]="connectionId()"
+              [projectId]="projectId()"
+            />
+          </div>
+        }
+      }
+    </div>
+  }
+</div>

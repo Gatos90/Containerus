@@ -1,5 +1,6 @@
 pub mod agent;
 pub mod ai;
+pub mod backend;
 pub mod command_template;
 pub mod container;
 pub mod file_browser;
@@ -12,6 +13,7 @@ pub mod volume;
 
 pub use agent::*;
 pub use ai::*;
+pub use backend::*;
 pub use command_template::*;
 pub use container::*;
 pub use file_browser::*;

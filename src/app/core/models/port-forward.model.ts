@@ -23,4 +23,8 @@ export interface CreatePortForwardRequest {
   localPort?: number;
   protocol?: string;
   remoteHost?: string;
+  /** WebSocket tunnel URL for backend systems */
+  tunnelWsUrl?: string;
+  /** JWT token for WebSocket auth */
+  tunnelToken?: string;
 }

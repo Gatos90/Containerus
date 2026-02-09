@@ -23,6 +23,9 @@ export class SystemMonitoringService {
   /** Event listener cleanup function */
   private unlistenFn: UnlistenFn | null = null;
 
+  /** Backend polling interval handles (systemId → intervalId) */
+  private _backendPollers = new Map<string, ReturnType<typeof setInterval>>();
+
   /** Public readonly signals */
   readonly metrics = this._metrics.asReadonly();
   readonly history = this._history.asReadonly();
@@ -207,8 +210,74 @@ export class SystemMonitoringService {
       await this.stopMonitoring(systemId);
     }
 
+    // Stop all backend pollers
+    for (const systemId of Array.from(this._backendPollers.keys())) {
+      this.stopPollingBackend(systemId);
+    }
+
     this._metrics.set({});
     this._history.set({});
     this._monitoredSystems.set(new Set());
+  }
+
+  /**
+   * Start polling a backend system for live metrics via HTTP.
+   * Used for backend-managed systems that can't use Tauri events.
+   */
+  startPollingBackend(systemId: string, systemService: { getLiveMetrics(id: string): Promise<LiveSystemMetrics> }, intervalMs: number = 5000): void {
+    if (this._backendPollers.has(systemId)) return;
+
+    // Register placeholder immediately to prevent race conditions with stopPollingBackend
+    this._backendPollers.set(systemId, -1 as unknown as ReturnType<typeof setInterval>);
+    this._monitoredSystems.update(systems => new Set([...systems, systemId]));
+
+    const handle = setInterval(async () => {
+      try {
+        const metrics = await systemService.getLiveMetrics(systemId);
+        if (this._backendPollers.has(systemId)) {
+          this.updateMetrics(metrics);
+        }
+      } catch (err) {
+        console.warn(`Backend metrics poll failed for ${systemId}:`, err);
+      }
+    }, intervalMs);
+
+    // Update with actual handle, or clean up if stopped during setup
+    if (this._backendPollers.has(systemId)) {
+      this._backendPollers.set(systemId, handle);
+    } else {
+      clearInterval(handle);
+    }
+
+    // Fetch once immediately
+    systemService.getLiveMetrics(systemId).then(
+      metrics => {
+        if (this._backendPollers.has(systemId)) {
+          this.updateMetrics(metrics);
+        }
+      },
+      err => console.warn(`Backend metrics fetch failed for ${systemId}:`, err),
+    );
+  }
+
+  /**
+   * Stop polling a backend system for metrics.
+   */
+  stopPollingBackend(systemId: string): void {
+    const handle = this._backendPollers.get(systemId);
+    if (handle === undefined) return;
+
+    if (handle !== (-1 as unknown as ReturnType<typeof setInterval>)) {
+      clearInterval(handle);
+    }
+    this._backendPollers.delete(systemId);
+
+    this._monitoredSystems.update(systems => {
+      const newSet = new Set(systems);
+      newSet.delete(systemId);
+      return newSet;
+    });
+
+    this.clearMetrics(systemId);
   }
 }

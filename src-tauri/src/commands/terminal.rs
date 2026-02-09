@@ -107,6 +107,7 @@ pub async fn start_terminal_session(
     shell: String,
     cols: Option<u16>,
     rows: Option<u16>,
+    runtime: Option<String>,
 ) -> Result<TerminalSession, ContainerError> {
     let cols = cols.unwrap_or(80);
     let rows = rows.unwrap_or(24);
@@ -117,7 +118,17 @@ pub async fn start_terminal_session(
         .get_system(&system_id)
         .ok_or_else(|| ContainerError::SystemNotFound(system_id.clone()))?;
 
-    let command = build_terminal_command(&container_id, &shell, &system.primary_runtime);
+    // Use the container's runtime if provided, otherwise fall back to the system's primary runtime
+    let effective_runtime = runtime
+        .as_deref()
+        .map(|r| match r {
+            "podman" => ContainerRuntime::Podman,
+            "apple" => ContainerRuntime::Apple,
+            _ => ContainerRuntime::Docker,
+        })
+        .unwrap_or(system.primary_runtime);
+
+    let command = build_terminal_command(&container_id, &shell, &effective_runtime);
 
     match system.connection_type {
         ConnectionType::Local => {

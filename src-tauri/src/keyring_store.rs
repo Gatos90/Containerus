@@ -2,86 +2,10 @@
 /// All credentials (SSH + AI API keys) are stored in a single keyring vault entry,
 /// so macOS only prompts once. On Android, all functions return defaults — credentials stay in the DB.
 
-use std::collections::HashMap;
-use serde::{Deserialize, Serialize};
-
-/// Credentials for a single jump host, keyed by "hostname:port"
-#[derive(Clone, Default, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct JumpHostCredentials {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub password: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub passphrase: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub private_key: Option<String>,
-}
-
-impl std::fmt::Debug for JumpHostCredentials {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        f.debug_struct("JumpHostCredentials")
-            .field("password", &self.password.as_ref().map(|_| "[REDACTED]"))
-            .field("passphrase", &self.passphrase.as_ref().map(|_| "[REDACTED]"))
-            .field("private_key", &self.private_key.as_ref().map(|_| "[REDACTED]"))
-            .finish()
-    }
-}
-
-/// SSH credentials retrieved from the keyring
-#[derive(Clone, Default, Serialize, Deserialize)]
-pub struct SshCredentials {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub password: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub passphrase: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub private_key: Option<String>,
-    /// Per-jump-host credentials, keyed by "hostname:port"
-    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
-    pub jump_host_credentials: HashMap<String, JumpHostCredentials>,
-}
-
-impl std::fmt::Debug for SshCredentials {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        f.debug_struct("SshCredentials")
-            .field("password", &self.password.as_ref().map(|_| "[REDACTED]"))
-            .field("passphrase", &self.passphrase.as_ref().map(|_| "[REDACTED]"))
-            .field("private_key", &self.private_key.as_ref().map(|_| "[REDACTED]"))
-            .field("jump_host_credentials", &self.jump_host_credentials)
-            .finish()
-    }
-}
-
-impl SshCredentials {
-    pub fn is_empty(&self) -> bool {
-        self.password.is_none()
-            && self.passphrase.is_none()
-            && self.private_key.is_none()
-            && self.jump_host_credentials.is_empty()
-    }
-}
-
-/// Single vault containing ALL credentials, stored as one keyring entry.
-/// This ensures macOS only prompts once (one service name = one prompt).
-#[derive(Clone, Default, Serialize, Deserialize)]
-pub struct CredentialVault {
-    #[serde(default)]
-    pub version: u32,
-    #[serde(default)]
-    pub ssh_credentials: HashMap<String, SshCredentials>,
-    #[serde(default)]
-    pub ai_api_keys: HashMap<String, String>,
-}
-
-impl std::fmt::Debug for CredentialVault {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        f.debug_struct("CredentialVault")
-            .field("version", &self.version)
-            .field("ssh_credentials", &format!("{} systems", self.ssh_credentials.len()))
-            .field("ai_api_keys", &format!("{} keys", self.ai_api_keys.len()))
-            .finish()
-    }
-}
+// Re-export credential types from core library
+pub use containerus_core::models::credentials::{
+    JumpHostCredentials, SshCredentials, CredentialVault,
+};
 
 // ======================== Desktop implementation ========================
 

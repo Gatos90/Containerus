@@ -9,6 +9,7 @@ import {
   NewSystemRequest,
   UpdateSystemRequest,
 } from '../core/models/system.model';
+import { BackendService } from '../core/services/backend.service';
 import { SystemMonitoringService } from '../core/services/system-monitoring.service';
 import { SystemService } from '../core/services/system.service';
 
@@ -114,7 +115,8 @@ export class SystemState {
 
   constructor(
     private systemService: SystemService,
-    private monitoringService: SystemMonitoringService
+    private monitoringService: SystemMonitoringService,
+    private backend: BackendService,
   ) {
     // Start listening to monitoring events
     this.monitoringService.startListening();
@@ -196,11 +198,15 @@ export class SystemState {
         [systemId]: state,
       }));
 
-      // Fetch extended system info on successful connection
       if (state === 'connected') {
         this.fetchExtendedInfo(systemId);
-        // Start live monitoring
-        this.monitoringService.startMonitoring(systemId);
+        if (this.backend.isBackendSystem(systemId)) {
+          // Backend systems: poll metrics via HTTP
+          this.monitoringService.startPollingBackend(systemId, this.systemService);
+        } else {
+          // Local systems: use Tauri event-based monitoring
+          this.monitoringService.startMonitoring(systemId);
+        }
       }
 
       return state === 'connected';
@@ -295,10 +301,28 @@ export class SystemState {
     return this.monitoringService.isMonitoring(systemId);
   }
 
+  /**
+   * Ensure monitoring is running for a connected system.
+   * Starts the appropriate monitoring if not already active.
+   */
+  ensureMonitoring(systemId: string): void {
+    if (this.monitoringService.isMonitoring(systemId)) return;
+    if (this._connectionStates()[systemId] !== 'connected') return;
+    if (this.backend.isBackendSystem(systemId)) {
+      this.monitoringService.startPollingBackend(systemId, this.systemService);
+    } else {
+      this.monitoringService.startMonitoring(systemId);
+    }
+  }
+
   async disconnectSystem(systemId: string): Promise<void> {
     try {
-      // Stop monitoring first
-      await this.monitoringService.stopMonitoring(systemId);
+      // Stop monitoring
+      if (this.backend.isBackendSystem(systemId)) {
+        this.monitoringService.stopPollingBackend(systemId);
+      } else {
+        await this.monitoringService.stopMonitoring(systemId);
+      }
 
       const state = await this.systemService.disconnectSystem(systemId);
       this._connectionStates.update((states) => ({
@@ -319,11 +343,41 @@ export class SystemState {
   async detectRuntimes(systemId: string): Promise<ContainerRuntime[]> {
     try {
       const runtimes = await this.systemService.detectRuntimes(systemId);
+      let systemToUpdate: ContainerSystem | undefined;
+      let originalRuntime: ContainerRuntime | undefined;
       this._systems.update((systems) =>
-        systems.map((s) =>
-          s.id === systemId ? { ...s, availableRuntimes: runtimes } : s
-        )
+        systems.map((s) => {
+          if (s.id !== systemId) return s;
+          const updated: ContainerSystem = { ...s, availableRuntimes: runtimes };
+          // If primary runtime isn't among detected runtimes, switch to first detected
+          if (runtimes.length > 0 && !runtimes.includes(s.primaryRuntime)) {
+            originalRuntime = s.primaryRuntime;
+            updated.primaryRuntime = runtimes[0];
+            systemToUpdate = updated;
+          }
+          return updated;
+        })
       );
+      if (systemToUpdate) {
+        await this.updateSystem({
+          id: systemToUpdate.id,
+          name: systemToUpdate.name,
+          hostname: systemToUpdate.hostname,
+          connectionType: systemToUpdate.connectionType,
+          primaryRuntime: systemToUpdate.primaryRuntime,
+          availableRuntimes: systemToUpdate.availableRuntimes,
+          sshConfig: systemToUpdate.sshConfig,
+          autoConnect: systemToUpdate.autoConnect,
+        }).catch((err) => {
+          console.warn(`Failed to persist primaryRuntime change for ${systemId}:`, err);
+          // Revert local state if the update fails
+          if (originalRuntime !== undefined) {
+            this._systems.update((systems) =>
+              systems.map((s) => s.id === systemId ? { ...s, primaryRuntime: originalRuntime! } : s)
+            );
+          }
+        });
+      }
       return runtimes;
     } catch (err) {
       this._error.set(this.extractError(err) || 'Failed to detect runtimes');

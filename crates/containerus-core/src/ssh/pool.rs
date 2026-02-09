@@ -6,7 +6,7 @@ use tokio::sync::Mutex;
 
 use super::client::SshClient;
 use crate::executor::CommandResult;
-use crate::keyring_store::JumpHostCredentials;
+use crate::models::credentials::JumpHostCredentials;
 use crate::models::error::ContainerError;
 use crate::models::system::ContainerSystem;
 

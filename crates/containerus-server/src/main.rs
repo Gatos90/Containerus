@@ -1,0 +1,250 @@
+mod api;
+mod audit;
+mod auth;
+mod config;
+mod connections;
+mod db;
+mod k8s;
+mod vault;
+mod ws;
+
+use auth::middleware::PermissionCache;
+use sqlx::PgPool;
+use tower_http::cors::{Any, CorsLayer};
+use tower_http::trace::TraceLayer;
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+use uuid::Uuid;
+
+use config::ServerConfig;
+use connections::ConnectionManager;
+use k8s::ClusterManager;
+use vault::ServerVault;
+
+/// Shared application state available to all handlers.
+#[derive(Clone)]
+pub struct AppState {
+    pub db: PgPool,
+    pub config: ServerConfig,
+    pub vault: ServerVault,
+    pub connections: ConnectionManager,
+    pub k8s: ClusterManager,
+    pub permission_cache: PermissionCache,
+}
+
+#[tokio::main]
+async fn main() {
+    // Load .env file if present
+    let _ = dotenvy::dotenv();
+
+    // Initialize logging
+    tracing_subscriber::registry()
+        .with(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| "containerus_server=debug,tower_http=debug,info".into()),
+        )
+        .with(tracing_subscriber::fmt::layer())
+        .init();
+
+    tracing::info!("Starting Containerus Server");
+
+    // Load configuration
+    let config = ServerConfig::from_env().expect("Failed to load configuration");
+    let bind_addr = config.bind_addr;
+
+    tracing::info!("Connecting to database...");
+    let db = db::init_pool(&config.database_url)
+        .await
+        .expect("Failed to connect to database");
+
+    // Initialize credential vault
+    let vault = ServerVault::new(&config.encryption_key, &config.encryption_salt)
+        .expect("Failed to initialize credential vault");
+
+    // Initialize connection manager (Docker/Podman systems via SSH)
+    let connections = ConnectionManager::new(vault.clone());
+
+    // Initialize Kubernetes cluster manager
+    let k8s = ClusterManager::new(vault.clone());
+
+    // Seed admin account if ADMIN_EMAIL + ADMIN_PASSWORD are set
+    seed_admin_if_configured(&db).await;
+
+    // Load permission cache from database
+    let permission_cache = PermissionCache::load_from_db(&db)
+        .await
+        .expect("Failed to load permission cache");
+
+    let state = AppState {
+        db,
+        config,
+        vault,
+        connections,
+        k8s,
+        permission_cache,
+    };
+
+    // Start background task to clean up idle SSH connections (every 60s, 5min idle threshold)
+    {
+        let cleanup_cm = state.connections.clone();
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
+            loop {
+                interval.tick().await;
+                cleanup_cm.cleanup_idle(std::time::Duration::from_secs(300)).await;
+            }
+        });
+    }
+
+    // Build CORS layer from configured origins (defaults to localhost dev server)
+    let cors = {
+        let cors_origins = &state.config.cors_origins;
+        if cors_origins == "*" {
+            tracing::warn!("CORS is set to allow all origins — this is not recommended for production");
+            CorsLayer::new()
+                .allow_origin(Any)
+                .allow_methods(Any)
+                .allow_headers(Any)
+        } else {
+            let origins: Vec<_> = cors_origins
+                .split(',')
+                .filter_map(|s| {
+                    let trimmed = s.trim();
+                    match trimmed.parse() {
+                        Ok(origin) => Some(origin),
+                        Err(e) => {
+                            tracing::warn!("Invalid CORS origin '{}': {}", trimmed, e);
+                            None
+                        }
+                    }
+                })
+                .collect();
+            if origins.is_empty() {
+                panic!("No valid CORS origins configured. Set CORS_ORIGINS to '*' explicitly to allow all origins, or provide valid origin URLs.");
+            } else {
+                CorsLayer::new()
+                    .allow_origin(origins)
+                    .allow_methods(Any)
+                    .allow_headers(Any)
+            }
+        }
+    };
+
+    // Build the application
+    let app = api::router()
+        .merge(ws::router())
+        .layer(cors)
+        .layer(TraceLayer::new_for_http())
+        .with_state(state);
+
+    tracing::info!("Listening on {bind_addr}");
+
+    let listener = tokio::net::TcpListener::bind(bind_addr)
+        .await
+        .expect("Failed to bind address");
+
+    axum::serve(listener, app)
+        .await
+        .expect("Server error");
+}
+
+/// If ADMIN_EMAIL and ADMIN_PASSWORD env vars are set, create an admin user on first run.
+/// Also creates the company row if it doesn't exist and promotes the user to company admin.
+/// The admin is a server-level admin and does NOT get an auto-created project.
+/// Skips if the email already exists (idempotent).
+async fn seed_admin_if_configured(db: &PgPool) {
+    let email = match std::env::var("ADMIN_EMAIL") {
+        Ok(e) if !e.is_empty() => e,
+        _ => return,
+    };
+    let password = match std::env::var("ADMIN_PASSWORD") {
+        Ok(p) if !p.is_empty() => p,
+        _ => return,
+    };
+    let display_name = std::env::var("ADMIN_DISPLAY_NAME")
+        .unwrap_or_else(|_| "Admin".to_string());
+    let company_name = std::env::var("COMPANY_NAME")
+        .unwrap_or_else(|_| "My Company".to_string());
+
+    // Check if already exists
+    let exists: i64 = match sqlx::query_scalar("SELECT COUNT(*) FROM users WHERE email = $1")
+        .bind(&email)
+        .fetch_one(db)
+        .await
+    {
+        Ok(count) => count,
+        Err(e) => {
+            tracing::error!("Failed to check for existing admin user: {e}");
+            return;
+        }
+    };
+
+    if exists > 0 {
+        tracing::info!("Admin user already exists, skipping seed");
+        return;
+    }
+
+    let password_hash = match auth::password::hash_password(&password) {
+        Ok(h) => h,
+        Err(e) => {
+            tracing::error!("Failed to hash admin password: {e}");
+            return;
+        }
+    };
+
+    let user_id = Uuid::new_v4();
+
+    let mut tx = match db.begin().await {
+        Ok(tx) => tx,
+        Err(e) => {
+            tracing::error!("Failed to start transaction for admin seed: {e}");
+            return;
+        }
+    };
+
+    // Create user
+    if let Err(e) = sqlx::query(
+        "INSERT INTO users (id, email, password_hash, display_name, auth_provider) VALUES ($1, $2, $3, $4, 'local')"
+    )
+        .bind(user_id)
+        .bind(&email)
+        .bind(&password_hash)
+        .bind(&display_name)
+        .execute(&mut *tx)
+        .await
+    {
+        tracing::error!("Failed to create admin user: {e}");
+        return;
+    }
+
+    // Create company row if not exists (singleton)
+    if let Err(e) = sqlx::query(
+        "INSERT INTO company (name, slug) VALUES ($1, 'default') ON CONFLICT DO NOTHING"
+    )
+        .bind(&company_name)
+        .execute(&mut *tx)
+        .await
+    {
+        tracing::error!("Failed to create company: {e}");
+        return;
+    }
+
+    // Add user as company admin
+    if let Err(e) = sqlx::query(
+        "INSERT INTO company_admins (user_id) VALUES ($1) ON CONFLICT DO NOTHING"
+    )
+        .bind(user_id)
+        .execute(&mut *tx)
+        .await
+    {
+        tracing::error!("Failed to add company admin: {e}");
+        return;
+    }
+
+    if let Err(e) = tx.commit().await {
+        tracing::error!("Failed to commit admin seed: {e}");
+        return;
+    }
+
+    tracing::info!("Created admin user with id: {user_id} (company admin: true, no default project)");
+}
+

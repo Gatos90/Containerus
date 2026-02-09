@@ -101,6 +101,17 @@ pub fn init_database(path: &Path) -> SqliteResult<Connection> {
         [],
     );
 
+    // Backend connections table - stores server URLs for persistent backend connections
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS backend_connections (
+            id TEXT PRIMARY KEY,
+            server_url TEXT NOT NULL,
+            label TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        )",
+        [],
+    )?;
+
     // App settings table (singleton pattern)
     conn.execute(
         "CREATE TABLE IF NOT EXISTS app_settings (
@@ -214,6 +225,26 @@ pub fn update_system_runtimes(
     conn.execute(
         "UPDATE systems SET available_runtimes = ?1 WHERE id = ?2",
         (&runtimes_json, system_id),
+    )?;
+
+    Ok(())
+}
+
+/// Update a system's primary runtime
+pub fn update_primary_runtime(
+    conn: &Connection,
+    system_id: &str,
+    runtime: ContainerRuntime,
+) -> SqliteResult<()> {
+    let runtime_str = match runtime {
+        ContainerRuntime::Docker => "docker",
+        ContainerRuntime::Podman => "podman",
+        ContainerRuntime::Apple => "apple",
+    };
+
+    conn.execute(
+        "UPDATE systems SET primary_runtime = ?1 WHERE id = ?2",
+        (runtime_str, system_id),
     )?;
 
     Ok(())
@@ -787,6 +818,69 @@ pub fn get_ssh_credentials(conn: &Connection, system_id: &str) -> SqliteResult<S
 /// Delete SSH credentials for a system
 pub fn delete_ssh_credentials(conn: &Connection, system_id: &str) -> SqliteResult<()> {
     conn.execute("DELETE FROM ssh_credentials WHERE system_id = ?1", [system_id])?;
+    Ok(())
+}
+
+// ============================================================================
+// Backend Connection Database Functions
+// ============================================================================
+
+/// A saved backend connection row from the database.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SavedBackendRow {
+    pub id: String,
+    pub server_url: String,
+    pub label: String,
+}
+
+/// Insert or update a backend connection (upsert).
+pub fn upsert_backend_connection(
+    conn: &Connection,
+    id: &str,
+    server_url: &str,
+    label: &str,
+) -> SqliteResult<()> {
+    let now = chrono::Utc::now().to_rfc3339();
+    conn.execute(
+        "INSERT INTO backend_connections (id, server_url, label, created_at)
+         VALUES (?1, ?2, ?3, ?4)
+         ON CONFLICT(id) DO UPDATE SET
+             server_url = excluded.server_url,
+             label = excluded.label",
+        (id, server_url, label, &now),
+    )?;
+    Ok(())
+}
+
+/// Get all saved backend connections.
+pub fn get_all_backend_connections(conn: &Connection) -> SqliteResult<Vec<SavedBackendRow>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, server_url, label FROM backend_connections ORDER BY created_at ASC",
+    )?;
+
+    let rows = stmt
+        .query_map([], |row| {
+            Ok(SavedBackendRow {
+                id: row.get(0)?,
+                server_url: row.get(1)?,
+                label: row.get(2)?,
+            })
+        })?
+        .collect::<SqliteResult<Vec<_>>>()?;
+
+    Ok(rows)
+}
+
+/// Delete a backend connection by ID.
+pub fn delete_backend_connection(conn: &Connection, id: &str) -> SqliteResult<bool> {
+    let rows_affected = conn.execute("DELETE FROM backend_connections WHERE id = ?1", [id])?;
+    Ok(rows_affected > 0)
+}
+
+/// Delete all backend connections.
+pub fn delete_all_backend_connections(conn: &Connection) -> SqliteResult<()> {
+    conn.execute("DELETE FROM backend_connections", [])?;
     Ok(())
 }
 

@@ -8,9 +8,60 @@
     </h1>
   </div>
 
+  <!-- Backend connections list -->
+  @if (backend.hasConnections()) {
+    <div class="px-3 py-2 border-b border-zinc-800 flex-shrink-0 space-y-1">
+      @for (conn of backend.connections(); track conn.id) {
+        <div class="flex items-center gap-2 text-xs group">
+          <span
+            class="w-2 h-2 rounded-full flex-shrink-0"
+            [class.bg-green-500]="conn.status === 'connected'"
+            [class.bg-amber-500]="conn.status === 'connecting'"
+            [class.bg-zinc-500]="conn.status === 'disconnected'"
+            [class.bg-red-500]="conn.status === 'error'"
+            [class.animate-pulse]="conn.status === 'connecting'"
+          ></span>
+          <div class="flex-1 min-w-0">
+            <div class="text-zinc-300 truncate" [title]="conn.serverUrl">
+              {{ conn.user?.displayName || conn.label }}
+            </div>
+            <div class="text-[10px] text-zinc-500 truncate">
+              {{ conn.label }}{{ conn.projects.length ? ' · ' + conn.projects.length + ' project' + (conn.projects.length !== 1 ? 's' : '') : '' }}
+            </div>
+          </div>
+          @if (conn.status === 'disconnected') {
+            <button
+              (click)="loginToBackend(conn.id)"
+              class="text-zinc-500 hover:text-blue-400 p-0.5"
+              title="Login"
+            >
+              <lucide-icon [img]="LogIn" class="w-3.5 h-3.5"></lucide-icon>
+            </button>
+          }
+          @if (conn.status === 'connected') {
+            <button
+              (click)="logoutFrom(conn.id)"
+              class="text-zinc-500 hover:text-zinc-300 p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
+              title="Logout"
+            >
+              <lucide-icon [img]="LogOut" class="w-3.5 h-3.5"></lucide-icon>
+            </button>
+          }
+          <button
+            (click)="removeBackend(conn.id)"
+            class="text-zinc-500 hover:text-red-400 p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
+            title="Remove"
+          >
+            <lucide-icon [img]="X" class="w-3.5 h-3.5"></lucide-icon>
+          </button>
+        </div>
+      }
+    </div>
+  }
+
   <!-- Scrollable Nav -->
   <nav class="flex-1 overflow-auto min-h-0 p-3 space-y-1">
-    @for (item of navItems; track item.route) {
+    @for (item of allNavItems(); track item.route) {
       <a
         [routerLink]="item.route"
         routerLinkActive="bg-zinc-800 text-white"
@@ -24,6 +75,17 @@
           </span>
         }
       </a>
+    }
+
+    <!-- Connect to backend button (shown when no backends exist yet) -->
+    @if (!backend.hasConnections()) {
+      <button
+        (click)="connectToBackend()"
+        class="flex items-center gap-3 px-3 py-2 rounded-lg text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300 transition-colors w-full"
+      >
+        <lucide-icon [img]="Plus" class="w-5 h-5"></lucide-icon>
+        <span class="flex-1 text-left">Add Backend</span>
+      </button>
     }
   </nav>
 
@@ -231,6 +293,19 @@
           {{ containerState.stats().total }} total
         </span>
       </div>
+      @if (backend.hasConnections()) {
+        <div class="flex items-center justify-between text-xs mt-1">
+          <span class="text-zinc-500">
+            {{ backend.connectedBackends().length }} backend{{ backend.connectedBackends().length !== 1 ? 's' : '' }}
+          </span>
+          <button
+            (click)="switchToLocal()"
+            class="text-zinc-500 hover:text-zinc-300 transition-colors"
+          >
+            Disconnect all
+          </button>
+        </div>
+      }
     </div>
   </div>
 </aside>

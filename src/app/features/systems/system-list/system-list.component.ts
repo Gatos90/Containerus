@@ -254,13 +254,13 @@ export class SystemListComponent implements OnInit {
     try {
       await this.systemState.loadSystems();
 
-      // Fetch extended info for connected systems that don't have it yet
+      // Fetch extended info + start monitoring for connected systems
       const connectedSystems = this.systemState.connectedSystems();
       for (const system of connectedSystems) {
         if (!this.systemState.getExtendedInfo(system.id)) {
-          // Don't await - let it load in background
           this.systemState.fetchExtendedInfo(system.id);
         }
+        this.systemState.ensureMonitoring(system.id);
       }
     } finally {
       this.refreshing = false;

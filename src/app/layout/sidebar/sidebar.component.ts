@@ -1,11 +1,12 @@
 import { CommonModule, DecimalPipe } from '@angular/common';
 import { Component, inject, signal, computed } from '@angular/core';
 import { Router, RouterLink, RouterLinkActive } from '@angular/router';
-import { LucideAngularModule, LucideIconData, Box, Image, HardDrive, Network, Server, Settings, MoreHorizontal, Command, ChevronDown, ChevronUp, Terminal, Unplug, ExternalLink, Crown, ShieldCheck, Activity, Cpu, MemoryStick, FolderOpen, RefreshCw } from 'lucide-angular';
+import { LucideAngularModule, LucideIconData, Box, Image, HardDrive, Network, Server, Settings, MoreHorizontal, Command, ChevronDown, ChevronUp, Terminal, Unplug, ExternalLink, Crown, ShieldCheck, Activity, Cpu, MemoryStick, FolderOpen, RefreshCw, Cloud, Users, ScrollText, Globe, LogIn, LogOut, Link, X, Loader2, Plus } from 'lucide-angular';
 import { SystemState } from '../../state/system.state';
 import { ContainerState } from '../../state/container.state';
 import { TerminalState, DEFAULT_TERMINAL_OPTIONS } from '../../state/terminal.state';
 import { TerminalService } from '../../core/services/terminal.service';
+import { BackendService } from '../../core/services/backend.service';
 import { ContainerSystem, ExtendedSystemInfo, LiveSystemMetrics, OsType } from '../../core/models/system.model';
 
 export interface LoadLevelInfo {
@@ -36,6 +37,7 @@ export class SidebarComponent {
   readonly containerState = inject(ContainerState);
   private readonly terminalState = inject(TerminalState);
   private readonly terminalService = inject(TerminalService);
+  readonly backend = inject(BackendService);
 
   // State for "More" bottom sheet
   showMoreSheet = signal(false);
@@ -63,6 +65,16 @@ export class SidebarComponent {
   readonly MemoryStick = MemoryStick;
   readonly FolderOpen = FolderOpen;
   readonly RefreshCw = RefreshCw;
+  readonly Cloud = Cloud;
+  readonly Users = Users;
+  readonly ScrollText = ScrollText;
+  readonly Globe = Globe;
+  readonly LogIn = LogIn;
+  readonly LogOut = LogOut;
+  readonly Link = Link;
+  readonly X = X;
+  readonly Loader2 = Loader2;
+  readonly Plus = Plus;
 
   reconnecting = signal<string | null>(null);
 
@@ -114,14 +126,28 @@ export class SidebarComponent {
     },
   ];
 
+  readonly allNavItems = computed(() => {
+    const items = [...this.navItems];
+    // Always include Backends nav if there are connections
+    if (this.backend.hasConnections()) {
+      items.push({
+        label: 'Backends',
+        route: '/backends',
+        icon: Globe,
+        badge: () => this.backend.connectedBackends().length || null,
+      });
+    }
+    return items;
+  });
+
   // Mobile nav shows only essential items (max 5 for bottom nav)
   get mobileNavItems(): NavItem[] {
-    return this.navItems.filter(item => item.showInMobile);
+    return this.allNavItems().filter(item => item.showInMobile);
   }
 
   // Items that appear in the "More" sheet
   get moreNavItems(): NavItem[] {
-    return this.navItems.filter(item => !item.showInMobile);
+    return this.allNavItems().filter(item => !item.showInMobile);
   }
 
   selectSystem(systemId: string): void {
@@ -273,5 +299,26 @@ export class SidebarComponent {
     } finally {
       this.reconnecting.set(null);
     }
+  }
+
+  connectToBackend(): void {
+    this.router.navigate(['/backend-connect']);
+  }
+
+  logoutFrom(connectionId: string): void {
+    this.backend.logoutFrom(connectionId);
+  }
+
+  removeBackend(connectionId: string): void {
+    this.backend.removeBackend(connectionId);
+  }
+
+  loginToBackend(connectionId: string): void {
+    this.router.navigate(['/login'], { queryParams: { connectionId } });
+  }
+
+  switchToLocal(): void {
+    this.backend.switchToLocal();
+    this.router.navigate(['/containers']);
   }
 }

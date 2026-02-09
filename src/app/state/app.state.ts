@@ -1,4 +1,5 @@
 import { computed, Injectable } from '@angular/core';
+import { BackendService } from '../core/services/backend.service';
 import { ContainerState } from './container.state';
 import { ImageState } from './image.state';
 import { NetworkState } from './network.state';
@@ -12,7 +13,8 @@ export class AppState {
     public readonly container: ContainerState,
     public readonly image: ImageState,
     public readonly volume: VolumeState,
-    public readonly network: NetworkState
+    public readonly network: NetworkState,
+    private readonly backend: BackendService,
   ) {}
 
   readonly isInitialized = computed(() => this.system.systems().length > 0);
@@ -44,24 +46,37 @@ export class AppState {
   }));
 
   async initialize(): Promise<void> {
+    // Wait for backend auto-reconnect before loading systems
+    await this.backend.waitForReady();
     await this.system.loadSystems();
 
     // Auto-connect systems that have autoConnect enabled (in parallel)
     const systemsToAutoConnect = this.system.systems().filter((s) => s.autoConnect);
+    const autoConnectedIds = new Set<string>();
     await Promise.all(
       systemsToAutoConnect.map(async (system) => {
         const success = await this.system.connectSystem(system.id);
         if (success) {
+          autoConnectedIds.add(system.id);
           await this.loadAllDataForSystem(system.id);
           await this.system.detectRuntimes(system.id);
         }
       })
     );
 
-    // Load data for any already connected systems
-    const connectedSystems = this.system.connectedSystems();
+    // Load data for any already connected systems (including backend systems auto-connected by server)
+    const connectedSystems = this.system.connectedSystems().filter(s => !autoConnectedIds.has(s.id));
     if (connectedSystems.length > 0) {
       await this.loadAllDataForSystems(connectedSystems.map((s) => s.id));
+      // Start monitoring + fetch extended info
+      await Promise.all(
+        connectedSystems.map(async (s) => {
+          await this.system.ensureMonitoring(s.id);
+          if (!this.system.getExtendedInfo(s.id)) {
+            await this.system.fetchExtendedInfo(s.id);
+          }
+        })
+      );
     }
   }
 
@@ -81,6 +96,30 @@ export class AppState {
       this.volume.loadVolumes(systemId),
       this.network.loadNetworks(systemId),
     ]);
+  }
+
+  /** Called after a backend login/register to load systems and their data. */
+  async onBackendAuthenticated(): Promise<void> {
+    await this.system.loadSystems();
+    const connected = this.system.connectedSystems();
+    if (connected.length > 0) {
+      await this.loadAllDataForSystems(connected.map(s => s.id));
+      await Promise.all(
+        connected
+          .filter(s => this.backend.isBackendSystem(s.id))
+          .map(async s => {
+            await this.system.ensureMonitoring(s.id);
+            if (!this.system.getExtendedInfo(s.id)) {
+              await this.system.fetchExtendedInfo(s.id);
+            }
+          })
+      );
+    }
+  }
+
+  /** Called after a backend logout to reload systems (clears backend-provided systems). */
+  async onBackendLogout(): Promise<void> {
+    await this.system.loadSystems();
   }
 
   clearDataForSystem(systemId: string): void {

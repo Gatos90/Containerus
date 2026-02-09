@@ -53,9 +53,13 @@ scripts/*.jks
 *.jks
 *.keystore
 
-# Tauri build artifacts
-src-tauri/target/
+# Rust/Cargo build artifacts
+target/
 src-tauri/gen/
+
+# Environment files with secrets
+.env
+.env.local
 
 # Docker build cache
 .docker-cache/
@@ -63,3 +67,4 @@ src-tauri/gen/
 .pnpm-store/
 
 scripts/.config.sh
+crates/containerus-server/.env

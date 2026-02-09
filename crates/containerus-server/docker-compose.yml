@@ -1,0 +1,39 @@
+services:
+  containerus:
+    build:
+      context: ../..
+      dockerfile: crates/containerus-server/Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      DATABASE_URL: postgres://containerus:containerus@db:5432/containerus
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?ENCRYPTION_KEY must be set}
+      RUST_LOG: containerus_server=info,tower_http=info
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@containerus.local}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?ADMIN_PASSWORD must be set}
+      ADMIN_DISPLAY_NAME: ${ADMIN_DISPLAY_NAME:-Admin}
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  db:
+    image: postgres:17-alpine
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    environment:
+      POSTGRES_DB: containerus
+      POSTGRES_USER: containerus
+      POSTGRES_PASSWORD: containerus
+    # ports:
+    #   - "5432:5432"  # Uncomment for local development/debugging only
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U containerus"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  pgdata:
