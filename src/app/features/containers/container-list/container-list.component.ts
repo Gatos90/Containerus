@@ -60,7 +60,7 @@ import { BackendService } from '../../../core/services/backend.service';
 import { K8sCluster, K8sPod } from '../../../core/models/backend.model';
 import { EmptyStateComponent } from '../../../shared/components/empty-state/empty-state.component';
 import { HelpTooltipComponent } from '../../../shared/components/help-tooltip/help-tooltip.component';
-import { Router, RouterModule } from '@angular/router';
+import { Router } from '@angular/router';
 
 interface PodEntry {
   pod: K8sPod;
@@ -87,7 +87,6 @@ export type Workload =
     PodLogsViewerModalComponent,
     EmptyStateComponent,
     HelpTooltipComponent,
-    RouterModule,
   ],
   templateUrl: './container-list.component.html',
 })
