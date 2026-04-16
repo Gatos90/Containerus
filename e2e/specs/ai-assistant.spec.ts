@@ -5,10 +5,8 @@ test.describe('AI Assistant', () => {
     await page.goto('/settings');
     await page.waitForLoadState('networkidle');
 
-    // Use exact match for the top-level settings heading
     await expect(page.getByRole('heading', { name: 'Settings', exact: true })).toBeVisible({ timeout: 8_000 });
 
-    // AI section text is present somewhere on the page
     const aiSection = page.getByText(/ai|provider|model/i).first();
     await expect(aiSection).toBeVisible();
   });
@@ -19,7 +17,6 @@ test.describe('AI Assistant', () => {
 
     await expect(page.getByRole('heading', { name: 'Settings', exact: true })).toBeVisible({ timeout: 8_000 });
 
-    // Provider label or dropdown should appear in AI settings section
     const providerLabel = page.getByText(/provider/i).first();
     await expect(providerLabel).toBeVisible();
   });
@@ -30,7 +27,6 @@ test.describe('AI Assistant', () => {
 
     await expect(page.getByRole('heading', { name: 'Settings', exact: true })).toBeVisible({ timeout: 8_000 });
 
-    // Page renders without any JS errors
     const crashText = page.getByText(/runtime error|null is not/i);
     await expect(crashText).toHaveCount(0);
   });
@@ -39,7 +35,6 @@ test.describe('AI Assistant', () => {
     await page.goto('/warp-terminal');
     await page.waitForLoadState('networkidle');
 
-    // The page should not show a runtime exception
     const runtimeError = page.getByText(/runtime error|cannot read properties of null/i);
     await expect(runtimeError).toHaveCount(0);
   });
@@ -50,18 +45,11 @@ test.describe('AI Assistant', () => {
 
     await expect(page.getByRole('heading', { name: 'Settings', exact: true })).toBeVisible({ timeout: 8_000 });
 
-    // "Test connection" button should be present for AI provider testing
     const testBtn = page.getByRole('button', { name: /test/i }).first();
     if (await testBtn.count() > 0) {
       await expect(testBtn).toBeVisible();
     } else {
-      // Fallback: verify page loaded properly
       await expect(page.getByText(/model/i).first()).toBeVisible();
-    }
-  });
-});
-ctly
-      await expect(page.getByRole('heading', { name: /settings/i })).toBeVisible();
     }
   });
 });

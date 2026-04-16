@@ -25,7 +25,6 @@ test.describe('Container Lifecycle', () => {
   });
 
   test('status filter dropdown is visible and interactive', async ({ page }) => {
-    // Status filter is a <select> with "All" option
     const statusFilter = page.locator('select').filter({ hasText: /all/i }).first();
 
     if (await statusFilter.count() > 0) {
@@ -33,7 +32,6 @@ test.describe('Container Lifecycle', () => {
       const options = await statusFilter.locator('option').count();
       expect(options).toBeGreaterThan(1);
     } else {
-      // Custom dropdown button — just confirm the page rendered
       await expect(page.getByRole('heading', { name: 'Container Management', exact: true })).toBeVisible();
     }
   });
@@ -45,16 +43,10 @@ test.describe('Container Lifecycle', () => {
   });
 
   test('container page stats area is visible', async ({ page }) => {
-    // The header region (wraps h1 and stats counts) should be present
     const heading = page.getByRole('heading', { name: 'Container Management', exact: true });
     await expect(heading).toBeVisible();
 
-    // Check the parent/wrapper element is visible
     const headerWrapper = heading.locator('..');
     await expect(headerWrapper).toBeVisible();
-  });
-});
-t statsArea = heading.locator('..').or(page.locator('h1 + *').first());
-    await expect(statsArea).toBeVisible();
   });
 });
