@@ -89,7 +89,6 @@ export class ContainerWorkloadComponent {
 
   async deletePod(connectionId: string, clusterId: string, namespace: string, name: string): Promise<void> {
     const key = this.podActionKey({ connectionId, clusterId, namespace, name });
-    if (!confirm(`Delete pod "${name}" in namespace "${namespace}"? This action cannot be undone.`)) return;
     this.podActionLoading.update(s => { const n = new Set(s); n.add(key); return n; });
     try {
       await this.backend.deleteK8sResourceFor(connectionId, clusterId, 'pods', name, namespace);

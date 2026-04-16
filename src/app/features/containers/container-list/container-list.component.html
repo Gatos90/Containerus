@@ -360,25 +360,36 @@
           <!-- Action Buttons (always at bottom) -->
           <div class="flex-shrink-0 px-4 py-3 mt-auto">
             <div class="flex items-center gap-1.5 border-t border-zinc-700/50 pt-3">
+              @let runningLoading = containerState.isLoading(workload.container.id);
               @if (isRunning(workload.container)) {
                 <button
                   (click)="performAction(workload.container, 'stop')"
-                  class="flex items-center gap-1 px-2.5 py-1 rounded-md text-xs text-red-400 hover:bg-red-500/10 transition-colors"
-                  [disabled]="containerState.isLoading(workload.container.id)"
+                  class="flex items-center gap-1 px-2.5 py-1 rounded-md text-xs text-red-400 hover:bg-red-500/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  [disabled]="runningLoading"
+                  [attr.aria-busy]="runningLoading ? 'true' : null"
                   title="Stop"
                   aria-label="Stop"
                 >
-                  <lucide-icon [img]="Square" class="w-3 h-3"></lucide-icon>
+                  @if (runningLoading) {
+                    <lucide-icon [img]="Loader2" class="w-3 h-3 animate-spin" aria-hidden="true"></lucide-icon>
+                  } @else {
+                    <lucide-icon [img]="Square" class="w-3 h-3" aria-hidden="true"></lucide-icon>
+                  }
                   Stop
                 </button>
                 <button
                   (click)="performAction(workload.container, 'restart')"
-                  class="flex items-center gap-1 px-2.5 py-1 rounded-md text-xs text-zinc-400 hover:bg-zinc-700/50 hover:text-zinc-200 transition-colors"
-                  [disabled]="containerState.isLoading(workload.container.id)"
+                  class="flex items-center gap-1 px-2.5 py-1 rounded-md text-xs text-zinc-400 hover:bg-zinc-700/50 hover:text-zinc-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  [disabled]="runningLoading"
+                  [attr.aria-busy]="runningLoading ? 'true' : null"
                   title="Restart"
                   aria-label="Restart"
                 >
-                  <lucide-icon [img]="RotateCcw" class="w-3 h-3"></lucide-icon>
+                  @if (runningLoading) {
+                    <lucide-icon [img]="Loader2" class="w-3 h-3 animate-spin" aria-hidden="true"></lucide-icon>
+                  } @else {
+                    <lucide-icon [img]="RotateCcw" class="w-3 h-3" aria-hidden="true"></lucide-icon>
+                  }
                   Restart
                 </button>
                 <div class="flex-1"></div>
@@ -409,22 +420,32 @@
               } @else {
                 <button
                   (click)="performAction(workload.container, 'start')"
-                  class="flex items-center gap-1 px-2.5 py-1 rounded-md text-xs text-green-400 hover:bg-green-500/10 transition-colors"
-                  [disabled]="containerState.isLoading(workload.container.id)"
+                  class="flex items-center gap-1 px-2.5 py-1 rounded-md text-xs text-green-400 hover:bg-green-500/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  [disabled]="runningLoading"
+                  [attr.aria-busy]="runningLoading ? 'true' : null"
                   title="Start"
                   aria-label="Start"
                 >
-                  <lucide-icon [img]="Play" class="w-3 h-3"></lucide-icon>
+                  @if (runningLoading) {
+                    <lucide-icon [img]="Loader2" class="w-3 h-3 animate-spin" aria-hidden="true"></lucide-icon>
+                  } @else {
+                    <lucide-icon [img]="Play" class="w-3 h-3" aria-hidden="true"></lucide-icon>
+                  }
                   Start
                 </button>
                 <button
                   (click)="performAction(workload.container, 'restart')"
-                  class="flex items-center gap-1 px-2.5 py-1 rounded-md text-xs text-zinc-400 hover:bg-zinc-700/50 hover:text-zinc-200 transition-colors"
-                  [disabled]="containerState.isLoading(workload.container.id)"
+                  class="flex items-center gap-1 px-2.5 py-1 rounded-md text-xs text-zinc-400 hover:bg-zinc-700/50 hover:text-zinc-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  [disabled]="runningLoading"
+                  [attr.aria-busy]="runningLoading ? 'true' : null"
                   title="Restart"
                   aria-label="Restart"
                 >
-                  <lucide-icon [img]="RotateCcw" class="w-3 h-3"></lucide-icon>
+                  @if (runningLoading) {
+                    <lucide-icon [img]="Loader2" class="w-3 h-3 animate-spin" aria-hidden="true"></lucide-icon>
+                  } @else {
+                    <lucide-icon [img]="RotateCcw" class="w-3 h-3" aria-hidden="true"></lucide-icon>
+                  }
                   Restart
                 </button>
                 <div class="flex-1"></div>
