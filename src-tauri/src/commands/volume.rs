@@ -17,6 +17,7 @@ pub async fn list_volumes(
 ) -> Result<Vec<Volume>, ContainerError> {
     let system = state
         .get_system(&system_id)
+        .await
         .ok_or_else(|| ContainerError::SystemNotFound(system_id.clone()))?;
 
     let mut all_volumes = Vec::new();
@@ -57,6 +58,7 @@ pub async fn create_volume(
 ) -> Result<(), ContainerError> {
     let system = state
         .get_system(&system_id)
+        .await
         .ok_or_else(|| ContainerError::SystemNotFound(system_id.clone()))?;
 
     let command = CommandBuilder::create_volume(runtime, &name);
@@ -92,6 +94,7 @@ pub async fn remove_volume(
 ) -> Result<(), ContainerError> {
     let system = state
         .get_system(&system_id)
+        .await
         .ok_or_else(|| ContainerError::SystemNotFound(system_id.clone()))?;
 
     let command = CommandBuilder::remove_volume(runtime, &name, force);

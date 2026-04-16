@@ -25,6 +25,7 @@ async fn run_compose_command(
 ) -> Result<String, ContainerError> {
     let system = state
         .get_system(system_id)
+        .await
         .ok_or_else(|| ContainerError::SystemNotFound(system_id.to_string()))?;
 
     let result = match system.connection_type {
@@ -121,6 +122,7 @@ pub async fn compose_logs(
 ) -> Result<String, ContainerError> {
     let system = state
         .get_system(&system_id)
+        .await
         .ok_or_else(|| ContainerError::SystemNotFound(system_id.clone()))?;
 
     let prefix = compose_prefix(runtime);

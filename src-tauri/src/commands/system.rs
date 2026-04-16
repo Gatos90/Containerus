@@ -14,8 +14,8 @@ use crate::runtime::{CommandBuilder, OutputParser};
 use crate::state::AppState;
 
 #[tauri::command]
-pub fn list_systems(state: State<'_, AppState>) -> Vec<ContainerSystem> {
-    state.list_systems()
+pub async fn list_systems(state: State<'_, AppState>) -> Result<Vec<ContainerSystem>, ContainerError> {
+    Ok(state.list_systems().await)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -31,7 +31,7 @@ pub struct NewSystemRequest {
 }
 
 #[tauri::command]
-pub fn add_system(state: State<'_, AppState>, payload: NewSystemRequest) -> Result<ContainerSystem, ContainerError> {
+pub async fn add_system(state: State<'_, AppState>, payload: NewSystemRequest) -> Result<ContainerSystem, ContainerError> {
     let available_runtimes = payload.available_runtimes.into_iter().collect::<HashSet<_>>();
 
     state.add_system(ContainerSystem {
@@ -43,7 +43,7 @@ pub fn add_system(state: State<'_, AppState>, payload: NewSystemRequest) -> Resu
         available_runtimes,
         ssh_config: payload.ssh_config,
         auto_connect: payload.auto_connect,
-    })
+    }).await
 }
 
 #[tauri::command]
@@ -57,6 +57,7 @@ pub async fn connect_system(
 ) -> Result<ConnectionState, ContainerError> {
     let system = state
         .get_system(&system_id)
+        .await
         .ok_or_else(|| ContainerError::SystemNotFound(system_id.clone()))?;
 
     // Set state to connecting
@@ -200,6 +201,7 @@ pub async fn disconnect_system(
 ) -> Result<ConnectionState, ContainerError> {
     let system = state
         .get_system(&system_id)
+        .await
         .ok_or_else(|| ContainerError::SystemNotFound(system_id.clone()))?;
 
     if system.connection_type == ConnectionType::Remote {
@@ -224,6 +226,7 @@ pub async fn detect_runtimes(
 ) -> Result<Vec<ContainerRuntime>, ContainerError> {
     let system = state
         .get_system(&system_id)
+        .await
         .ok_or_else(|| ContainerError::SystemNotFound(system_id.clone()))?;
 
     let mut available_runtimes = Vec::new();
@@ -284,7 +287,7 @@ pub async fn detect_runtimes(
             None
         };
 
-        state.update_system_runtimes(&system_id, runtimes_set, new_primary);
+        state.update_system_runtimes(&system_id, runtimes_set, new_primary).await;
     }
 
     Ok(available_runtimes)
@@ -305,7 +308,7 @@ pub struct UpdateSystemRequest {
 }
 
 #[tauri::command]
-pub fn update_system(
+pub async fn update_system(
     state: State<'_, AppState>,
     payload: UpdateSystemRequest,
 ) -> Result<ContainerSystem, ContainerError> {
@@ -324,16 +327,17 @@ pub fn update_system(
 
     state
         .update_system(system)
+        .await
         .ok_or_else(|| ContainerError::SystemNotFound(payload.id))
 }
 
 /// Remove a system
 #[tauri::command]
-pub fn remove_system(
+pub async fn remove_system(
     state: State<'_, AppState>,
     system_id: String,
 ) -> Result<bool, ContainerError> {
-    let removed = state.remove_system(&system_id);
+    let removed = state.remove_system(&system_id).await;
 
     // Remove from cache and flush vault on desktop (non-fatal)
     #[cfg(not(target_os = "android"))]
@@ -419,6 +423,7 @@ pub async fn get_extended_system_info(
 ) -> Result<ExtendedSystemInfo, ContainerError> {
     let system = state
         .get_system(&system_id)
+        .await
         .ok_or_else(|| ContainerError::SystemNotFound(system_id.clone()))?;
 
     // Verify system is connected
@@ -519,6 +524,7 @@ pub async fn start_system_monitoring(
     // Verify system exists and is connected
     let _system = state
         .get_system(&system_id)
+        .await
         .ok_or_else(|| ContainerError::SystemNotFound(system_id.clone()))?;
 
     let conn_state = state.connection_state(&system_id);
@@ -582,6 +588,7 @@ pub async fn get_live_metrics(
 ) -> Result<LiveSystemMetrics, ContainerError> {
     let system = state
         .get_system(&system_id)
+        .await
         .ok_or_else(|| ContainerError::SystemNotFound(system_id.clone()))?;
 
     // Verify system is connected

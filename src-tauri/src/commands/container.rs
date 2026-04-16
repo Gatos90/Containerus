@@ -16,6 +16,7 @@ pub async fn list_containers(
 ) -> Result<Vec<Container>, ContainerError> {
     let system = state
         .get_system(&system_id)
+        .await
         .ok_or_else(|| ContainerError::SystemNotFound(system_id.clone()))?;
 
     // Check connection state
@@ -202,6 +203,7 @@ pub async fn perform_container_action(
 ) -> Result<(), ContainerError> {
     let system = state
         .get_system(&system_id)
+        .await
         .ok_or_else(|| ContainerError::SystemNotFound(system_id.clone()))?;
 
     let command = CommandBuilder::container_action(runtime, action, &container_id);
@@ -244,6 +246,7 @@ pub async fn get_container_logs(
 ) -> Result<String, ContainerError> {
     let system = state
         .get_system(&system_id)
+        .await
         .ok_or_else(|| ContainerError::SystemNotFound(system_id.clone()))?;
 
     let command = CommandBuilder::container_logs(runtime, &container_id, tail, timestamps);
@@ -274,6 +277,7 @@ pub async fn inspect_container(
 ) -> Result<ContainerDetails, ContainerError> {
     let system = state
         .get_system(&system_id)
+        .await
         .ok_or_else(|| ContainerError::SystemNotFound(system_id.clone()))?;
 
     let command = CommandBuilder::inspect_container(runtime, &container_id);

@@ -35,6 +35,7 @@ async fn execute_file_command(
 ) -> Result<crate::executor::CommandResult, ContainerError> {
     let system = state
         .get_system(system_id)
+        .await
         .ok_or_else(|| ContainerError::SystemNotFound(system_id.to_string()))?;
 
     // Wrap command for container if needed

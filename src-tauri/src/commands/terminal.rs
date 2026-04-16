@@ -116,6 +116,7 @@ pub async fn start_terminal_session(
     // Get system to determine connection type
     let system = state
         .get_system(&system_id)
+        .await
         .ok_or_else(|| ContainerError::SystemNotFound(system_id.clone()))?;
 
     // Use the container's runtime if provided, otherwise fall back to the system's primary runtime

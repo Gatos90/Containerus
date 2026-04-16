@@ -155,6 +155,7 @@ impl MonitoringManager {
 
         let system = state
             .get_system(system_id)
+            .await
             .ok_or_else(|| format!("System {} not found", system_id))?;
 
         // Build the platform-appropriate command

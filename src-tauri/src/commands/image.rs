@@ -17,6 +17,7 @@ pub async fn list_images(
 ) -> Result<Vec<ContainerImage>, ContainerError> {
     let system = state
         .get_system(&system_id)
+        .await
         .ok_or_else(|| ContainerError::SystemNotFound(system_id.clone()))?;
 
     let mut all_images = Vec::new();
@@ -57,6 +58,7 @@ pub async fn pull_image(
 ) -> Result<String, ContainerError> {
     let system = state
         .get_system(&system_id)
+        .await
         .ok_or_else(|| ContainerError::SystemNotFound(system_id.clone()))?;
 
     let command = CommandBuilder::pull_image(runtime, &image);
@@ -98,6 +100,7 @@ pub async fn build_image(
 ) -> Result<String, ContainerError> {
     let system = state
         .get_system(&system_id)
+        .await
         .ok_or_else(|| ContainerError::SystemNotFound(system_id.clone()))?;
 
     let command = CommandBuilder::build_image(
@@ -157,6 +160,7 @@ pub async fn remove_image(
 ) -> Result<(), ContainerError> {
     let system = state
         .get_system(&system_id)
+        .await
         .ok_or_else(|| ContainerError::SystemNotFound(system_id.clone()))?;
 
     let command = CommandBuilder::remove_image(runtime, &image_id, force);

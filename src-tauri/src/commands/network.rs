@@ -17,6 +17,7 @@ pub async fn list_networks(
 ) -> Result<Vec<Network>, ContainerError> {
     let system = state
         .get_system(&system_id)
+        .await
         .ok_or_else(|| ContainerError::SystemNotFound(system_id.clone()))?;
 
     let mut all_networks = Vec::new();
@@ -59,6 +60,7 @@ pub async fn create_network(
 ) -> Result<(), ContainerError> {
     let system = state
         .get_system(&system_id)
+        .await
         .ok_or_else(|| ContainerError::SystemNotFound(system_id.clone()))?;
 
     let command = CommandBuilder::create_network(
@@ -98,6 +100,7 @@ pub async fn remove_network(
 ) -> Result<(), ContainerError> {
     let system = state
         .get_system(&system_id)
+        .await
         .ok_or_else(|| ContainerError::SystemNotFound(system_id.clone()))?;
 
     let command = CommandBuilder::remove_network(runtime, &name);
@@ -133,6 +136,7 @@ pub async fn connect_container_to_network(
 ) -> Result<(), ContainerError> {
     let system = state
         .get_system(&system_id)
+        .await
         .ok_or_else(|| ContainerError::SystemNotFound(system_id.clone()))?;
 
     let command = CommandBuilder::connect_to_network(runtime, &network_name, &container_id);
@@ -173,6 +177,7 @@ pub async fn disconnect_container_from_network(
 ) -> Result<(), ContainerError> {
     let system = state
         .get_system(&system_id)
+        .await
         .ok_or_else(|| ContainerError::SystemNotFound(system_id.clone()))?;
 
     let command = CommandBuilder::disconnect_from_network(runtime, &network_name, &container_id);

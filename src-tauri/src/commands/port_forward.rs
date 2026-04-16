@@ -40,6 +40,7 @@ pub async fn create_port_forward(
     // Local SSH forward
     let system = app_state
         .get_system(&request.system_id)
+        .await
         .ok_or_else(|| ContainerError::SystemNotFound(request.system_id.clone()))?;
 
     let is_local = system.connection_type == ConnectionType::Local;
