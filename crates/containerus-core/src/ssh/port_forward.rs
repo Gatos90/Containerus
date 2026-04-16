@@ -102,7 +102,7 @@ impl PortForwardManager {
                     }
                 }
             }
-            bound.unwrap()
+            bound.ok_or_else(|| ContainerError::Internal("Failed to bind to any port".to_string()))?
         } else {
             // Auto-assign port
             TcpListener::bind("127.0.0.1:0")
@@ -177,7 +177,7 @@ impl PortForwardManager {
         tracing::info!(
             "Port forward {} listening on {}",
             forward_id,
-            listener.local_addr().unwrap()
+            listener.local_addr().map(|a| a.to_string()).unwrap_or_else(|_| "<unknown>".to_string())
         );
 
         loop {

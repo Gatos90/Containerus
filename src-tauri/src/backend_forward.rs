@@ -86,7 +86,7 @@ impl BackendPortForwardManager {
                     }
                 }
             }
-            bound.unwrap()
+            bound.ok_or_else(|| ContainerError::Internal("Failed to bind to any port".to_string()))?
         } else {
             TcpListener::bind("127.0.0.1:0")
                 .await

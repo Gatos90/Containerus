@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use axum::{
     extract::{Path, State},
     http::StatusCode,
@@ -41,6 +43,16 @@ pub fn environment_router() -> Router<AppState> {
 // Request / Response types
 // ============================================================================
 
+/// Per-jump-host SSH credentials submitted in the API request.
+/// The map key is "hostname:port" (e.g. "bastion.example.com:22").
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct JumpHostCredentialRequest {
+    pub password: Option<String>,
+    pub private_key: Option<String>,
+    pub passphrase: Option<String>,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateSystemRequest {
@@ -58,6 +70,9 @@ pub struct CreateSystemRequest {
     pub private_key: Option<String>,
     /// SSH key passphrase (stored encrypted in vault)
     pub passphrase: Option<String>,
+    /// Per-jump-host credentials, keyed by "hostname:port"
+    #[serde(default)]
+    pub jump_host_credentials: HashMap<String, JumpHostCredentialRequest>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -78,6 +93,9 @@ pub struct UpdateSystemRequest {
     pub private_key: Option<String>,
     /// Updated passphrase (re-encrypted in vault)
     pub passphrase: Option<String>,
+    /// Per-jump-host credentials to update, keyed by "hostname:port"
+    #[serde(default)]
+    pub jump_host_credentials: HashMap<String, JumpHostCredentialRequest>,
 }
 
 #[derive(Debug, Serialize)]
@@ -247,6 +265,31 @@ async fn create_system(
         }
     }
 
+    // Store jump host credentials in vault (keyed by "hostname:port")
+    for (jump_key, jh_creds) in &req.jump_host_credentials {
+        let jump_key_str = jump_key.as_str();
+        let jh_pairs: &[(&str, Option<&str>)] = &[
+            ("password", jh_creds.password.as_deref()),
+            ("private_key", jh_creds.private_key.as_deref()),
+            ("passphrase", jh_creds.passphrase.as_deref()),
+        ];
+        for (cred_type, cred_value) in jh_pairs {
+            if let Some(value) = cred_value {
+                if let Err(e) = state.vault.store_credential(&state.db, system.id, cred_type, value, Some(jump_key_str)).await {
+                    tracing::error!("Failed to store jump host {cred_type} for {jump_key_str}: {e}");
+                    // Rollback
+                    if let Err(re) = state.vault.delete_system_credentials(&state.db, system.id).await {
+                        tracing::error!("Rollback: failed to delete credentials for system {}: {re}", system.id);
+                    }
+                    if let Err(re) = sqlx::query("DELETE FROM systems WHERE id = $1").bind(system.id).execute(&state.db).await {
+                        tracing::error!("Rollback: failed to delete system {}: {re}", system.id);
+                    }
+                    return Ok((StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": "Failed to store jump host credentials"}))).into_response());
+                }
+            }
+        }
+    }
+
     log_system_action(
         &state.db,
         project_id,
@@ -347,6 +390,24 @@ async fn update_system(
         if let Err(e) = state.vault.store_credential(&state.db, id, "passphrase", passphrase, None).await {
             tracing::error!("Failed to update passphrase for system {id}: {e}");
             return Ok((StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": "Failed to update credentials"}))).into_response());
+        }
+    }
+
+    // Update jump host credentials in vault (keyed by "hostname:port")
+    for (jump_key, jh_creds) in &req.jump_host_credentials {
+        let jump_key_str = jump_key.as_str();
+        let jh_pairs: &[(&str, Option<&str>)] = &[
+            ("password", jh_creds.password.as_deref()),
+            ("private_key", jh_creds.private_key.as_deref()),
+            ("passphrase", jh_creds.passphrase.as_deref()),
+        ];
+        for (cred_type, cred_value) in jh_pairs {
+            if let Some(value) = cred_value {
+                if let Err(e) = state.vault.store_credential(&state.db, id, cred_type, value, Some(jump_key_str)).await {
+                    tracing::error!("Failed to update jump host {cred_type} for {jump_key_str}: {e}");
+                    return Ok((StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": "Failed to update jump host credentials"}))).into_response());
+                }
+            }
         }
     }
 

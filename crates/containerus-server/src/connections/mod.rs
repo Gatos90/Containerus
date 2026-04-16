@@ -88,8 +88,36 @@ impl ConnectionManager {
 
         let container_system = system_row_to_container_system(system);
 
-        // TODO: fetch jump host creds from vault when jump host support is needed
-        let jump_host_creds: HashMap<String, JumpHostCredentials> = HashMap::new();
+        // Fetch jump host credentials from vault for each ProxyJump hop.
+        // Credentials are keyed by "hostname:port" to match JumpHostCredentials map.
+        let mut jump_host_creds: HashMap<String, JumpHostCredentials> = HashMap::new();
+        if let Some(ssh_config) = &container_system.ssh_config {
+            if let Some(ref jump_hosts) = ssh_config.proxy_jump {
+                for jump in jump_hosts {
+                    let key = format!("{}:{}", jump.hostname, jump.port);
+                    let jh_password = self
+                        .vault
+                        .get_credential(db, system.id, "password", Some(&key))
+                        .await
+                        .map_err(|e| ContainerError::CredentialError(e.to_string()))?;
+                    let jh_passphrase = self
+                        .vault
+                        .get_credential(db, system.id, "passphrase", Some(&key))
+                        .await
+                        .map_err(|e| ContainerError::CredentialError(e.to_string()))?;
+                    let jh_private_key = self
+                        .vault
+                        .get_credential(db, system.id, "private_key", Some(&key))
+                        .await
+                        .map_err(|e| ContainerError::CredentialError(e.to_string()))?;
+                    jump_host_creds.insert(key, JumpHostCredentials {
+                        password: jh_password,
+                        passphrase: jh_passphrase,
+                        private_key: jh_private_key,
+                    });
+                }
+            }
+        }
 
         let client = if let Some(ssh_config) = &container_system.ssh_config {
             if let Some(ref jump_hosts) = ssh_config.proxy_jump {
@@ -478,7 +506,11 @@ pub fn system_row_to_container_system(row: &SystemRow) -> ContainerSystem {
                 .and_then(|o| o.get("proxy_command"))
                 .and_then(|v| v.as_str())
                 .map(String::from),
-            proxy_jump: None, // TODO: parse from ssh_options
+            proxy_jump: row
+                .ssh_options
+                .as_ref()
+                .and_then(|o| o.get("proxy_jump"))
+                .and_then(|v| serde_json::from_value(v.clone()).ok()),
             ssh_config_host: None,
         }),
         auto_connect: false,
