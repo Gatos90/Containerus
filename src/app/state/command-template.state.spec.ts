@@ -238,4 +238,43 @@ describe('CommandTemplateState', () => {
     expect(compatible).toHaveLength(1);
     expect(compatible[0].id).toBe('1');
   });
+
+  it('should clear error', () => {
+    state['_error'].set('some error');
+    expect(state.error()).toBe('some error');
+    state.clearError();
+    expect(state.error()).toBeNull();
+  });
+
+  it('should duplicate a template', async () => {
+    const original = makeTemplate({ id: 'tpl-1', name: 'Original' });
+    const dup = makeTemplate({ id: 'tpl-dup', name: 'Original (Copy)' });
+    mockService.listTemplates.mockResolvedValue([original]);
+    await state.loadTemplates();
+
+    mockService.duplicateTemplate = vi.fn().mockResolvedValue(dup);
+    const result = await state.duplicateTemplate('tpl-1');
+    expect(result?.id).toBe('tpl-dup');
+    expect(state.templates()).toHaveLength(2);
+  });
+
+  it('should return null and set error when duplicate fails', async () => {
+    mockService.duplicateTemplate = vi.fn().mockRejectedValue(new Error('dup failed'));
+    const result = await state.duplicateTemplate('tpl-1');
+    expect(result).toBeNull();
+    expect(state.error()).toContain('dup failed');
+  });
+
+  it('should sort templates by recent (updatedAt)', async () => {
+    const templates = [
+      makeTemplate({ id: 'old', name: 'Old', updatedAt: '2023-01-01T00:00:00Z' }),
+      makeTemplate({ id: 'new', name: 'New', updatedAt: '2024-06-01T00:00:00Z' }),
+    ];
+    mockService.listTemplates.mockResolvedValue(templates);
+    await state.loadTemplates();
+    state.setSortOption('recent');
+    const sorted = state.filteredTemplates();
+    expect(sorted[0].id).toBe('new');
+    expect(sorted[1].id).toBe('old');
+  });
 });

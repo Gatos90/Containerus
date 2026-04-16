@@ -288,6 +288,35 @@ describe('TerminalState', () => {
     expect(state.activeSlotIndex()).toBe(0);
   });
 
+  it('should add file browser to specified targetSlot', () => {
+    state.setLayoutMode('split-h');
+    state.addFileBrowser(
+      { id: 'fb-1', systemId: 'sys-1', systemName: 'Test', currentPath: '/' },
+      1
+    );
+    expect(state.slots()[1].contentType).toBe('file-browser');
+    expect(state.slots()[1].contentId).toBe('fb-1');
+  });
+
+  it('should reorder file browsers', () => {
+    state.addFileBrowser({ id: 'fb-1', systemId: 'sys-1', systemName: 'Test', currentPath: '/' });
+    state.addFileBrowser({ id: 'fb-2', systemId: 'sys-2', systemName: 'Test2', currentPath: '/' });
+    state.addFileBrowser({ id: 'fb-3', systemId: 'sys-3', systemName: 'Test3', currentPath: '/' });
+
+    state.reorderFileBrowsers(0, 2);
+    expect(state.dockedFileBrowsers()[0].id).toBe('fb-2');
+    expect(state.dockedFileBrowsers()[2].id).toBe('fb-1');
+  });
+
+  it('should update existing file browser path when adding duplicate (with targetSlot)', () => {
+    state.setLayoutMode('split-h');
+    state.addFileBrowser({ id: 'fb-1', systemId: 'sys-1', systemName: 'Test', containerId: 'c1', currentPath: '/home' });
+    // Add duplicate with targetSlot
+    state.addFileBrowser({ id: 'fb-new', systemId: 'sys-1', systemName: 'Test', containerId: 'c1', currentPath: '/tmp' }, 1);
+    // Original id stays but path is updated
+    expect(state.dockedFileBrowsers()[0].currentPath).toBe('/tmp');
+  });
+
   describe('DEFAULT_TERMINAL_OPTIONS', () => {
     it('should have cursor blink enabled', () => {
       expect(DEFAULT_TERMINAL_OPTIONS.cursorBlink).toBe(true);

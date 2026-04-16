@@ -4,6 +4,7 @@ import { ImageState } from './image.state';
 import { ContainerState } from './container.state';
 import { ImageService } from '../core/services/image.service';
 import type { ContainerImage } from '../core/models/image.model';
+import type { ContainerRuntime } from '../core/models/container.model';
 
 describe('ImageState', () => {
   let state: ImageState;
@@ -320,5 +321,71 @@ describe('ImageState', () => {
   it('should clear error', () => {
     state.clearError();
     expect(state.error()).toBeNull();
+  });
+
+  it('should sort images by created date', () => {
+    const oldImage = makeImage({ id: 'img-old', created: '2023-01-01T00:00:00Z' });
+    const newImage = makeImage({ id: 'img-new', created: '2024-06-01T00:00:00Z' });
+    state['_images'].set([oldImage, newImage]);
+    state.setSortOption('created');
+    const sorted = state.filteredImages();
+    expect(sorted[0].id).toBe('img-new');
+    expect(sorted[1].id).toBe('img-old');
+  });
+
+  describe('buildImage', () => {
+    it('should successfully build an image and return a success job', async () => {
+      mockImageService.buildImage = vi.fn().mockResolvedValue('Build log output');
+      mockImageService.listImages = vi.fn().mockResolvedValue([]);
+
+      const job = await state.buildImage(
+        'sys-1', '/context', null, 'myapp', 'v1', 'docker' as ContainerRuntime, [], false
+      );
+
+      expect(job.status).toBe('success');
+      expect(job.log).toBe('Build log output');
+      expect(job.imageName).toBe('myapp');
+      expect(job.tag).toBe('v1');
+    });
+
+    it('should return error job when build fails', async () => {
+      mockImageService.buildImage = vi.fn().mockRejectedValue(new Error('build failed'));
+
+      const job = await state.buildImage(
+        'sys-1', '/context', null, 'myapp', 'v1', 'docker' as ContainerRuntime, [], false
+      );
+
+      expect(job.status).toBe('error');
+      expect(job.error).toContain('build failed');
+    });
+
+    it('should replace existing job with same key when rebuilding', async () => {
+      mockImageService.buildImage = vi.fn().mockResolvedValue('log');
+      mockImageService.listImages = vi.fn().mockResolvedValue([]);
+
+      await state.buildImage('sys-1', '/context', null, 'myapp', 'v1', 'docker' as ContainerRuntime, [], false);
+      expect(state.buildJobs()).toHaveLength(1);
+
+      await state.buildImage('sys-1', '/context', null, 'myapp', 'v1', 'docker' as ContainerRuntime, [], false);
+      expect(state.buildJobs()).toHaveLength(1);
+    });
+
+    it('should track build job in buildJobs signal', async () => {
+      mockImageService.buildImage = vi.fn().mockResolvedValue('log');
+      mockImageService.listImages = vi.fn().mockResolvedValue([]);
+
+      await state.buildImage('sys-1', '/context', null, 'myapp', 'v1', 'docker' as ContainerRuntime, [], false);
+      expect(state.buildJobs()).toHaveLength(1);
+      expect(state.buildJobs()[0].key).toBe('sys-1:myapp:v1');
+    });
+
+    it('should dismiss build job', async () => {
+      mockImageService.buildImage = vi.fn().mockResolvedValue('log');
+      mockImageService.listImages = vi.fn().mockResolvedValue([]);
+      await state.buildImage('sys-1', '/context', null, 'myapp', 'v1', 'docker' as ContainerRuntime, [], false);
+
+      state.dismissBuildJob('sys-1:myapp:v1');
+      expect(state.buildJobs()).toHaveLength(0);
+    });
   });
 });
