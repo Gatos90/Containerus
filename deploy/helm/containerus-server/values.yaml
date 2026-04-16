@@ -1,0 +1,157 @@
+# Default values for containerus-server.
+# Override these in values-production.yaml or via --set flags.
+
+replicaCount: 2
+
+image:
+  repository: ghcr.io/gatos90/containerus-server
+  pullPolicy: IfNotPresent
+  tag: ""  # Defaults to .Chart.AppVersion
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+podAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/path: "/api/health/metrics"
+  prometheus.io/port: "8080"
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 8080
+
+ingress:
+  enabled: false
+  className: "nginx"
+  annotations: {}
+    # cert-manager.io/cluster-issuer: letsencrypt-prod
+    # nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+  hosts:
+    - host: containerus.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+  #  - secretName: containerus-tls
+  #    hosts:
+  #      - containerus.example.com
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 80
+  targetMemoryUtilizationPercentage: 80
+
+livenessProbe:
+  httpGet:
+    path: /api/health
+    port: 8080
+  initialDelaySeconds: 10
+  periodSeconds: 30
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet:
+    path: /api/health
+    port: 8080
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+nodeSelector: {}
+tolerations: []
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values:
+                  - containerus-server
+          topologyKey: kubernetes.io/hostname
+
+# Application configuration
+config:
+  bindAddr: "0.0.0.0:8080"
+  jwtAccessExpirySecs: 900
+  jwtRefreshExpirySecs: 604800
+  corsOrigins: ""
+  rustLog: "containerus_server=info,tower_http=info"
+
+# Secrets — provide via existing secret or let chart create one
+# IMPORTANT: All secret values must be set for production
+secrets:
+  # Set create: true to let the chart manage the secret (store values in a sealed secret or external secrets operator)
+  create: true
+  existingSecret: ""  # Use this to reference a pre-existing secret instead
+  databaseUrl: ""     # postgres://user:pass@host:5432/db
+  jwtSecret: ""       # openssl rand -base64 32
+  encryptionKey: ""   # openssl rand -base64 32
+  encryptionSalt: ""  # openssl rand -base64 16
+  adminEmail: "admin@containerus.local"
+  adminPassword: ""   # Required: initial admin password
+
+# PostgreSQL subchart (bitnami)
+postgresql:
+  enabled: true
+  auth:
+    database: containerus
+    username: containerus
+    # Set password via --set postgresql.auth.password=<value> or existingSecret
+    existingSecret: ""
+    secretKeys:
+      adminPasswordKey: postgres-password
+      userPasswordKey: password
+  primary:
+    persistence:
+      enabled: true
+      size: 10Gi
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 1Gi
+
+# Prometheus monitoring
+serviceMonitor:
+  enabled: false
+  namespace: ""
+  interval: 30s
+  path: /api/health/metrics
+  labels: {}

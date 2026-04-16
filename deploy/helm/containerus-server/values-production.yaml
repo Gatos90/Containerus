@@ -1,0 +1,89 @@
+# Production overrides — fill in secrets via CI/CD environment variables
+# helm upgrade --install containerus-server ./deploy/helm/containerus-server \
+#   -f deploy/helm/containerus-server/values-production.yaml \
+#   --set secrets.jwtSecret="$JWT_SECRET" \
+#   --set secrets.encryptionKey="$ENCRYPTION_KEY" \
+#   --set secrets.encryptionSalt="$ENCRYPTION_SALT" \
+#   --set secrets.adminPassword="$ADMIN_PASSWORD" \
+#   --set postgresql.auth.password="$DB_PASSWORD"
+
+replicaCount: 2
+
+image:
+  repository: ghcr.io/gatos90/containerus-server
+  pullPolicy: Always
+  tag: ""  # Set by CI: --set image.tag=$GITHUB_SHA
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 8
+  targetCPUUtilizationPercentage: 70
+
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    # WebSocket support for terminal PTY proxy
+    nginx.ingress.kubernetes.io/proxy-http-version: "1.1"
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      proxy_set_header Upgrade $http_upgrade;
+      proxy_set_header Connection "upgrade";
+  hosts:
+    - host: api.containerus.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: containerus-api-tls
+      hosts:
+        - api.containerus.example.com
+
+resources:
+  requests:
+    cpu: 200m
+    memory: 256Mi
+  limits:
+    cpu: 1000m
+    memory: 1Gi
+
+config:
+  corsOrigins: "https://app.containerus.example.com,tauri://localhost"
+  rustLog: "containerus_server=info,tower_http=warn"
+
+secrets:
+  create: true
+  # These are provided via --set at deploy time, never committed:
+  jwtSecret: ""
+  encryptionKey: ""
+  encryptionSalt: ""
+  adminEmail: "admin@containerus.example.com"
+  adminPassword: ""
+
+postgresql:
+  enabled: true
+  auth:
+    database: containerus
+    username: containerus
+    password: ""  # Set via --set postgresql.auth.password=
+  primary:
+    persistence:
+      enabled: true
+      size: 50Gi
+      storageClass: "fast-ssd"
+    resources:
+      requests:
+        cpu: 250m
+        memory: 512Mi
+      limits:
+        cpu: 1000m
+        memory: 2Gi
+
+serviceMonitor:
+  enabled: true
+  interval: 30s
+  labels:
+    release: prometheus

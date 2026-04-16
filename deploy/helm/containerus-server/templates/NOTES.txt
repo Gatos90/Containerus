@@ -1,0 +1,24 @@
+Containerus Server has been deployed!
+
+{{- if .Values.ingress.enabled }}
+Access the application at:
+{{- range .Values.ingress.hosts }}
+  http{{ if $.Values.ingress.tls }}s{{ end }}://{{ .host }}
+{{- end }}
+{{- else if contains "NodePort" .Values.service.type }}
+  export NODE_PORT=$(kubectl get --namespace {{ .Release.Namespace }} -o jsonpath="{.spec.ports[0].nodePort}" services {{ include "containerus-server.fullname" . }})
+  export NODE_IP=$(kubectl get nodes --namespace {{ .Release.Namespace }} -o jsonpath="{.items[0].status.addresses[0].address}")
+  echo "http://$NODE_IP:$NODE_PORT"
+{{- else if contains "ClusterIP" .Values.service.type }}
+  kubectl --namespace {{ .Release.Namespace }} port-forward service/{{ include "containerus-server.fullname" . }} 8080:{{ .Values.service.port }}
+  Then visit: http://localhost:8080
+{{- end }}
+
+Health check:
+  curl http://<host>/api/health
+
+To view logs:
+  kubectl logs -n {{ .Release.Namespace }} -l app.kubernetes.io/name={{ include "containerus-server.name" . }} -f
+
+To upgrade:
+  helm upgrade {{ .Release.Name }} ./deploy/helm/containerus-server -f values-production.yaml

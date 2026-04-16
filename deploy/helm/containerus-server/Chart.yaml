@@ -1,0 +1,14 @@
+apiVersion: v2
+name: containerus-server
+description: Containerus backend server — container management with SSH, K8s, and AI
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - containers
+  - docker
+  - kubernetes
+  - ssh
+home: https://github.com/Gatos90/Containerus
+maintainers:
+  - name: Containerus Team

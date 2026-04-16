@@ -1,0 +1,92 @@
+groups:
+  - name: containerus-server
+    interval: 30s
+    rules:
+      # ── Availability ──────────────────────────────────────────────────────
+      - alert: ContainerusServerDown
+        expr: up{job="containerus-server"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Containerus server is down"
+          description: "The containerus-server has been unreachable for more than 2 minutes."
+
+      - alert: ContainerusHighErrorRate
+        expr: |
+          rate(http_requests_total{job="containerus-server",status=~"5.."}[5m])
+          / rate(http_requests_total{job="containerus-server"}[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High HTTP error rate (>5%)"
+          description: "Error rate is {{ $value | humanizePercentage }} over the last 5 minutes."
+
+      - alert: ContainerusHighLatency
+        expr: |
+          histogram_quantile(0.95,
+            rate(http_request_duration_seconds_bucket{job="containerus-server"}[5m])
+          ) > 2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High request latency (p95 > 2s)"
+          description: "95th percentile latency is {{ $value }}s."
+
+      # ── Resources ─────────────────────────────────────────────────────────
+      - alert: ContainerusHighMemory
+        expr: |
+          process_resident_memory_bytes{job="containerus-server"}
+          > 400 * 1024 * 1024
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Containerus server using >400MB RAM"
+          description: "Memory usage is {{ $value | humanize1024 }}B."
+
+      # ── SSH Connection Pool ────────────────────────────────────────────────
+      - alert: SSHPoolExhausted
+        expr: |
+          containerus_ssh_pool_connections_active
+          / containerus_ssh_pool_connections_max > 0.9
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "SSH connection pool >90% full"
+          description: "Active SSH connections: {{ $value | humanizePercentage }} of pool capacity."
+
+  - name: postgresql
+    interval: 60s
+    rules:
+      - alert: PostgresDown
+        expr: pg_up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "PostgreSQL is down"
+          description: "PostgreSQL has been unreachable for more than 1 minute."
+
+      - alert: PostgresHighConnections
+        expr: |
+          pg_stat_activity_count / pg_settings_max_connections > 0.8
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "PostgreSQL connections >80% of max"
+          description: "{{ $value | humanizePercentage }} of max_connections in use."
+
+      - alert: PostgresDiskFilling
+        expr: |
+          (pg_database_size_bytes / (1024^3)) > 8
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "PostgreSQL database >8GB"
+          description: "Database size is {{ $value }}GB. Plan for disk expansion."

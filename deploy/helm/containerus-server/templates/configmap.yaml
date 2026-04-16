@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "containerus-server.fullname" . }}-config
+  labels:
+    {{- include "containerus-server.labels" . | nindent 4 }}
+data:
+  BIND_ADDR: {{ .Values.config.bindAddr | quote }}
+  JWT_ACCESS_EXPIRY_SECS: {{ .Values.config.jwtAccessExpirySecs | quote }}
+  JWT_REFRESH_EXPIRY_SECS: {{ .Values.config.jwtRefreshExpirySecs | quote }}
+  RUST_LOG: {{ .Values.config.rustLog | quote }}
+  {{- if .Values.config.corsOrigins }}
+  CORS_ORIGINS: {{ .Values.config.corsOrigins | quote }}
+  {{- end }}
