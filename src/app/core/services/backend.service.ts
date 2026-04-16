@@ -48,7 +48,7 @@ export class BackendService {
   private _connections = signal<BackendConnection[]>([]);
 
   /** Map systemId → connectionId for routing actions to the correct backend */
-  private _systemOwnership = new Map<string, string>();
+  _systemOwnership = new Map<string, string>();
 
   /** Serializes concurrent token refresh attempts per connection */
   private _refreshPromises = new Map<string, Promise<void>>();
@@ -57,7 +57,7 @@ export class BackendService {
   private _readyPromise: Promise<void> = Promise.resolve();
 
   /** Connection IDs where the user explicitly logged out (skip auto-reconnect) */
-  private _userLoggedOut = new Set<string>();
+  _userLoggedOut = new Set<string>();
 
   /** Periodic reconnect timer handle */
   private _reconnectInterval: ReturnType<typeof setInterval> | null = null;
@@ -1196,7 +1196,7 @@ export class BackendService {
     return JSON.parse(text) as T;
   }
 
-  private async refreshTokenFor(connectionId: string): Promise<void> {
+  async refreshTokenFor(connectionId: string): Promise<void> {
     const conn = this.getConnection(connectionId);
     if (!conn?.tokens?.refreshToken) throw new Error('No refresh token');
 
@@ -1226,10 +1226,10 @@ export class BackendService {
   }
 
   // ==========================================================================
-  // Internal helpers
+  // Internal helpers (also used by BackendAuthService)
   // ==========================================================================
 
-  private updateConnection(connectionId: string, updates: Partial<BackendConnection>): void {
+  updateConnection(connectionId: string, updates: Partial<BackendConnection>): void {
     this._connections.update(list =>
       list.map(c => c.id === connectionId ? { ...c, ...updates } : c)
     );
@@ -1239,7 +1239,7 @@ export class BackendService {
   // Persistence (Tauri SQLite + keyring vault)
   // ==========================================================================
 
-  private persistConnections(): void {
+  persistConnections(): void {
     for (const c of this._connections()) {
       invoke('save_backend_connection', {
         id: c.id,

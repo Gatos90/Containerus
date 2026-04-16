@@ -1,6 +1,8 @@
 import { CommonModule } from '@angular/common';
-import { Component, computed, HostListener, inject, OnInit, signal, ChangeDetectionStrategy } from '@angular/core';
+import { Component, computed, HostListener, inject, OnInit, signal, ChangeDetectionStrategy, ViewChild } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { ContainerActionsService } from './container-actions.service';
+import { ContainerWorkloadComponent, PodEntry } from './container-workload.component';
 import {
   LucideAngularModule,
   LucideIconData,
@@ -62,13 +64,6 @@ import { EmptyStateComponent } from '../../../shared/components/empty-state/empt
 import { HelpTooltipComponent } from '../../../shared/components/help-tooltip/help-tooltip.component';
 import { Router } from '@angular/router';
 
-interface PodEntry {
-  pod: K8sPod;
-  clusterName: string;
-  clusterId: string;
-  connectionId: string;
-}
-
 export type Workload =
   | { kind: 'container'; container: Container }
   | { kind: 'pod'; pod: K8sPod; clusterName: string; clusterId: string; connectionId: string };
@@ -87,6 +82,7 @@ export type Workload =
     PodLogsViewerModalComponent,
     EmptyStateComponent,
     HelpTooltipComponent,
+    ContainerWorkloadComponent,
   ],
   templateUrl: './container-list.component.html',
   host: {
@@ -103,6 +99,10 @@ export class ContainerListComponent implements OnInit {
   private readonly terminalService = inject(TerminalService);
   readonly backend = inject(BackendService);
   private readonly router = inject(Router);
+  private readonly actionsService = inject(ContainerActionsService);
+
+  @ViewChild(ContainerWorkloadComponent)
+  private workloadComponent?: ContainerWorkloadComponent;
 
   // Lucide icons
   readonly Play = Play;
@@ -390,39 +390,43 @@ export class ContainerListComponent implements OnInit {
   }
 
   async loadBackendPods(): Promise<void> {
-    await this.backend.waitForReady();
-    const connections = this.backend.connectedBackends();
-    if (connections.length === 0) {
-      this.backendPods.set([]);
-      return;
-    }
-    this.podsLoading.set(true);
-    try {
-      const allPods: PodEntry[] = [];
-      await Promise.all(connections.map(async (conn) => {
-        try {
-          const clusters = await this.backend.listAllClustersFor(conn.id);
-          await Promise.all(clusters.map(async (cluster) => {
-            try {
-              const namespaces = await this.backend.listNamespacesFor(conn.id, cluster.id);
-              await Promise.all(namespaces.map(async (ns) => {
-                try {
-                  const pods = await this.backend.listPodsFor(conn.id, cluster.id, ns.name);
-                  allPods.push(...pods.map(pod => ({
-                    pod,
-                    clusterName: cluster.name,
-                    clusterId: cluster.id,
-                    connectionId: conn.id,
-                  })));
-                } catch { /* skip namespace */ }
-              }));
-            } catch { /* skip cluster */ }
-          }));
-        } catch { /* skip connection */ }
-      }));
-      this.backendPods.set(allPods);
-    } finally {
-      this.podsLoading.set(false);
+    if (this.workloadComponent) {
+      await this.workloadComponent.loadBackendPods();
+      this.backendPods.set(this.workloadComponent.backendPods());
+      this.podsLoading.set(this.workloadComponent.podsLoading());
+    } else {
+      // Fallback: load directly (used during initial render before ViewChild resolves)
+      await this.backend.waitForReady();
+      const connections = this.backend.connectedBackends();
+      if (connections.length === 0) { this.backendPods.set([]); return; }
+      this.podsLoading.set(true);
+      try {
+        const allPods: PodEntry[] = [];
+        await Promise.all(connections.map(async (conn) => {
+          try {
+            const clusters = await this.backend.listAllClustersFor(conn.id);
+            await Promise.all(clusters.map(async (cluster) => {
+              try {
+                const namespaces = await this.backend.listNamespacesFor(conn.id, cluster.id);
+                await Promise.all(namespaces.map(async (ns) => {
+                  try {
+                    const pods = await this.backend.listPodsFor(conn.id, cluster.id, ns.name);
+                    allPods.push(...pods.map(pod => ({
+                      pod,
+                      clusterName: cluster.name,
+                      clusterId: cluster.id,
+                      connectionId: conn.id,
+                    })));
+                  } catch { /* skip namespace */ }
+                }));
+              } catch { /* skip cluster */ }
+            }));
+          } catch { /* skip connection */ }
+        }));
+        this.backendPods.set(allPods);
+      } finally {
+        this.podsLoading.set(false);
+      }
     }
   }
 
@@ -433,8 +437,7 @@ export class ContainerListComponent implements OnInit {
   confirmAction = signal<{ container: Container; action: ContainerAction } | null>(null);
 
   async performAction(container: Container, action: ContainerAction): Promise<void> {
-    const destructive: ContainerAction[] = ['stop', 'remove'];
-    if (destructive.includes(action)) {
+    if (this.actionsService.isDestructiveAction(action)) {
       this.confirmAction.set({ container, action });
       return;
     }
@@ -461,13 +464,7 @@ export class ContainerListComponent implements OnInit {
   }
 
   private async executeAction(container: Container, action: ContainerAction): Promise<void> {
-    const name = getDisplayName(container);
-    const success = await this.containerState.performAction(container, action);
-    if (success) {
-      this.toast.success(`${action.charAt(0).toUpperCase() + action.slice(1)}${action.endsWith('e') ? 'd' : 'ed'} ${name}`);
-    } else {
-      this.toast.error(`Failed to ${action} ${name}`);
-    }
+    await this.actionsService.executeAction(container, action);
   }
 
   showLogs(container: Container): void {
@@ -619,18 +616,22 @@ export class ContainerListComponent implements OnInit {
   }
 
   async deletePod(workload: Workload & { kind: 'pod' }): Promise<void> {
-    const key = `pod:${workload.connectionId}/${workload.clusterId}/${workload.pod.namespace}/${workload.pod.name}`;
-    if (!confirm(`Delete pod "${workload.pod.name}" in namespace "${workload.pod.namespace}"? This action cannot be undone.`)) {
+    if (this.workloadComponent) {
+      await this.workloadComponent.deletePod(
+        workload.connectionId, workload.clusterId,
+        workload.pod.namespace, workload.pod.name,
+      );
+      this.backendPods.set(this.workloadComponent.backendPods());
       return;
     }
+    // Fallback when workload component not yet available
+    const key = `pod:${workload.connectionId}/${workload.clusterId}/${workload.pod.namespace}/${workload.pod.name}`;
+    if (!confirm(`Delete pod "${workload.pod.name}" in namespace "${workload.pod.namespace}"? This action cannot be undone.`)) return;
     this.podActionLoading.update(s => { const n = new Set(s); n.add(key); return n; });
     try {
       await this.backend.deleteK8sResourceFor(
-        workload.connectionId,
-        workload.clusterId,
-        'pods',
-        workload.pod.name,
-        workload.pod.namespace,
+        workload.connectionId, workload.clusterId, 'pods',
+        workload.pod.name, workload.pod.namespace,
       );
       this.toast.success(`Deleted pod ${workload.pod.name}`);
       await this.loadBackendPods();
