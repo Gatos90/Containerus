@@ -3,7 +3,10 @@
   <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
     <div class="flex items-center gap-4">
       <div>
-        <h1 class="text-xl sm:text-2xl font-bold">System Management</h1>
+        <div class="flex items-center gap-2">
+          <h1 class="text-xl sm:text-2xl font-bold">System Management</h1>
+          <app-help-tooltip feature="jump-hosts" class="hidden sm:inline-flex"></app-help-tooltip>
+        </div>
         <p class="text-xs sm:text-sm text-zinc-400 hidden sm:block">Manage connected container systems</p>
       </div>
       <!-- Compact colored stats -->
@@ -34,6 +37,7 @@
         class="flex items-center p-2.5 sm:px-3 sm:py-1.5 rounded-lg border border-zinc-700 text-sm hover:bg-zinc-800 transition-colors"
         [disabled]="refreshing"
         title="Refresh"
+              aria-label="Refresh"
       >
         <lucide-icon
           [img]="RefreshCw"
@@ -139,6 +143,7 @@
               <button
                 (click)="disconnect(system.id)"
                 title="Disconnect"
+              aria-label="Disconnect"
                 class="p-2.5 sm:p-2 touch-target rounded-lg hover:bg-zinc-700 transition-colors"
               >
                 <lucide-icon [img]="Unlink" class="w-4 h-4"></lucide-icon>
@@ -147,6 +152,7 @@
               <button
                 (click)="dockTerminal(system.id)"
                 title="Terminal"
+              aria-label="Terminal"
                 class="p-2.5 sm:p-2 touch-target rounded-lg hover:bg-zinc-700 transition-colors"
               >
                 <lucide-icon [img]="Terminal" class="w-4 h-4"></lucide-icon>
@@ -155,6 +161,7 @@
               <button
                 (click)="connect(system.id)"
                 title="Connect"
+              aria-label="Connect"
                 class="p-2.5 sm:p-2 touch-target rounded-lg hover:bg-zinc-700 transition-colors"
                 [disabled]="getConnectionState(system.id) === 'connecting'"
               >
@@ -165,6 +172,7 @@
             <button
               (click)="openEditDialog(system)"
               title="Edit"
+              aria-label="Edit"
               class="p-2.5 sm:p-2 touch-target rounded-lg hover:bg-zinc-700 transition-colors"
             >
               <lucide-icon [img]="Pencil" class="w-4 h-4"></lucide-icon>
@@ -173,6 +181,7 @@
             <button
               (click)="deleteSystem(system.id)"
               title="Delete"
+              aria-label="Delete"
               class="p-2.5 sm:p-2 touch-target rounded-lg hover:bg-zinc-700 transition-colors text-red-400 hover:text-red-300"
             >
               <lucide-icon [img]="Trash2" class="w-4 h-4"></lucide-icon>
@@ -382,9 +391,9 @@
         }
       </div>
     } @empty {
-      <div class="text-center py-12 text-zinc-500">
-        <lucide-icon [img]="Server" class="w-12 h-12 mx-auto mb-3 opacity-50"></lucide-icon>
-        @if (systemState.searchQuery() || systemState.statusFilter()) {
+      @if (systemState.searchQuery() || systemState.statusFilter()) {
+        <div class="text-center py-12 text-zinc-500">
+          <lucide-icon [img]="Server" class="w-12 h-12 mx-auto mb-3 opacity-50"></lucide-icon>
           <p>No systems match your search.</p>
           <p class="text-sm mt-1">Try adjusting your filters or search query.</p>
           <button
@@ -393,26 +402,48 @@
           >
             Clear filters
           </button>
-        } @else {
-          <p>No systems configured.</p>
-          <p class="text-sm mt-1">Tap "Add System" to get started.</p>
-        }
-      </div>
+        </div>
+      } @else {
+        <app-empty-state
+          [icon]="Server"
+          headline="No systems yet"
+          description="Connect your first container host — local Docker, a remote server over SSH, or a Containerus backend deployment."
+          [primaryCta]="{ label: 'Set up your first system' }"
+          [secondaryCta]="{ label: 'Add manually' }"
+          (primaryAction)="showSetupWizard.set(true)"
+          (secondaryAction)="showAddDialog = true"
+        ></app-empty-state>
+      }
     }
   </div>
 </div>
 
+@if (showSetupWizard()) {
+  <app-setup-wizard
+    (completed)="onWizardCompleted()"
+    (cancelled)="onWizardCancelled()"
+  ></app-setup-wizard>
+}
+
+@if (showFirstSuccess()) {
+  <app-first-success
+    [systemName]="lastAddedSystemName()"
+    (dismiss)="onFirstSuccessDismissed()"
+  ></app-first-success>
+}
+
 @if (showAddDialog) {
   <!-- Backdrop -->
-  <div class="fixed inset-0 bg-black/70 z-50 flex items-end sm:items-center justify-center sm:p-4">
+  <div class="fixed inset-0 bg-black/70 z-50 flex items-end sm:items-center justify-center sm:p-4" role="presentation">
     <!-- Modal - full screen on mobile -->
-    <div class="bg-zinc-900 w-full h-[100dvh] sm:h-auto sm:rounded-xl sm:max-w-lg sm:max-h-[90vh] flex flex-col overflow-hidden shadow-2xl">
+    <div class="bg-zinc-900 w-full h-[100dvh] sm:h-auto sm:rounded-xl sm:max-w-lg sm:max-h-[90vh] flex flex-col overflow-hidden shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="add-system-title">
       <!-- Header (fixed) -->
       <div class="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 border-b border-zinc-800 flex-shrink-0">
-        <h2 class="text-lg sm:text-xl font-bold">Add System</h2>
+        <h2 id="add-system-title" class="text-lg sm:text-xl font-bold">Add System</h2>
         <button
           (click)="showAddDialog = false; jumpHostForms = []"
           class="p-2.5 sm:p-2 touch-target text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 rounded-lg transition-colors"
+          aria-label="Close dialog"
         >
           <lucide-icon [img]="X" class="w-5 h-5"></lucide-icon>
         </button>
@@ -699,6 +730,7 @@
                           type="button"
                           (click)="browseForSshKey('add')"
                           title="Browse for SSH key"
+              aria-label="Browse for SSH key"
                           class="px-3 py-2.5 sm:py-2 bg-zinc-700 hover:bg-zinc-600 border border-zinc-600 rounded-lg transition-colors"
                         >
                           <lucide-icon [img]="FolderOpen" class="w-4 h-4"></lucide-icon>
@@ -765,15 +797,16 @@
 
 @if (showEditDialog) {
   <!-- Backdrop -->
-  <div class="fixed inset-0 bg-black/70 z-50 flex items-end sm:items-center justify-center sm:p-4">
+  <div class="fixed inset-0 bg-black/70 z-50 flex items-end sm:items-center justify-center sm:p-4" role="presentation">
     <!-- Modal - full screen on mobile -->
-    <div class="bg-zinc-900 w-full h-[100dvh] sm:h-auto sm:rounded-xl sm:max-w-lg sm:max-h-[90vh] flex flex-col overflow-hidden shadow-2xl">
+    <div class="bg-zinc-900 w-full h-[100dvh] sm:h-auto sm:rounded-xl sm:max-w-lg sm:max-h-[90vh] flex flex-col overflow-hidden shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="edit-system-title">
       <!-- Header (fixed) -->
       <div class="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 border-b border-zinc-800 flex-shrink-0">
-        <h2 class="text-lg sm:text-xl font-bold">Edit System</h2>
+        <h2 id="edit-system-title" class="text-lg sm:text-xl font-bold">Edit System</h2>
         <button
           (click)="showEditDialog = false; editJumpHostForms = []"
           class="p-2.5 sm:p-2 touch-target text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 rounded-lg transition-colors"
+          aria-label="Close dialog"
         >
           <lucide-icon [img]="X" class="w-5 h-5"></lucide-icon>
         </button>
@@ -1020,6 +1053,7 @@
                           type="button"
                           (click)="browseForSshKey('edit')"
                           title="Browse for SSH key"
+              aria-label="Browse for SSH key"
                           class="px-3 py-2.5 sm:py-2 bg-zinc-700 hover:bg-zinc-600 border border-zinc-600 rounded-lg transition-colors"
                         >
                           <lucide-icon [img]="FolderOpen" class="w-4 h-4"></lucide-icon>
@@ -1091,9 +1125,9 @@
 }
 
 @if (systemState.hostKeyMismatch(); as mismatch) {
-  <div class="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
-    <div class="bg-zinc-900 border border-red-500/50 rounded-xl max-w-md w-full p-6 space-y-4 shadow-2xl">
-      <h3 class="text-lg font-bold text-red-400">Host Key Changed</h3>
+  <div class="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4" role="presentation">
+    <div class="bg-zinc-900 border border-red-500/50 rounded-xl max-w-md w-full p-6 space-y-4 shadow-2xl" role="alertdialog" aria-modal="true" aria-labelledby="host-key-title">
+      <h3 id="host-key-title" class="text-lg font-bold text-red-400">Host Key Changed</h3>
       <p class="text-sm text-zinc-300">
         The host key for <strong>{{ mismatch.hostname }}:{{ mismatch.port }}</strong>
         has changed. This could mean the server was reinstalled,

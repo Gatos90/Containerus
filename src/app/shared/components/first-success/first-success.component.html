@@ -1,0 +1,69 @@
+<!-- Backdrop -->
+<div class="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4" (click)="onDismiss()">
+  <div
+    class="bg-zinc-900 rounded-2xl max-w-sm w-full border border-zinc-700/50 shadow-2xl overflow-hidden"
+    (click)="$event.stopPropagation()"
+  >
+    <!-- Animated top banner -->
+    <div class="relative h-32 bg-gradient-to-br from-zinc-900 via-blue-950/40 to-zinc-900 flex items-center justify-center overflow-hidden">
+      <!-- Radial glow -->
+      <div class="absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(59,130,246,0.2),transparent_70%)]"></div>
+      <!-- Orbiting dots decoration -->
+      <div class="absolute w-40 h-40 rounded-full border border-blue-500/10 animate-[spin_8s_linear_infinite]">
+        <div class="absolute top-0 left-1/2 -translate-x-1/2 w-2 h-2 rounded-full bg-blue-500/50"></div>
+      </div>
+      <div class="absolute w-28 h-28 rounded-full border border-green-500/10 animate-[spin_5s_linear_infinite_reverse]">
+        <div class="absolute bottom-0 left-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full bg-green-500/50"></div>
+      </div>
+      <!-- Central check badge -->
+      <div
+        class="relative z-10 w-16 h-16 rounded-2xl flex items-center justify-center shadow-xl transition-all duration-700"
+        [class]="animateBadge() ? 'bg-green-500 scale-100 opacity-100' : 'bg-zinc-800 scale-75 opacity-0'"
+      >
+        <lucide-icon [img]="Check" class="w-8 h-8 text-white"></lucide-icon>
+      </div>
+    </div>
+
+    <!-- Content -->
+    <div class="px-5 pt-4 pb-5">
+      <!-- Close -->
+      <button
+        (click)="onDismiss()"
+        class="absolute top-3 right-3 p-1.5 text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 rounded-lg transition-colors"
+      >
+        <lucide-icon [img]="X" class="w-4 h-4"></lucide-icon>
+      </button>
+
+      <h2 class="text-lg font-bold text-white text-center mb-1">You're connected!</h2>
+      <p class="text-sm text-zinc-400 text-center mb-5">
+        <span class="text-zinc-200 font-medium">{{ systemName() }}</span> is live and ready.
+      </p>
+
+      <!-- Next steps grid -->
+      <div class="space-y-2">
+        <p class="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-2">Explore next</p>
+        @for (step of nextSteps; track step.route) {
+          <a
+            [routerLink]="step.route"
+            (click)="onNavigate()"
+            class="flex items-center gap-3 p-3 rounded-xl bg-zinc-800/60 hover:bg-zinc-800 border border-transparent hover:border-zinc-700/60 transition-all group"
+          >
+            <div class="flex-1 min-w-0">
+              <p class="text-sm font-medium text-white">{{ step.label }}</p>
+              <p class="text-xs text-zinc-500 truncate">{{ step.description }}</p>
+            </div>
+            <lucide-icon [img]="ArrowRight" class="w-4 h-4 text-zinc-600 group-hover:text-zinc-400 group-hover:translate-x-0.5 transition-all flex-shrink-0"></lucide-icon>
+          </a>
+        }
+      </div>
+
+      <!-- Dismiss -->
+      <button
+        (click)="onDismiss()"
+        class="w-full mt-4 py-2.5 rounded-xl text-sm text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 transition-colors"
+      >
+        Dismiss
+      </button>
+    </div>
+  </div>
+</div>

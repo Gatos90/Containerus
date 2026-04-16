@@ -14,10 +14,14 @@ import { ImageState } from '../../../state/image.state';
 import { SystemState } from '../../../state/system.state';
 import { ContainerState } from '../../../state/container.state';
 import { SystemImageSectionComponent } from '../components/system-image-section/system-image-section.component';
+import { EmptyStateComponent } from '../../../shared/components/empty-state/empty-state.component';
+import { HelpTooltipComponent } from '../../../shared/components/help-tooltip/help-tooltip.component';
+import { Router } from '@angular/router';
+import { Layers } from 'lucide-angular';
 
 @Component({
   selector: 'app-image-list',
-  imports: [CommonModule, FormsModule, LucideAngularModule, SystemImageSectionComponent],
+  imports: [CommonModule, FormsModule, LucideAngularModule, SystemImageSectionComponent, EmptyStateComponent, HelpTooltipComponent],
   templateUrl: './image-list.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -25,12 +29,18 @@ export class ImageListComponent implements OnInit {
   readonly imageState = inject(ImageState);
   readonly systemState = inject(SystemState);
   readonly containerState = inject(ContainerState);
+  private readonly router = inject(Router);
 
   readonly Search = Search;
   readonly RefreshCw = RefreshCw;
   readonly Download = Download;
   readonly Circle = Circle;
   readonly SlidersHorizontal = SlidersHorizontal;
+  readonly Layers = Layers;
+
+  goToSystems(): void {
+    this.router.navigate(['/systems']);
+  }
 
   readonly getImageFullName = getImageFullName;
   readonly getImageSizeHuman = getImageSizeHuman;

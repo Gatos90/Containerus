@@ -3,7 +3,10 @@
   <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
     <div class="flex items-center gap-4">
       <div>
-        <h1 class="text-xl sm:text-2xl font-bold">Container Management</h1>
+        <div class="flex items-center gap-2">
+          <h1 class="text-xl sm:text-2xl font-bold">Container Management</h1>
+          <app-help-tooltip feature="ai-terminal" class="hidden sm:inline-flex"></app-help-tooltip>
+        </div>
         <p class="text-xs sm:text-sm text-zinc-400 hidden sm:block">Manage containers across systems</p>
       </div>
       <!-- Compact colored stats -->
@@ -22,6 +25,7 @@
         (click)="showMobileFilters.set(true)"
         class="md:hidden p-2.5 touch-target rounded-lg border border-zinc-700 hover:bg-zinc-800 transition-colors"
         title="Filters"
+        aria-label="Open filters"
       >
         <lucide-icon [img]="SlidersHorizontal" class="w-4 h-4"></lucide-icon>
       </button>
@@ -32,6 +36,7 @@
         class="flex items-center p-2.5 sm:px-3 sm:py-1.5 rounded-lg border border-zinc-700 text-sm hover:bg-zinc-800 transition-colors"
         [disabled]="isRefreshing()"
         title="Refresh"
+        aria-label="Refresh containers"
       >
         <lucide-icon
           [img]="RefreshCw"
@@ -54,6 +59,7 @@
       <input
         type="text"
         placeholder="Search containers & pods..."
+        aria-label="Search containers and pods"
         [ngModel]="containerState.searchQuery()"
         (ngModelChange)="containerState.setSearchQuery($event)"
         class="w-full h-9 pl-10 pr-4 bg-zinc-800 border border-zinc-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -192,6 +198,7 @@
           class="p-1.5 rounded transition-colors"
           [class.bg-zinc-700]="viewMode() === 'grid'"
           title="Grid view"
+          aria-label="Switch to grid view"
         >
           <lucide-icon [img]="LayoutGrid" class="w-4 h-4"></lucide-icon>
         </button>
@@ -200,6 +207,7 @@
           class="p-1.5 rounded transition-colors"
           [class.bg-zinc-700]="viewMode() === 'list'"
           title="List view"
+          aria-label="Switch to list view"
         >
           <lucide-icon [img]="List" class="w-4 h-4"></lucide-icon>
         </button>
@@ -290,6 +298,7 @@
                   (click)="openModal(workload.container)"
                   class="p-1 rounded-md hover:bg-zinc-700/50 transition-colors text-zinc-500 hover:text-zinc-300"
                   title="Open full details"
+                  aria-label="Open full details"
                 >
                   <lucide-icon [img]="Maximize2" class="w-3.5 h-3.5"></lucide-icon>
                 </button>
@@ -297,6 +306,8 @@
                   (click)="toggleDetails(workload.container)"
                   class="p-1 rounded-md hover:bg-zinc-700/50 transition-colors text-zinc-500 hover:text-zinc-300"
                   title="View details"
+                  aria-label="View details"
+                  aria-label="Toggle details"
                 >
                   <lucide-icon [img]="Info" class="w-3.5 h-3.5"></lucide-icon>
                 </button>
@@ -355,6 +366,7 @@
                   class="flex items-center gap-1 px-2.5 py-1 rounded-md text-xs text-red-400 hover:bg-red-500/10 transition-colors"
                   [disabled]="containerState.isLoading(workload.container.id)"
                   title="Stop"
+                  aria-label="Stop"
                 >
                   <lucide-icon [img]="Square" class="w-3 h-3"></lucide-icon>
                   Stop
@@ -364,6 +376,7 @@
                   class="flex items-center gap-1 px-2.5 py-1 rounded-md text-xs text-zinc-400 hover:bg-zinc-700/50 hover:text-zinc-200 transition-colors"
                   [disabled]="containerState.isLoading(workload.container.id)"
                   title="Restart"
+                  aria-label="Restart"
                 >
                   <lucide-icon [img]="RotateCcw" class="w-3 h-3"></lucide-icon>
                   Restart
@@ -373,6 +386,7 @@
                   (click)="showLogs(workload.container)"
                   class="p-1.5 rounded-md text-zinc-500 hover:bg-zinc-700/50 hover:text-zinc-300 transition-colors"
                   title="Logs"
+                  aria-label="Logs"
                 >
                   <lucide-icon [img]="FileText" class="w-3.5 h-3.5"></lucide-icon>
                 </button>
@@ -380,6 +394,7 @@
                   (click)="dockTerminal(workload.container)"
                   class="p-1.5 rounded-md text-zinc-500 hover:bg-zinc-700/50 hover:text-zinc-300 transition-colors"
                   title="Terminal"
+                  aria-label="Terminal"
                 >
                   <lucide-icon [img]="Terminal" class="w-3.5 h-3.5"></lucide-icon>
                 </button>
@@ -387,6 +402,7 @@
                   (click)="dockFileBrowser(workload.container)"
                   class="p-1.5 rounded-md text-zinc-500 hover:bg-zinc-700/50 hover:text-zinc-300 transition-colors"
                   title="Files"
+                  aria-label="Files"
                 >
                   <lucide-icon [img]="FolderOpen" class="w-3.5 h-3.5"></lucide-icon>
                 </button>
@@ -396,6 +412,7 @@
                   class="flex items-center gap-1 px-2.5 py-1 rounded-md text-xs text-green-400 hover:bg-green-500/10 transition-colors"
                   [disabled]="containerState.isLoading(workload.container.id)"
                   title="Start"
+                  aria-label="Start"
                 >
                   <lucide-icon [img]="Play" class="w-3 h-3"></lucide-icon>
                   Start
@@ -405,6 +422,7 @@
                   class="flex items-center gap-1 px-2.5 py-1 rounded-md text-xs text-zinc-400 hover:bg-zinc-700/50 hover:text-zinc-200 transition-colors"
                   [disabled]="containerState.isLoading(workload.container.id)"
                   title="Restart"
+                  aria-label="Restart"
                 >
                   <lucide-icon [img]="RotateCcw" class="w-3 h-3"></lucide-icon>
                   Restart
@@ -414,6 +432,7 @@
                   (click)="showLogs(workload.container)"
                   class="p-1.5 rounded-md text-zinc-500 hover:bg-zinc-700/50 hover:text-zinc-300 transition-colors"
                   title="Logs"
+                  aria-label="Logs"
                 >
                   <lucide-icon [img]="FileText" class="w-3.5 h-3.5"></lucide-icon>
                 </button>
@@ -453,6 +472,7 @@
                   (click)="togglePodDetails(workload)"
                   class="p-1 rounded-md hover:bg-zinc-700/50 transition-colors text-zinc-500 hover:text-zinc-300"
                   title="View details"
+                  aria-label="View details"
                 >
                   <lucide-icon [img]="Info" class="w-3.5 h-3.5"></lucide-icon>
                 </button>
@@ -527,6 +547,7 @@
                 [disabled]="isPodActionLoading(workload)"
                 class="flex items-center gap-1 px-2.5 py-1 rounded-md text-xs text-zinc-400 hover:bg-red-500/10 hover:text-red-400 transition-colors disabled:opacity-50"
                 title="Delete pod"
+                  aria-label="Delete pod"
               >
                 <lucide-icon [img]="Trash2" class="w-3 h-3"></lucide-icon>
                 Delete
@@ -539,6 +560,7 @@
                 (click)="showPodLogs(workload)"
                 class="p-1.5 rounded-md text-zinc-500 hover:bg-zinc-700/50 hover:text-zinc-300 transition-colors"
                 title="Logs"
+                  aria-label="Logs"
               >
                 <lucide-icon [img]="FileText" class="w-3.5 h-3.5"></lucide-icon>
               </button>
@@ -547,6 +569,7 @@
                   (click)="dockPodTerminal(workload)"
                   class="p-1.5 rounded-md text-zinc-500 hover:bg-zinc-700/50 hover:text-zinc-300 transition-colors"
                   title="Terminal"
+                  aria-label="Terminal"
                 >
                   <lucide-icon [img]="Terminal" class="w-3.5 h-3.5"></lucide-icon>
                 </button>
@@ -554,6 +577,7 @@
                   (click)="dockPodFileBrowser(workload)"
                   class="p-1.5 rounded-md text-zinc-500 hover:bg-zinc-700/50 hover:text-zinc-300 transition-colors"
                   title="Files"
+                  aria-label="Files"
                 >
                   <lucide-icon [img]="FolderOpen" class="w-3.5 h-3.5"></lucide-icon>
                 </button>
@@ -563,13 +587,29 @@
         </div>
       }
     } @empty {
-      <div class="col-span-full text-center py-12 text-zinc-500">
+      <div class="col-span-full">
         @if (systemState.connectedSystems().length === 0 && backend.connectedBackends().length === 0) {
-          <p>No systems connected. Go to Systems to connect.</p>
+          <app-empty-state
+            [icon]="Box"
+            headline="No systems connected"
+            description="Connect a container host first, then your containers will appear here."
+            [primaryCta]="{ label: 'Go to Systems' }"
+            (primaryAction)="goToSystems()"
+          ></app-empty-state>
         } @else if (containerState.searchQuery() || containerState.statusFilter() || containerState.runtimeFilter()) {
-          <p>No containers or pods match your filters.</p>
+          <div class="text-center py-12 text-zinc-500">
+            <lucide-icon [img]="Box" class="w-12 h-12 mx-auto mb-3 opacity-40"></lucide-icon>
+            <p>No containers match your filters.</p>
+            <p class="text-sm mt-1">Try adjusting your search or filter criteria.</p>
+          </div>
         } @else {
-          <p>No containers or pods found on connected systems.</p>
+          <app-empty-state
+            [icon]="Box"
+            headline="No containers running"
+            description="Your connected systems have no containers yet. Pull an image and start a container to see it here."
+            [primaryCta]="{ label: 'Browse images' }"
+            (primaryAction)="goToImages()"
+          ></app-empty-state>
         }
       </div>
     }
@@ -578,9 +618,9 @@
 
 <!-- Confirm Action Dialog -->
 @if (confirmAction(); as pending) {
-  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/60" (click)="cancelAction()">
-    <div class="bg-zinc-900 border border-zinc-700 rounded-xl p-4 w-80 shadow-xl" (click)="$event.stopPropagation()">
-      <h3 class="text-sm font-medium mb-2">Confirm {{ pending.action | titlecase }}</h3>
+  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/60" (click)="cancelAction()" role="presentation">
+    <div class="bg-zinc-900 border border-zinc-700 rounded-xl p-4 w-80 shadow-xl" role="alertdialog" aria-modal="true" aria-labelledby="confirm-dialog-title" (click)="$event.stopPropagation()">
+      <h3 id="confirm-dialog-title" class="text-sm font-medium mb-2">Confirm {{ pending.action | titlecase }}</h3>
       <p class="text-sm text-zinc-400 mb-4">
         Are you sure you want to {{ pending.action }}
         <span class="text-white font-medium">{{ getDisplayName(pending.container) }}</span>?
@@ -637,21 +677,21 @@
 
 <!-- Pod Detail Modal -->
 @if (modalPod()) {
-  <div class="fixed inset-0 bg-black/70 z-50 flex items-end sm:items-center justify-center sm:p-4" (click)="closePodModal()">
-    <div class="bg-zinc-900 w-full h-[100dvh] sm:h-auto sm:rounded-xl sm:max-w-3xl sm:max-h-[90vh] overflow-hidden flex flex-col shadow-2xl" (click)="$event.stopPropagation()">
+  <div class="fixed inset-0 bg-black/70 z-50 flex items-end sm:items-center justify-center sm:p-4" (click)="closePodModal()" role="presentation">
+    <div class="bg-zinc-900 w-full h-[100dvh] sm:h-auto sm:rounded-xl sm:max-w-3xl sm:max-h-[90vh] overflow-hidden flex flex-col shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="pod-modal-title" (click)="$event.stopPropagation()">
       <!-- Header -->
       <div class="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 border-b border-zinc-800">
         <div class="flex items-center gap-2 sm:gap-3 min-w-0">
           <lucide-icon [img]="Cloud" class="w-5 h-5 text-purple-400 flex-shrink-0"></lucide-icon>
           <div class="min-w-0">
-            <h2 class="text-base sm:text-lg font-semibold truncate font-mono">{{ modalPod()!.pod.name }}</h2>
+            <h2 id="pod-modal-title" class="text-base sm:text-lg font-semibold truncate font-mono">{{ modalPod()!.pod.name }}</h2>
             <div class="flex items-center gap-1.5">
               <span class="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400">{{ modalPod()!.pod.namespace }}</span>
               <span class="text-xs text-zinc-600">{{ modalPod()!.clusterName }}</span>
             </div>
           </div>
         </div>
-        <button (click)="closePodModal()" class="p-2.5 sm:p-2 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 rounded-lg">
+        <button (click)="closePodModal()" class="p-2.5 sm:p-2 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 rounded-lg" aria-label="Close pod details">
           <lucide-icon [img]="X" class="w-5 h-5"></lucide-icon>
         </button>
       </div>

@@ -58,6 +58,9 @@ import { TerminalState, DockedFileBrowser, DEFAULT_TERMINAL_OPTIONS } from '../.
 import { TerminalService } from '../../../core/services/terminal.service';
 import { BackendService } from '../../../core/services/backend.service';
 import { K8sCluster, K8sPod } from '../../../core/models/backend.model';
+import { EmptyStateComponent } from '../../../shared/components/empty-state/empty-state.component';
+import { HelpTooltipComponent } from '../../../shared/components/help-tooltip/help-tooltip.component';
+import { Router, RouterModule } from '@angular/router';
 
 interface PodEntry {
   pod: K8sPod;
@@ -82,6 +85,9 @@ export type Workload =
     ContainerDetailModalComponent,
     LogsViewerModalComponent,
     PodLogsViewerModalComponent,
+    EmptyStateComponent,
+    HelpTooltipComponent,
+    RouterModule,
   ],
   templateUrl: './container-list.component.html',
 })
@@ -93,6 +99,7 @@ export class ContainerListComponent implements OnInit {
   private readonly terminalState = inject(TerminalState);
   private readonly terminalService = inject(TerminalService);
   readonly backend = inject(BackendService);
+  private readonly router = inject(Router);
 
   // Lucide icons
   readonly Play = Play;
@@ -356,6 +363,14 @@ export class ContainerListComponent implements OnInit {
 
   isRefreshing(): boolean {
     return this.refreshing;
+  }
+
+  goToSystems(): void {
+    this.router.navigate(['/systems']);
+  }
+
+  goToImages(): void {
+    this.router.navigate(['/images']);
   }
 
   async refresh(): Promise<void> {

@@ -26,6 +26,10 @@ import {
   Circle,
   Activity,
 } from 'lucide-angular';
+import { EmptyStateComponent } from '../../../shared/components/empty-state/empty-state.component';
+import { SetupWizardComponent } from '../../../shared/components/setup-wizard/setup-wizard.component';
+import { FirstSuccessComponent } from '../../../shared/components/first-success/first-success.component';
+import { HelpTooltipComponent } from '../../../shared/components/help-tooltip/help-tooltip.component';
 import { ContainerRuntime } from '../../../core/models/container.model';
 import { ContainerSystem, ExtendedSystemInfo, JumpHost, JumpHostCredentials, LiveSystemMetrics, NewSystemRequest, OsType, SshAuthMethod, SshHostEntry, UpdateSystemRequest } from '../../../core/models/system.model';
 
@@ -49,7 +53,7 @@ import { ToastState } from '../../../state/toast.state';
 @Component({
   selector: 'app-system-list',
   standalone: true,
-  imports: [CommonModule, FormsModule, LucideAngularModule],
+  imports: [CommonModule, FormsModule, LucideAngularModule, EmptyStateComponent, SetupWizardComponent, FirstSuccessComponent, HelpTooltipComponent],
   templateUrl: './system-list.component.html',
 })
 export class SystemListComponent implements OnInit {
@@ -87,6 +91,9 @@ export class SystemListComponent implements OnInit {
   refreshing = false;
   showAddDialog = false;
   showEditDialog = false;
+  showSetupWizard = signal(false);
+  showFirstSuccess = signal(false);
+  lastAddedSystemName = signal('');
   editingSystemId: string | null = null;
   isMobile = signal(false);
   addingSystem = signal(false);
@@ -247,6 +254,26 @@ export class SystemListComponent implements OnInit {
       console.error('Failed to get SSH host config:', err);
       this.systemState.setError('Failed to load SSH host configuration');
     }
+  }
+
+  onWizardCompleted(): void {
+    this.showSetupWizard.set(false);
+    this.refresh().then(() => {
+      const systems = this.systemState.systems();
+      const newest = systems[systems.length - 1];
+      if (newest) {
+        this.lastAddedSystemName.set(newest.name);
+        this.showFirstSuccess.set(true);
+      }
+    });
+  }
+
+  onWizardCancelled(): void {
+    this.showSetupWizard.set(false);
+  }
+
+  onFirstSuccessDismissed(): void {
+    this.showFirstSuccess.set(false);
   }
 
   async refresh(): Promise<void> {

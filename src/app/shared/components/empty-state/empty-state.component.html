@@ -1,0 +1,39 @@
+<div class="flex flex-col items-center justify-center py-16 px-6 text-center">
+  <!-- Illustration container -->
+  <div class="relative mb-6">
+    <!-- Outer glow ring -->
+    <div class="absolute inset-0 rounded-full bg-blue-500/10 blur-xl scale-150"></div>
+    <!-- Icon background -->
+    <div class="relative w-20 h-20 rounded-2xl bg-zinc-800/80 border border-zinc-700/60 flex items-center justify-center shadow-lg">
+      <lucide-icon [img]="icon()" class="w-9 h-9 text-zinc-400"></lucide-icon>
+    </div>
+  </div>
+
+  <!-- Text -->
+  <h3 class="text-lg font-semibold text-white mb-2">{{ headline() }}</h3>
+  @if (description()) {
+    <p class="text-sm text-zinc-400 max-w-sm leading-relaxed">{{ description() }}</p>
+  }
+
+  <!-- CTAs -->
+  @if (primaryCta() || secondaryCta()) {
+    <div class="flex flex-col sm:flex-row items-center gap-3 mt-6">
+      @if (primaryCta(); as cta) {
+        <button
+          (click)="primaryAction.emit()"
+          class="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-500 active:scale-95 transition-all text-sm font-medium shadow-md shadow-blue-900/30"
+        >
+          {{ cta.label }}
+        </button>
+      }
+      @if (secondaryCta(); as cta) {
+        <button
+          (click)="secondaryAction.emit()"
+          class="flex items-center gap-2 px-5 py-2.5 rounded-lg border border-zinc-700 hover:bg-zinc-800 active:scale-95 transition-all text-sm text-zinc-300"
+        >
+          {{ cta.label }}
+        </button>
+      }
+    </div>
+  }
+</div>

@@ -3,7 +3,10 @@
   <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
     <div class="flex items-center gap-4">
       <div>
-        <h1 class="text-xl sm:text-2xl font-bold">Image Management</h1>
+        <div class="flex items-center gap-2">
+          <h1 class="text-xl sm:text-2xl font-bold">Image Management</h1>
+          <app-help-tooltip feature="runtime-selector" class="hidden sm:inline-flex"></app-help-tooltip>
+        </div>
         <p class="text-xs sm:text-sm text-zinc-400 hidden sm:block">Manage container images across systems</p>
       </div>
       <!-- Compact colored stats -->
@@ -22,6 +25,7 @@
         (click)="showMobileFilters.set(true)"
         class="md:hidden p-2.5 rounded-lg border border-zinc-700 hover:bg-zinc-800 transition-colors"
         title="Filters"
+        aria-label="Filters"
       >
         <lucide-icon [img]="SlidersHorizontal" class="w-4 h-4"></lucide-icon>
       </button>
@@ -41,6 +45,7 @@
         class="flex items-center p-2.5 sm:px-3 sm:py-1.5 rounded-lg border border-zinc-700 text-sm hover:bg-zinc-800 transition-colors"
         [disabled]="refreshing"
         title="Refresh"
+        aria-label="Refresh"
       >
         <lucide-icon
           [img]="RefreshCw"
@@ -63,6 +68,7 @@
       <input
         type="text"
         placeholder="Search images..."
+        aria-label="Search images"
         [ngModel]="imageState.searchQuery()"
         (ngModelChange)="imageState.setSearchQuery($event)"
         class="w-full h-9 pl-10 pr-4 bg-zinc-800 border border-zinc-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
@@ -138,13 +144,21 @@
         />
       }
     } @empty {
-      <div class="text-center py-12 text-zinc-500">
-        @if (systemState.connectedSystems().length === 0) {
-          <p>No systems connected. Go to Systems to connect.</p>
-        } @else {
+      @if (systemState.connectedSystems().length === 0) {
+        <app-empty-state
+          [icon]="Layers"
+          headline="No systems connected"
+          description="Connect a container host to browse and pull images."
+          [primaryCta]="{ label: 'Go to Systems' }"
+          (primaryAction)="goToSystems()"
+        ></app-empty-state>
+      } @else {
+        <div class="text-center py-12 text-zinc-500">
+          <lucide-icon [img]="Layers" class="w-12 h-12 mx-auto mb-3 opacity-40"></lucide-icon>
           <p>No images match your filters.</p>
-        }
-      </div>
+          <p class="text-sm mt-1">Try adjusting your filter criteria.</p>
+        </div>
+      }
     }
   </div>
 </div>

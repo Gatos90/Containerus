@@ -1,0 +1,382 @@
+<!-- Backdrop -->
+<div class="fixed inset-0 bg-black/75 z-50 flex items-end sm:items-center justify-center sm:p-4" (click)="onCancel()">
+  <!-- Modal — full screen on mobile, constrained on desktop -->
+  <div
+    class="bg-zinc-900 w-full h-[100dvh] sm:h-auto sm:rounded-2xl sm:max-w-lg sm:max-h-[92vh] flex flex-col overflow-hidden shadow-2xl border border-zinc-700/50"
+    (click)="$event.stopPropagation()"
+  >
+    <!-- Header -->
+    <div class="flex items-center justify-between px-5 py-4 border-b border-zinc-800 flex-shrink-0">
+      <div>
+        <h2 class="text-base font-semibold text-white">Add your first system</h2>
+        <p class="text-xs text-zinc-500 mt-0.5">Step {{ step() }} of 3 — {{ stepLabels[step() - 1] }}</p>
+      </div>
+      <button
+        (click)="onCancel()"
+        class="p-2 touch-target text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 rounded-lg transition-colors"
+      >
+        <lucide-icon [img]="X" class="w-5 h-5"></lucide-icon>
+      </button>
+    </div>
+
+    <!-- Progress bar -->
+    <div class="h-0.5 bg-zinc-800 flex-shrink-0">
+      <div
+        class="h-full bg-blue-500 transition-all duration-500 ease-out"
+        [style.width.%]="(step() / 3) * 100"
+      ></div>
+    </div>
+
+    <!-- Step indicators -->
+    <div class="flex items-center justify-center gap-6 py-4 px-5 flex-shrink-0">
+      @for (label of stepLabels; track label; let i = $index) {
+        <div class="flex items-center gap-1.5">
+          <div
+            class="w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium transition-all"
+            [class]="step() > i + 1 ? 'bg-green-500 text-white' : step() === i + 1 ? 'bg-blue-600 text-white' : 'bg-zinc-800 text-zinc-500'"
+          >
+            @if (step() > i + 1) {
+              <lucide-icon [img]="Check" class="w-3.5 h-3.5"></lucide-icon>
+            } @else {
+              {{ i + 1 }}
+            }
+          </div>
+          <span class="text-xs hidden sm:block" [class]="step() === i + 1 ? 'text-zinc-200' : 'text-zinc-600'">{{ label }}</span>
+        </div>
+        @if (i < stepLabels.length - 1) {
+          <div class="w-6 h-px bg-zinc-700 hidden sm:block"></div>
+        }
+      }
+    </div>
+
+    <!-- Content -->
+    <div class="flex-1 min-h-0 overflow-auto px-5 pb-5">
+
+      <!-- ── STEP 1: Connection Type ── -->
+      @if (step() === 1) {
+        <p class="text-sm text-zinc-400 mb-4">How do you want to connect to your container runtime?</p>
+        <div class="space-y-3">
+          @for (option of connectionOptions; track option.id) {
+            <button
+              (click)="selectType(option.id)"
+              class="w-full flex items-center gap-4 p-4 rounded-xl border text-left transition-all"
+              [class]="connectionType() === option.id
+                ? 'border-blue-500 bg-blue-500/10 ring-1 ring-blue-500/30'
+                : 'border-zinc-700 hover:border-zinc-600 hover:bg-zinc-800/50'"
+            >
+              <div
+                class="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0"
+                [class]="connectionType() === option.id ? 'bg-blue-600/30' : 'bg-zinc-800'"
+              >
+                <lucide-icon [img]="option.icon" class="w-5 h-5" [class]="connectionType() === option.id ? 'text-blue-400' : 'text-zinc-400'"></lucide-icon>
+              </div>
+              <div class="flex-1 min-w-0">
+                <div class="flex items-center gap-2">
+                  <span class="text-sm font-medium text-white">{{ option.label }}</span>
+                  @if (option.badge) {
+                    <span class="text-xs px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 font-medium">{{ option.badge }}</span>
+                  }
+                </div>
+                <p class="text-xs text-zinc-500 mt-0.5">{{ option.subtitle }}</p>
+              </div>
+              @if (connectionType() === option.id) {
+                <lucide-icon [img]="Check" class="w-4 h-4 text-blue-400 flex-shrink-0"></lucide-icon>
+              }
+            </button>
+          }
+        </div>
+      }
+
+      <!-- ── STEP 2: Credentials ── -->
+      @if (step() === 2) {
+        <div class="space-y-4">
+
+          <!-- System Name (always shown) -->
+          <div>
+            <label class="block text-sm text-zinc-400 mb-1.5">System name</label>
+            <input
+              type="text"
+              [(ngModel)]="systemName"
+              placeholder="e.g. Production Server, Local Dev"
+              class="w-full px-3 py-2 rounded-lg bg-zinc-800 border border-zinc-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30 text-sm outline-none transition-colors placeholder:text-zinc-600"
+            />
+          </div>
+
+          <!-- Local Docker: minimal fields -->
+          @if (connectionType() === 'local') {
+            <div class="p-3 rounded-lg bg-zinc-800/50 border border-zinc-700/50 text-sm text-zinc-400 flex items-center gap-2">
+              <lucide-icon [img]="Monitor" class="w-4 h-4 text-zinc-500 flex-shrink-0"></lucide-icon>
+              Local Docker connects to the Docker socket on this machine — no credentials needed.
+            </div>
+          }
+
+          <!-- Remote SSH fields -->
+          @if (connectionType() === 'remote-ssh') {
+            <!-- Host + Port row -->
+            <div class="flex gap-3">
+              <div class="flex-1">
+                <label class="block text-sm text-zinc-400 mb-1.5">Hostname / IP</label>
+                <input
+                  type="text"
+                  [(ngModel)]="hostname"
+                  placeholder="192.168.1.100"
+                  class="w-full px-3 py-2 rounded-lg bg-zinc-800 border border-zinc-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30 text-sm outline-none transition-colors placeholder:text-zinc-600"
+                />
+              </div>
+              <div class="w-24">
+                <label class="block text-sm text-zinc-400 mb-1.5">Port</label>
+                <input
+                  type="number"
+                  [(ngModel)]="port"
+                  min="1"
+                  max="65535"
+                  class="w-full px-3 py-2 rounded-lg bg-zinc-800 border border-zinc-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30 text-sm outline-none transition-colors"
+                />
+              </div>
+            </div>
+
+            <!-- Username -->
+            <div>
+              <label class="block text-sm text-zinc-400 mb-1.5">Username</label>
+              <input
+                type="text"
+                [(ngModel)]="username"
+                placeholder="ubuntu"
+                class="w-full px-3 py-2 rounded-lg bg-zinc-800 border border-zinc-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30 text-sm outline-none transition-colors placeholder:text-zinc-600"
+              />
+            </div>
+
+            <!-- Auth method toggle -->
+            <div>
+              <label class="block text-sm text-zinc-400 mb-2">Authentication</label>
+              <div class="flex gap-2 p-1 bg-zinc-800 rounded-lg">
+                <button
+                  (click)="authMethod = 'password'"
+                  class="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-md text-xs font-medium transition-all"
+                  [class]="authMethod === 'password' ? 'bg-zinc-700 text-white' : 'text-zinc-500 hover:text-zinc-300'"
+                >
+                  <lucide-icon [img]="Lock" class="w-3.5 h-3.5"></lucide-icon>
+                  Password
+                </button>
+                <button
+                  (click)="authMethod = 'publicKey'"
+                  class="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-md text-xs font-medium transition-all"
+                  [class]="authMethod === 'publicKey' ? 'bg-zinc-700 text-white' : 'text-zinc-500 hover:text-zinc-300'"
+                >
+                  <lucide-icon [img]="KeyRound" class="w-3.5 h-3.5"></lucide-icon>
+                  SSH Key
+                </button>
+              </div>
+            </div>
+
+            <!-- Password field -->
+            @if (authMethod === 'password') {
+              <div>
+                <label class="block text-sm text-zinc-400 mb-1.5">Password</label>
+                <div class="relative">
+                  <input
+                    [type]="showPassword() ? 'text' : 'password'"
+                    [(ngModel)]="password"
+                    placeholder="••••••••"
+                    class="w-full px-3 py-2 pr-10 rounded-lg bg-zinc-800 border border-zinc-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30 text-sm outline-none transition-colors placeholder:text-zinc-600"
+                  />
+                  <button
+                    (click)="showPassword.set(!showPassword())"
+                    class="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-zinc-500 hover:text-zinc-300 transition-colors"
+                    type="button"
+                  >
+                    <lucide-icon [img]="showPassword() ? EyeOff : Eye" class="w-4 h-4"></lucide-icon>
+                  </button>
+                </div>
+              </div>
+            }
+
+            <!-- SSH Key fields -->
+            @if (authMethod === 'publicKey') {
+              <div>
+                <label class="block text-sm text-zinc-400 mb-1.5">Private key (PEM)</label>
+                <textarea
+                  [(ngModel)]="privateKeyContent"
+                  rows="5"
+                  placeholder="-----BEGIN OPENSSH PRIVATE KEY-----&#10;..."
+                  class="w-full px-3 py-2 rounded-lg bg-zinc-800 border border-zinc-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30 text-xs font-mono outline-none transition-colors placeholder:text-zinc-600 resize-none"
+                ></textarea>
+              </div>
+              <div>
+                <label class="block text-sm text-zinc-400 mb-1.5">
+                  Key passphrase
+                  <span class="text-zinc-600 font-normal">(optional)</span>
+                </label>
+                <div class="relative">
+                  <input
+                    [type]="showPassphrase() ? 'text' : 'password'"
+                    [(ngModel)]="passphrase"
+                    placeholder="Leave empty if key has no passphrase"
+                    class="w-full px-3 py-2 pr-10 rounded-lg bg-zinc-800 border border-zinc-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30 text-sm outline-none transition-colors placeholder:text-zinc-600"
+                  />
+                  <button
+                    (click)="showPassphrase.set(!showPassphrase())"
+                    class="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-zinc-500 hover:text-zinc-300 transition-colors"
+                    type="button"
+                  >
+                    <lucide-icon [img]="showPassphrase() ? EyeOff : Eye" class="w-4 h-4"></lucide-icon>
+                  </button>
+                </div>
+              </div>
+            }
+          }
+
+          <!-- Backend Server fields -->
+          @if (connectionType() === 'backend') {
+            <div>
+              <label class="block text-sm text-zinc-400 mb-1.5">Backend URL</label>
+              <input
+                type="url"
+                [(ngModel)]="backendUrl"
+                placeholder="https://containerus.yourdomain.com"
+                class="w-full px-3 py-2 rounded-lg bg-zinc-800 border border-zinc-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30 text-sm outline-none transition-colors placeholder:text-zinc-600"
+              />
+            </div>
+            <div>
+              <label class="block text-sm text-zinc-400 mb-1.5">
+                API token
+                <span class="text-zinc-600 font-normal">(optional)</span>
+              </label>
+              <input
+                type="password"
+                [(ngModel)]="backendToken"
+                placeholder="Leave empty for unauthenticated access"
+                class="w-full px-3 py-2 rounded-lg bg-zinc-800 border border-zinc-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30 text-sm outline-none transition-colors placeholder:text-zinc-600"
+              />
+            </div>
+          }
+
+        </div>
+      }
+
+      <!-- ── STEP 3: Verify ── -->
+      @if (step() === 3) {
+        <div class="flex flex-col items-center text-center py-4">
+
+          @if (verifying()) {
+            <!-- Connecting animation -->
+            <div class="relative mb-6">
+              <div class="w-20 h-20 rounded-full border-2 border-blue-500/30 flex items-center justify-center">
+                <div class="w-14 h-14 rounded-full border-2 border-t-blue-500 border-r-blue-500 border-b-transparent border-l-transparent animate-spin"></div>
+                <lucide-icon [img]="Wifi" class="w-7 h-7 text-blue-400 absolute"></lucide-icon>
+              </div>
+            </div>
+            <h3 class="text-base font-semibold text-white mb-1">Connecting…</h3>
+            <p class="text-sm text-zinc-500">Verifying connection to <span class="text-zinc-300">{{ systemName }}</span></p>
+          }
+
+          @if (!verifying() && verifySuccess()) {
+            <!-- Success state -->
+            <div class="relative mb-6">
+              <div class="absolute inset-0 rounded-full bg-green-500/20 blur-xl scale-125"></div>
+              <div class="relative w-20 h-20 rounded-full bg-green-500/20 border-2 border-green-500/50 flex items-center justify-center">
+                <lucide-icon [img]="Check" class="w-9 h-9 text-green-400"></lucide-icon>
+              </div>
+            </div>
+            <h3 class="text-base font-semibold text-white mb-1">Connected!</h3>
+            <p class="text-sm text-zinc-400 mb-2"><span class="text-zinc-200 font-medium">{{ systemName }}</span> is ready to use.</p>
+            <div class="mt-4 p-3.5 rounded-xl bg-zinc-800/60 border border-zinc-700/50 text-left w-full space-y-2">
+              <p class="text-xs font-medium text-zinc-400 mb-2">What's next</p>
+              <div class="flex items-start gap-2.5">
+                <div class="w-5 h-5 rounded-full bg-blue-500/20 border border-blue-500/40 flex items-center justify-center flex-shrink-0 mt-0.5">
+                  <span class="text-blue-400 text-xs font-medium">1</span>
+                </div>
+                <p class="text-xs text-zinc-400">Browse running containers from the <span class="text-zinc-200">Containers</span> view</p>
+              </div>
+              <div class="flex items-start gap-2.5">
+                <div class="w-5 h-5 rounded-full bg-blue-500/20 border border-blue-500/40 flex items-center justify-center flex-shrink-0 mt-0.5">
+                  <span class="text-blue-400 text-xs font-medium">2</span>
+                </div>
+                <p class="text-xs text-zinc-400">Open an AI-assisted terminal session for any container</p>
+              </div>
+              <div class="flex items-start gap-2.5">
+                <div class="w-5 h-5 rounded-full bg-blue-500/20 border border-blue-500/40 flex items-center justify-center flex-shrink-0 mt-0.5">
+                  <span class="text-blue-400 text-xs font-medium">3</span>
+                </div>
+                <p class="text-xs text-zinc-400">Add more systems or configure jump hosts in <span class="text-zinc-200">Settings</span></p>
+              </div>
+            </div>
+          }
+
+          @if (!verifying() && verifyError()) {
+            <!-- Error state -->
+            <div class="relative mb-6">
+              <div class="absolute inset-0 rounded-full bg-red-500/10 blur-xl scale-125"></div>
+              <div class="relative w-20 h-20 rounded-full bg-red-500/10 border-2 border-red-500/30 flex items-center justify-center">
+                <lucide-icon [img]="AlertCircle" class="w-9 h-9 text-red-400"></lucide-icon>
+              </div>
+            </div>
+            <h3 class="text-base font-semibold text-white mb-1">Connection failed</h3>
+            <p class="text-sm text-zinc-500 mb-3">{{ verifyError() }}</p>
+            <button
+              (click)="retry()"
+              class="px-4 py-2 text-sm rounded-lg border border-zinc-700 hover:bg-zinc-800 transition-colors text-zinc-300"
+            >
+              Try again
+            </button>
+          }
+
+        </div>
+      }
+
+    </div>
+
+    <!-- Footer -->
+    <div class="flex items-center justify-between px-5 py-4 border-t border-zinc-800 flex-shrink-0">
+      <!-- Back button -->
+      @if (step() > 1 && !(step() === 3 && verifying())) {
+        <button
+          (click)="prevStep()"
+          class="flex items-center gap-1.5 px-3 py-2 text-sm rounded-lg border border-zinc-700 hover:bg-zinc-800 transition-colors text-zinc-300"
+        >
+          <lucide-icon [img]="ChevronLeft" class="w-4 h-4"></lucide-icon>
+          Back
+        </button>
+      } @else {
+        <div></div>
+      }
+
+      <!-- Forward / finish -->
+      @if (step() === 1) {
+        <button
+          (click)="nextStep()"
+          [disabled]="!connectionType()"
+          class="flex items-center gap-1.5 px-4 py-2 text-sm rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed transition-all font-medium"
+        >
+          Continue
+          <lucide-icon [img]="ChevronRight" class="w-4 h-4"></lucide-icon>
+        </button>
+      } @else if (step() === 2) {
+        <button
+          (click)="nextStep()"
+          [disabled]="!isStep2Valid()"
+          class="flex items-center gap-1.5 px-4 py-2 text-sm rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed transition-all font-medium"
+        >
+          Verify connection
+          <lucide-icon [img]="ChevronRight" class="w-4 h-4"></lucide-icon>
+        </button>
+      } @else if (step() === 3 && verifySuccess()) {
+        <button
+          (click)="finish()"
+          class="flex items-center gap-1.5 px-4 py-2 text-sm rounded-lg bg-green-600 hover:bg-green-500 transition-all font-medium"
+        >
+          Get started
+          <lucide-icon [img]="ChevronRight" class="w-4 h-4"></lucide-icon>
+        </button>
+      } @else if (step() === 3 && verifyError()) {
+        <button
+          (click)="prevStep()"
+          class="flex items-center gap-1.5 px-4 py-2 text-sm rounded-lg bg-zinc-700 hover:bg-zinc-600 transition-all text-zinc-200"
+        >
+          Edit credentials
+        </button>
+      }
+    </div>
+
+  </div>
+</div>

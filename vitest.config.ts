@@ -1,14 +1,16 @@
 /// <reference types="vitest/config" />
-import { defineConfig } from 'vitest/config';
+import { defineConfig } from 'vite';
+import angular from '@analogjs/vite-plugin-angular';
 import { resolve } from 'path';
 
 export default defineConfig({
+  plugins: [angular({ tsconfig: './tsconfig.spec.json' })],
   test: {
     globals: true,
     environment: 'jsdom',
     include: ['src/**/*.spec.ts'],
     exclude: ['node_modules', 'dist'],
-    setupFiles: [],
+    setupFiles: ['src/test-setup.ts'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'text-summary', 'json-summary', 'html'],
@@ -21,6 +23,12 @@ export default defineConfig({
         'src/environments/**',
         'node_modules/**',
       ],
+      thresholds: {
+        lines: 50,
+        statements: 50,
+        functions: 50,
+        branches: 30,
+      },
     },
   },
   resolve: {
