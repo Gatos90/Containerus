@@ -130,6 +130,11 @@ pub fn run() {
             commands::perform_container_action,
             commands::get_container_logs,
             commands::inspect_container,
+            // Compose commands
+            commands::compose_up,
+            commands::compose_down,
+            commands::compose_restart,
+            commands::compose_logs,
             // Image commands
             commands::list_images,
             commands::pull_image,

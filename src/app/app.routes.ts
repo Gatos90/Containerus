@@ -100,6 +100,13 @@ export const routes: Routes = [
         (m) => m.SettingsPageComponent
       ),
   },
+  {
+    path: 'compose',
+    loadComponent: () =>
+      import('./features/compose-projects/compose-list/compose-list.component').then(
+        (m) => m.ComposeListComponent
+      ),
+  },
   // Backend routes
   {
     path: 'backends',

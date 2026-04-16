@@ -1,7 +1,7 @@
 import { CommonModule, DecimalPipe } from '@angular/common';
 import { Component, inject, signal, computed } from '@angular/core';
 import { Router, RouterLink, RouterLinkActive } from '@angular/router';
-import { LucideAngularModule, LucideIconData, Box, Image, HardDrive, Network, Server, Settings, MoreHorizontal, Command, ChevronDown, ChevronUp, Terminal, Unplug, ExternalLink, Crown, ShieldCheck, Activity, Cpu, MemoryStick, FolderOpen, RefreshCw, Cloud, Users, ScrollText, Globe, LogIn, LogOut, Link, X, Loader2, Plus } from 'lucide-angular';
+import { LucideAngularModule, LucideIconData, Box, Image, HardDrive, Network, Server, Settings, MoreHorizontal, Command, ChevronDown, ChevronUp, Terminal, Unplug, ExternalLink, Crown, ShieldCheck, Activity, Cpu, MemoryStick, FolderOpen, RefreshCw, Cloud, Users, ScrollText, Globe, LogIn, LogOut, Link, X, Loader2, Plus, Layers } from 'lucide-angular';
 import { SystemState } from '../../state/system.state';
 import { ContainerState } from '../../state/container.state';
 import { TerminalState, DEFAULT_TERMINAL_OPTIONS } from '../../state/terminal.state';
@@ -75,6 +75,7 @@ export class SidebarComponent {
   readonly X = X;
   readonly Loader2 = Loader2;
   readonly Plus = Plus;
+  readonly Layers = Layers;
 
   reconnecting = signal<string | null>(null);
 
@@ -85,6 +86,12 @@ export class SidebarComponent {
       icon: Box,
       badge: () => this.containerState.stats().running || this.containerState.stats().total,
       showInMobile: true,
+    },
+    {
+      label: 'Compose',
+      route: '/compose',
+      icon: Layers,
+      showInMobile: false,
     },
     {
       label: 'Images',

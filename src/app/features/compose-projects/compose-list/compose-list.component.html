@@ -1,0 +1,201 @@
+<div class="p-3 sm:p-4 md:p-6 space-y-3 sm:space-y-4 md:space-y-6">
+  <!-- Header -->
+  <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+    <div class="flex items-center gap-4">
+      <div>
+        <h1 class="text-xl sm:text-2xl font-bold">Compose Projects</h1>
+        <p class="text-xs sm:text-sm text-zinc-400 hidden sm:block">
+          Multi-service workloads managed by Docker Compose
+        </p>
+      </div>
+      <!-- Compact stats -->
+      <div class="flex items-center gap-2 text-sm">
+        <span class="text-green-500 font-medium" title="Running">{{ composeState.stats().running }}</span>
+        <span class="text-zinc-600">/</span>
+        <span class="text-zinc-400 font-medium" title="Total">{{ composeState.stats().total }}</span>
+      </div>
+    </div>
+
+    <div class="flex items-center gap-2 sm:gap-3">
+      <!-- Mobile filter trigger -->
+      <button
+        (click)="showMobileFilters.set(true)"
+        class="md:hidden p-2.5 rounded-lg border border-zinc-700 hover:bg-zinc-800 transition-colors"
+        title="Filters"
+      >
+        <lucide-icon [img]="SlidersHorizontal" class="w-4 h-4"></lucide-icon>
+      </button>
+
+      <!-- Refresh -->
+      <button
+        (click)="refresh()"
+        class="flex items-center p-2.5 sm:px-3 sm:py-1.5 rounded-lg border border-zinc-700 text-sm hover:bg-zinc-800 transition-colors"
+        [disabled]="refreshing"
+        title="Refresh"
+      >
+        <lucide-icon
+          [img]="RefreshCw"
+          class="w-4 h-4"
+          [class.animate-spin]="refreshing"
+        ></lucide-icon>
+        <span class="hidden sm:inline ml-2">Refresh</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Search and Filters -->
+  <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+    <div class="relative flex-1 sm:max-w-xs">
+      <lucide-icon
+        [img]="Search"
+        class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500"
+      ></lucide-icon>
+      <input
+        type="text"
+        placeholder="Search projects..."
+        [ngModel]="composeState.searchQuery()"
+        (ngModelChange)="composeState.setSearchQuery($event)"
+        class="w-full h-9 pl-10 pr-4 bg-zinc-800 border border-zinc-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+      />
+    </div>
+
+    <!-- Desktop Filters -->
+    <div class="hidden md:flex items-center gap-2">
+      <select
+        [ngModel]="composeState.statusFilter()"
+        (ngModelChange)="composeState.setStatusFilter($event)"
+        class="h-9 px-3 bg-zinc-800 border border-zinc-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+      >
+        <option [ngValue]="null">All Status ({{ composeState.stats().total }})</option>
+        <option value="running">Running ({{ composeState.stats().running }})</option>
+        <option value="partially_running">Partial ({{ composeState.stats().partial }})</option>
+        <option value="stopped">Stopped ({{ composeState.stats().stopped }})</option>
+      </select>
+
+      <select
+        [ngModel]="composeState.systemFilter()"
+        (ngModelChange)="composeState.setSystemFilter($event)"
+        class="h-9 px-3 bg-zinc-800 border border-zinc-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+      >
+        <option [ngValue]="null">All Systems</option>
+        @for (system of systemState.connectedSystems(); track system.id) {
+          <option [ngValue]="system.id">{{ system.name }}</option>
+        }
+      </select>
+    </div>
+  </div>
+
+  <!-- Projects grouped by system -->
+  <div class="space-y-8">
+    @for (system of systemState.connectedSystems(); track system.id) {
+      @if ((filteredProjectsBySystem()[system.id]?.length ?? 0) > 0) {
+        <section>
+          <!-- System header -->
+          <div class="flex items-center gap-3 mb-3">
+            <div class="flex-1">
+              <h2 class="text-sm font-semibold text-zinc-300">{{ system.name }}</h2>
+              <p class="text-xs text-zinc-500">{{ system.hostname }}</p>
+            </div>
+            <span class="text-xs text-zinc-600 tabular-nums">
+              {{ filteredProjectsBySystem()[system.id]?.length ?? 0 }} project{{ (filteredProjectsBySystem()[system.id]?.length ?? 0) !== 1 ? 's' : '' }}
+            </span>
+          </div>
+
+          <!-- Project cards -->
+          <div class="space-y-3">
+            @for (project of filteredProjectsBySystem()[system.id]; track project.id) {
+              <app-compose-project-card [project]="project" />
+            }
+          </div>
+        </section>
+      }
+    } @empty {
+      <!-- No connected systems -->
+    }
+
+    <!-- Empty state -->
+    @if (composeState.filteredProjects().length === 0) {
+      <div class="text-center py-16 text-zinc-500">
+        <lucide-icon [img]="Layers" class="w-12 h-12 mx-auto mb-4 opacity-30"></lucide-icon>
+        @if (systemState.connectedSystems().length === 0) {
+          <p class="text-base">No systems connected.</p>
+          <p class="text-sm mt-1">Go to Systems to connect a Docker host.</p>
+        } @else if (composeState.projects().length === 0) {
+          <p class="text-base">No Docker Compose projects found.</p>
+          <p class="text-sm mt-1">
+            Projects are detected automatically from containers with
+            <code class="text-zinc-400">com.docker.compose.project</code> labels.
+          </p>
+        } @else {
+          <p class="text-base">No projects match your filters.</p>
+          <button
+            (click)="composeState.clearFilters()"
+            class="mt-2 text-sm text-blue-400 hover:text-blue-300 transition-colors"
+          >
+            Clear filters
+          </button>
+        }
+      </div>
+    }
+  </div>
+</div>
+
+<!-- Mobile Filter Sheet -->
+@if (showMobileFilters()) {
+  <div
+    class="fixed inset-0 bg-black/50 z-50 md:hidden"
+    (click)="showMobileFilters.set(false)"
+  >
+    <div
+      class="absolute bottom-0 left-0 right-0 bg-zinc-900 rounded-t-2xl p-6 space-y-4 max-h-[80vh] overflow-y-auto"
+      (click)="$event.stopPropagation()"
+    >
+      <div class="flex items-center justify-between">
+        <h3 class="text-lg font-semibold">Filters</h3>
+        <button
+          (click)="showMobileFilters.set(false)"
+          class="p-2 rounded-lg hover:bg-zinc-800"
+        >
+          ✕
+        </button>
+      </div>
+
+      <div class="space-y-4">
+        <div>
+          <label class="block text-sm text-zinc-400 mb-2">Status</label>
+          <select
+            [ngModel]="composeState.statusFilter()"
+            (ngModelChange)="composeState.setStatusFilter($event)"
+            class="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg"
+          >
+            <option [ngValue]="null">All</option>
+            <option value="running">Running</option>
+            <option value="partially_running">Partial</option>
+            <option value="stopped">Stopped</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="block text-sm text-zinc-400 mb-2">System</label>
+          <select
+            [ngModel]="composeState.systemFilter()"
+            (ngModelChange)="composeState.setSystemFilter($event)"
+            class="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg"
+          >
+            <option [ngValue]="null">All Systems</option>
+            @for (system of systemState.connectedSystems(); track system.id) {
+              <option [ngValue]="system.id">{{ system.name }}</option>
+            }
+          </select>
+        </div>
+      </div>
+
+      <button
+        (click)="showMobileFilters.set(false)"
+        class="w-full py-3 bg-blue-600 hover:bg-blue-500 rounded-lg font-medium transition-colors"
+      >
+        Apply Filters
+      </button>
+    </div>
+  </div>
+}
