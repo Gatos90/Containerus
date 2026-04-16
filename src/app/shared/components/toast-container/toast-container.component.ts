@@ -19,16 +19,20 @@ import { ToastState, Toast, ToastType } from '../../../state/toast.state';
     <div class="fixed bottom-4 right-4 z-[100] flex flex-col gap-2 max-w-sm pointer-events-none">
       @for (toast of toastState.toasts(); track toast.id) {
         <div
+          [attr.role]="toast.type === 'error' ? 'alert' : 'status'"
+          [attr.aria-live]="toast.type === 'error' ? 'assertive' : 'polite'"
+          aria-atomic="true"
           class="pointer-events-auto flex items-center gap-2.5 px-4 py-3 rounded-lg shadow-lg border backdrop-blur-sm animate-slide-in"
           [class]="getToastClasses(toast.type)"
         >
-          <lucide-icon [img]="getIcon(toast.type)" class="w-4 h-4 flex-shrink-0"></lucide-icon>
+          <lucide-icon [img]="getIcon(toast.type)" class="w-4 h-4 flex-shrink-0" aria-hidden="true"></lucide-icon>
           <span class="text-sm flex-1 min-w-0">{{ toast.message }}</span>
           <button
             (click)="toastState.dismiss(toast.id)"
+            aria-label="Dismiss notification"
             class="p-0.5 rounded hover:bg-white/10 transition-colors flex-shrink-0"
           >
-            <lucide-icon [img]="X" class="w-3.5 h-3.5"></lucide-icon>
+            <lucide-icon [img]="X" class="w-3.5 h-3.5" aria-hidden="true"></lucide-icon>
           </button>
         </div>
       }
