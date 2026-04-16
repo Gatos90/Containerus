@@ -3,7 +3,7 @@
 
   <main class="flex-1 flex flex-col overflow-hidden">
     @if (updateState.updateAvailable()) {
-      <div class="bg-blue-900/50 border-b border-blue-800 px-4 py-2 flex items-center justify-between">
+      <div role="status" aria-live="polite" aria-atomic="true" class="bg-blue-900/50 border-b border-blue-800 px-4 py-2 flex items-center justify-between">
         <span class="text-blue-200 text-sm">
           A new version is available: v{{ updateState.updateVersion() }}
         </span>
@@ -29,7 +29,7 @@
     }
 
     @if (appState.globalError()) {
-      <div class="bg-red-900/50 border-b border-red-800 px-4 py-2 flex items-center justify-between">
+      <div role="alert" aria-live="assertive" aria-atomic="true" class="bg-red-900/50 border-b border-red-800 px-4 py-2 flex items-center justify-between">
         <span class="text-red-200 text-sm">{{ appState.globalError() }}</span>
         <button
           (click)="appState.clearAllErrors()"
