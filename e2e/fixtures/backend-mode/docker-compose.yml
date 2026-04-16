@@ -1,0 +1,49 @@
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: containerus
+      POSTGRES_USER: containerus
+      POSTGRES_PASSWORD: containerus
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U containerus"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    ports:
+      - "127.0.0.1:15432:5432"
+
+  server:
+    build:
+      context: ../../..
+      dockerfile: crates/containerus-server/Dockerfile
+    environment:
+      DATABASE_URL: postgres://containerus:containerus@db:5432/containerus
+      JWT_SECRET: "e2e-jwt-secret-do-not-use-outside-tests-0123456789"
+      ENCRYPTION_KEY: "e2e-enc-key-do-not-use-outside-tests-0123456789abcdef"
+      ENCRYPTION_SALT: "e2e-salt-0123456789abcdef"
+      CORS_ORIGINS: "http://127.0.0.1:1420,http://localhost:1420"
+      JWT_ACCESS_EXPIRY_SECS: "900"
+      JWT_REFRESH_EXPIRY_SECS: "86400"
+      RUST_LOG: "containerus_server=debug,tower_http=info"
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:18080:8080"
+
+  # Reachable SSH target for per-user WebSocket specs.
+  # Password login enabled intentionally: the server vault keeps the credential
+  # encrypted, and the target is disposable + loopback-bound only.
+  ssh-target:
+    image: linuxserver/openssh-server:latest
+    environment:
+      PUID: "1000"
+      PGID: "1000"
+      TZ: "UTC"
+      PASSWORD_ACCESS: "true"
+      USER_NAME: "tester"
+      USER_PASSWORD: "tester-pass-e2e"
+      SUDO_ACCESS: "false"
+    ports:
+      - "127.0.0.1:12222:2222"
