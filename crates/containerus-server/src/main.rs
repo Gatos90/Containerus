@@ -10,6 +10,8 @@ mod ws;
 
 use auth::middleware::PermissionCache;
 use sqlx::PgPool;
+use axum::http::header::{AUTHORIZATION, CONTENT_TYPE};
+use axum::http::Method;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -191,15 +193,27 @@ async fn main() {
         });
     }
 
-    // Build CORS layer from configured origins (defaults to localhost dev server)
+    // Allowed HTTP methods for all CORS configurations.
+    let allowed_methods = [
+        Method::GET,
+        Method::POST,
+        Method::PUT,
+        Method::PATCH,
+        Method::DELETE,
+        Method::OPTIONS,
+    ];
+    // Allowed request headers for all CORS configurations.
+    let allowed_headers = [AUTHORIZATION, CONTENT_TYPE];
+
+    // Build CORS layer from configured origins (defaults to localhost dev server).
     let cors = {
         let cors_origins = &state.config.cors_origins;
         if cors_origins == "*" {
             tracing::warn!("CORS is set to allow all origins — this is not recommended for production");
             CorsLayer::new()
                 .allow_origin(Any)
-                .allow_methods(Any)
-                .allow_headers(Any)
+                .allow_methods(allowed_methods)
+                .allow_headers(allowed_headers)
         } else {
             let origins: Vec<_> = cors_origins
                 .split(',')
@@ -219,8 +233,8 @@ async fn main() {
             } else {
                 CorsLayer::new()
                     .allow_origin(origins)
-                    .allow_methods(Any)
-                    .allow_headers(Any)
+                    .allow_methods(allowed_methods)
+                    .allow_headers(allowed_headers)
             }
         }
     };
