@@ -39,13 +39,16 @@ export interface K8sNamespace {
   age: string;
 }
 
+export type K8sTab = 'pods' | 'nodes' | 'services' | 'deployments' | 'namespaces';
+
 @Component({
   selector: 'app-k8s-dashboard',
   imports: [CommonModule],
   templateUrl: './k8s-dashboard.component.html',
 })
 export class K8sDashboardComponent {
-  activeTab = signal<'pods' | 'nodes' | 'services' | 'deployments' | 'namespaces'>('pods');
+  readonly tabs: K8sTab[] = ['pods', 'nodes', 'services', 'deployments', 'namespaces'];
+  activeTab = signal<K8sTab>('pods');
 
   pods = signal<K8sPod[]>([
     { name: 'nginx-6b94b4c4c9-xk2rp', namespace: 'default', status: 'Running', restarts: 0, age: '2d' },
@@ -80,7 +83,7 @@ export class K8sDashboardComponent {
     { name: 'staging', status: 'Terminating', age: '2d' },
   ]);
 
-  setTab(tab: 'pods' | 'nodes' | 'services' | 'deployments' | 'namespaces'): void {
+  setTab(tab: K8sTab): void {
     this.activeTab.set(tab);
   }
 

@@ -7,7 +7,7 @@
 
   <!-- Tab Navigation -->
   <div class="flex gap-1 border-b border-zinc-700">
-    @for (tab of ['pods', 'nodes', 'services', 'deployments', 'namespaces']; track tab) {
+    @for (tab of tabs; track tab) {
       <button
         (click)="setTab(tab)"
         class="px-4 py-2 text-sm font-medium capitalize border-b-2 transition-colors -mb-px"
