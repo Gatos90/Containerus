@@ -1,0 +1,170 @@
+<div class="p-4 sm:p-6 space-y-6">
+  <!-- Header -->
+  <div>
+    <h1 class="text-xl sm:text-2xl font-bold">Kubernetes Dashboard</h1>
+    <p class="text-sm text-zinc-400 mt-1">Cluster resource overview</p>
+  </div>
+
+  <!-- Tab Navigation -->
+  <div class="flex gap-1 border-b border-zinc-700">
+    @for (tab of ['pods', 'nodes', 'services', 'deployments', 'namespaces']; track tab) {
+      <button
+        (click)="setTab(tab)"
+        class="px-4 py-2 text-sm font-medium capitalize border-b-2 transition-colors -mb-px"
+        [class.border-blue-500]="activeTab() === tab"
+        [class.text-blue-400]="activeTab() === tab"
+        [class.border-transparent]="activeTab() !== tab"
+        [class.text-zinc-400]="activeTab() !== tab"
+        [class.hover:text-zinc-200]="activeTab() !== tab"
+      >
+        {{ tab }}
+      </button>
+    }
+  </div>
+
+  <!-- Pods Table -->
+  @if (activeTab() === 'pods') {
+    <div class="overflow-x-auto rounded-lg border border-zinc-700">
+      <table class="w-full text-sm">
+        <thead class="bg-zinc-800">
+          <tr>
+            <th scope="col" class="px-4 py-3 text-left font-medium text-zinc-300">Name</th>
+            <th scope="col" class="px-4 py-3 text-left font-medium text-zinc-300">Namespace</th>
+            <th scope="col" class="px-4 py-3 text-left font-medium text-zinc-300">Status</th>
+            <th scope="col" class="px-4 py-3 text-right font-medium text-zinc-300">Restarts</th>
+            <th scope="col" class="px-4 py-3 text-right font-medium text-zinc-300">Age</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-zinc-800">
+          @for (pod of pods(); track pod.name) {
+            <tr class="hover:bg-zinc-800/50 transition-colors">
+              <td class="px-4 py-3 font-mono text-xs text-zinc-100">{{ pod.name }}</td>
+              <td class="px-4 py-3 text-zinc-400">{{ pod.namespace }}</td>
+              <td class="px-4 py-3">
+                <span class="font-medium" [class]="podStatusClass(pod.status)">{{ pod.status }}</span>
+              </td>
+              <td class="px-4 py-3 text-right text-zinc-400">{{ pod.restarts }}</td>
+              <td class="px-4 py-3 text-right text-zinc-400">{{ pod.age }}</td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  }
+
+  <!-- Nodes Table -->
+  @if (activeTab() === 'nodes') {
+    <div class="overflow-x-auto rounded-lg border border-zinc-700">
+      <table class="w-full text-sm">
+        <thead class="bg-zinc-800">
+          <tr>
+            <th scope="col" class="px-4 py-3 text-left font-medium text-zinc-300">Name</th>
+            <th scope="col" class="px-4 py-3 text-left font-medium text-zinc-300">Status</th>
+            <th scope="col" class="px-4 py-3 text-left font-medium text-zinc-300">Roles</th>
+            <th scope="col" class="px-4 py-3 text-right font-medium text-zinc-300">Age</th>
+            <th scope="col" class="px-4 py-3 text-right font-medium text-zinc-300">Version</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-zinc-800">
+          @for (node of nodes(); track node.name) {
+            <tr class="hover:bg-zinc-800/50 transition-colors">
+              <td class="px-4 py-3 font-mono text-xs text-zinc-100">{{ node.name }}</td>
+              <td class="px-4 py-3">
+                <span class="font-medium" [class]="nodeStatusClass(node.status)">{{ node.status }}</span>
+              </td>
+              <td class="px-4 py-3 text-zinc-400">{{ node.roles }}</td>
+              <td class="px-4 py-3 text-right text-zinc-400">{{ node.age }}</td>
+              <td class="px-4 py-3 text-right font-mono text-xs text-zinc-400">{{ node.version }}</td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  }
+
+  <!-- Services Table -->
+  @if (activeTab() === 'services') {
+    <div class="overflow-x-auto rounded-lg border border-zinc-700">
+      <table class="w-full text-sm">
+        <thead class="bg-zinc-800">
+          <tr>
+            <th scope="col" class="px-4 py-3 text-left font-medium text-zinc-300">Name</th>
+            <th scope="col" class="px-4 py-3 text-left font-medium text-zinc-300">Namespace</th>
+            <th scope="col" class="px-4 py-3 text-left font-medium text-zinc-300">Type</th>
+            <th scope="col" class="px-4 py-3 text-left font-medium text-zinc-300">Cluster IP</th>
+            <th scope="col" class="px-4 py-3 text-left font-medium text-zinc-300">Port(s)</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-zinc-800">
+          @for (svc of services(); track svc.name) {
+            <tr class="hover:bg-zinc-800/50 transition-colors">
+              <td class="px-4 py-3 font-mono text-xs text-zinc-100">{{ svc.name }}</td>
+              <td class="px-4 py-3 text-zinc-400">{{ svc.namespace }}</td>
+              <td class="px-4 py-3 text-zinc-300">{{ svc.type }}</td>
+              <td class="px-4 py-3 font-mono text-xs text-zinc-400">{{ svc.clusterIp }}</td>
+              <td class="px-4 py-3 font-mono text-xs text-zinc-400">{{ svc.port }}</td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  }
+
+  <!-- Deployments Table -->
+  @if (activeTab() === 'deployments') {
+    <div class="overflow-x-auto rounded-lg border border-zinc-700">
+      <table class="w-full text-sm">
+        <thead class="bg-zinc-800">
+          <tr>
+            <th scope="col" class="px-4 py-3 text-left font-medium text-zinc-300">Name</th>
+            <th scope="col" class="px-4 py-3 text-left font-medium text-zinc-300">Namespace</th>
+            <th scope="col" class="px-4 py-3 text-right font-medium text-zinc-300">Ready</th>
+            <th scope="col" class="px-4 py-3 text-right font-medium text-zinc-300">Up-to-date</th>
+            <th scope="col" class="px-4 py-3 text-right font-medium text-zinc-300">Available</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-zinc-800">
+          @for (dep of deployments(); track dep.name) {
+            <tr class="hover:bg-zinc-800/50 transition-colors">
+              <td class="px-4 py-3 font-mono text-xs text-zinc-100">{{ dep.name }}</td>
+              <td class="px-4 py-3 text-zinc-400">{{ dep.namespace }}</td>
+              <td class="px-4 py-3 text-right"
+                [class.text-green-400]="dep.ready.startsWith(dep.available.toString())"
+                [class.text-red-400]="!dep.ready.startsWith(dep.available.toString())">
+                {{ dep.ready }}
+              </td>
+              <td class="px-4 py-3 text-right text-zinc-400">{{ dep.upToDate }}</td>
+              <td class="px-4 py-3 text-right text-zinc-400">{{ dep.available }}</td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  }
+
+  <!-- Namespaces Table -->
+  @if (activeTab() === 'namespaces') {
+    <div class="overflow-x-auto rounded-lg border border-zinc-700">
+      <table class="w-full text-sm">
+        <thead class="bg-zinc-800">
+          <tr>
+            <th scope="col" class="px-4 py-3 text-left font-medium text-zinc-300">Name</th>
+            <th scope="col" class="px-4 py-3 text-left font-medium text-zinc-300">Status</th>
+            <th scope="col" class="px-4 py-3 text-right font-medium text-zinc-300">Age</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-zinc-800">
+          @for (ns of namespaces(); track ns.name) {
+            <tr class="hover:bg-zinc-800/50 transition-colors">
+              <td class="px-4 py-3 font-mono text-xs text-zinc-100">{{ ns.name }}</td>
+              <td class="px-4 py-3">
+                <span class="font-medium" [class]="nsStatusClass(ns.status)">{{ ns.status }}</span>
+              </td>
+              <td class="px-4 py-3 text-right text-zinc-400">{{ ns.age }}</td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  }
+</div>

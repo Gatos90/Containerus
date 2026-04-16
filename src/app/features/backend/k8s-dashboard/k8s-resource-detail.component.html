@@ -1,0 +1,94 @@
+<div class="space-y-4">
+  <!-- Header -->
+  @if (resourceName) {
+    <div>
+      <h2 class="text-lg font-semibold text-zinc-100">{{ resourceKind }}: {{ resourceName }}</h2>
+    </div>
+  }
+
+  <!-- Tab Navigation -->
+  <div class="flex gap-1 border-b border-zinc-700">
+    <button
+      (click)="setTab('conditions')"
+      class="px-4 py-2 text-sm font-medium border-b-2 transition-colors -mb-px"
+      [class.border-blue-500]="activeTab() === 'conditions'"
+      [class.text-blue-400]="activeTab() === 'conditions'"
+      [class.border-transparent]="activeTab() !== 'conditions'"
+      [class.text-zinc-400]="activeTab() !== 'conditions'"
+    >
+      Conditions
+    </button>
+    <button
+      (click)="setTab('events')"
+      class="px-4 py-2 text-sm font-medium border-b-2 transition-colors -mb-px"
+      [class.border-blue-500]="activeTab() === 'events'"
+      [class.text-blue-400]="activeTab() === 'events'"
+      [class.border-transparent]="activeTab() !== 'events'"
+      [class.text-zinc-400]="activeTab() !== 'events'"
+    >
+      Events
+    </button>
+  </div>
+
+  <!-- Conditions Table -->
+  @if (activeTab() === 'conditions') {
+    <div class="overflow-x-auto rounded-lg border border-zinc-700">
+      <table class="w-full text-sm">
+        <thead class="bg-zinc-800">
+          <tr>
+            <th scope="col" class="px-4 py-3 text-left font-medium text-zinc-300">Type</th>
+            <th scope="col" class="px-4 py-3 text-left font-medium text-zinc-300">Status</th>
+            <th scope="col" class="px-4 py-3 text-left font-medium text-zinc-300">Reason</th>
+            <th scope="col" class="px-4 py-3 text-left font-medium text-zinc-300">Message</th>
+            <th scope="col" class="px-4 py-3 text-right font-medium text-zinc-300">Last Transition</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-zinc-800">
+          @for (condition of conditions(); track condition.type) {
+            <tr class="hover:bg-zinc-800/50 transition-colors">
+              <td class="px-4 py-3 font-medium text-zinc-100">{{ condition.type }}</td>
+              <td class="px-4 py-3">
+                <span class="font-medium" [class]="conditionStatusClass(condition.status)">{{ condition.status }}</span>
+              </td>
+              <td class="px-4 py-3 text-zinc-400">{{ condition.reason }}</td>
+              <td class="px-4 py-3 text-zinc-400 max-w-xs truncate" [title]="condition.message">{{ condition.message || '—' }}</td>
+              <td class="px-4 py-3 text-right font-mono text-xs text-zinc-500">{{ condition.lastTransitionTime }}</td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  }
+
+  <!-- Events Table -->
+  @if (activeTab() === 'events') {
+    <div class="overflow-x-auto rounded-lg border border-zinc-700">
+      <table class="w-full text-sm">
+        <thead class="bg-zinc-800">
+          <tr>
+            <th scope="col" class="px-4 py-3 text-left font-medium text-zinc-300">Type</th>
+            <th scope="col" class="px-4 py-3 text-left font-medium text-zinc-300">Reason</th>
+            <th scope="col" class="px-4 py-3 text-left font-medium text-zinc-300">Object</th>
+            <th scope="col" class="px-4 py-3 text-left font-medium text-zinc-300">Message</th>
+            <th scope="col" class="px-4 py-3 text-right font-medium text-zinc-300">First Seen</th>
+            <th scope="col" class="px-4 py-3 text-right font-medium text-zinc-300">Count</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-zinc-800">
+          @for (event of events(); track event.reason + event.object) {
+            <tr class="hover:bg-zinc-800/50 transition-colors">
+              <td class="px-4 py-3">
+                <span class="font-medium" [class]="eventTypeClass(event.type)">{{ event.type }}</span>
+              </td>
+              <td class="px-4 py-3 text-zinc-300">{{ event.reason }}</td>
+              <td class="px-4 py-3 font-mono text-xs text-zinc-400">{{ event.object }}</td>
+              <td class="px-4 py-3 text-zinc-400 max-w-xs truncate" [title]="event.message">{{ event.message }}</td>
+              <td class="px-4 py-3 text-right text-zinc-500">{{ event.firstSeen }}</td>
+              <td class="px-4 py-3 text-right text-zinc-400">{{ event.count }}</td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  }
+</div>
