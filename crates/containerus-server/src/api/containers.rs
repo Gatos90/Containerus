@@ -965,3 +965,95 @@ async fn disconnect_from_network(
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // -------------------------------------------------------------------------
+    // is_valid_identifier
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn valid_identifier_simple_names() {
+        assert!(is_valid_identifier("my-container"));
+        assert!(is_valid_identifier("container_1"));
+        assert!(is_valid_identifier("nginx.latest"));
+        assert!(is_valid_identifier("registry.io/image:tag"));
+        assert!(is_valid_identifier("user@host"));
+    }
+
+    #[test]
+    fn valid_identifier_rejects_empty() {
+        assert!(!is_valid_identifier(""));
+    }
+
+    #[test]
+    fn valid_identifier_rejects_too_long() {
+        let long = "a".repeat(257);
+        assert!(!is_valid_identifier(&long));
+    }
+
+    #[test]
+    fn valid_identifier_rejects_special_chars() {
+        assert!(!is_valid_identifier("name with space"));
+        assert!(!is_valid_identifier("name;rm -rf /"));
+        assert!(!is_valid_identifier("$(whoami)"));
+    }
+
+    #[test]
+    fn valid_identifier_accepts_max_length() {
+        let max = "a".repeat(256);
+        assert!(is_valid_identifier(&max));
+    }
+
+    // -------------------------------------------------------------------------
+    // parse_runtime
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn parse_runtime_known_values() {
+        assert!(matches!(parse_runtime("docker"), Ok(ContainerRuntime::Docker)));
+        assert!(matches!(parse_runtime("podman"), Ok(ContainerRuntime::Podman)));
+        assert!(matches!(parse_runtime("apple"), Ok(ContainerRuntime::Apple)));
+    }
+
+    #[test]
+    fn parse_runtime_unknown_returns_bad_request() {
+        let (status, _) = parse_runtime("unknown_runtime").unwrap_err();
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+    }
+
+    #[test]
+    fn parse_runtime_case_sensitive() {
+        assert!(parse_runtime("Docker").is_err());
+        assert!(parse_runtime("DOCKER").is_err());
+        assert!(parse_runtime("").is_err());
+    }
+
+    // -------------------------------------------------------------------------
+    // parse_action
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn parse_action_known_values() {
+        assert!(matches!(parse_action("start"), Ok(ContainerAction::Start)));
+        assert!(matches!(parse_action("stop"), Ok(ContainerAction::Stop)));
+        assert!(matches!(parse_action("restart"), Ok(ContainerAction::Restart)));
+        assert!(matches!(parse_action("pause"), Ok(ContainerAction::Pause)));
+        assert!(matches!(parse_action("unpause"), Ok(ContainerAction::Unpause)));
+        assert!(matches!(parse_action("remove"), Ok(ContainerAction::Remove)));
+    }
+
+    #[test]
+    fn parse_action_unknown_returns_err_message() {
+        let err = parse_action("kill").unwrap_err();
+        assert!(err.contains("Unknown action"));
+        assert!(err.contains("kill"));
+    }
+
+    #[test]
+    fn parse_action_empty_returns_err() {
+        assert!(parse_action("").is_err());
+    }
+}
