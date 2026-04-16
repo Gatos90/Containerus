@@ -8,6 +8,13 @@ import {
   Download,
   Circle,
   SlidersHorizontal,
+  Hammer,
+  X,
+  Plus,
+  Trash2,
+  CheckCircle,
+  AlertCircle,
+  Loader,
 } from 'lucide-angular';
 import { ContainerImage, getImageFullName, getImageSizeHuman } from '../../../core/models/image.model';
 import { ImageState } from '../../../state/image.state';
@@ -31,6 +38,13 @@ export class ImageListComponent implements OnInit {
   readonly Download = Download;
   readonly Circle = Circle;
   readonly SlidersHorizontal = SlidersHorizontal;
+  readonly Hammer = Hammer;
+  readonly X = X;
+  readonly Plus = Plus;
+  readonly Trash2 = Trash2;
+  readonly CheckCircle = CheckCircle;
+  readonly AlertCircle = AlertCircle;
+  readonly Loader = Loader;
 
   readonly getImageFullName = getImageFullName;
   readonly getImageSizeHuman = getImageSizeHuman;
@@ -38,6 +52,7 @@ export class ImageListComponent implements OnInit {
   readonly showMobileFilters = signal(false);
   refreshing = false;
   showPullDialog = false;
+  showBuildDialog = false;
 
   pullForm = {
     name: '',
@@ -45,6 +60,22 @@ export class ImageListComponent implements OnInit {
     systemId: '',
     runtime: 'docker' as const,
   };
+
+  buildForm = {
+    contextPath: '.',
+    dockerfile: '',
+    imageName: '',
+    tag: 'latest',
+    systemId: '',
+    runtime: 'docker' as const,
+    noCache: false,
+    buildArgs: [] as { key: string; value: string }[],
+  };
+
+  building = false;
+  buildLog = '';
+  buildError = '';
+  showBuildOutput = false;
 
   /** Images grouped by system, filtered */
   readonly filteredImagesBySystem = computed(() => {
@@ -105,6 +136,71 @@ export class ImageListComponent implements OnInit {
     if (confirm(`Remove image "${getImageFullName(image)}"? This action cannot be undone.`)) {
       await this.imageState.removeImage(image);
     }
+  }
+
+  openBuildDialog(): void {
+    const connected = this.systemState.connectedSystems();
+    if (connected.length > 0 && !this.buildForm.systemId) {
+      this.buildForm.systemId = connected[0].id;
+    }
+    this.buildLog = '';
+    this.buildError = '';
+    this.showBuildOutput = false;
+    this.showBuildDialog = true;
+  }
+
+  addBuildArg(): void {
+    this.buildForm.buildArgs = [...this.buildForm.buildArgs, { key: '', value: '' }];
+  }
+
+  removeBuildArg(index: number): void {
+    this.buildForm.buildArgs = this.buildForm.buildArgs.filter((_, i) => i !== index);
+  }
+
+  async buildImage(): Promise<void> {
+    if (!this.buildForm.imageName || !this.buildForm.systemId || !this.buildForm.contextPath) return;
+
+    this.building = true;
+    this.buildLog = '';
+    this.buildError = '';
+    this.showBuildOutput = true;
+
+    const buildArgs: [string, string][] = this.buildForm.buildArgs
+      .filter((a) => a.key.trim())
+      .map((a) => [a.key.trim(), a.value]);
+
+    const job = await this.imageState.buildImage(
+      this.buildForm.systemId,
+      this.buildForm.contextPath,
+      this.buildForm.dockerfile.trim() || null,
+      this.buildForm.imageName,
+      this.buildForm.tag || 'latest',
+      this.buildForm.runtime,
+      buildArgs,
+      this.buildForm.noCache,
+    );
+
+    this.building = false;
+    this.buildLog = job.log;
+    this.buildError = job.error ?? '';
+  }
+
+  closeBuildDialog(): void {
+    if (this.building) return;
+    this.showBuildDialog = false;
+    this.buildLog = '';
+    this.buildError = '';
+    this.showBuildOutput = false;
+    this.buildForm = {
+      contextPath: '.',
+      dockerfile: '',
+      imageName: '',
+      tag: 'latest',
+      systemId: this.buildForm.systemId,
+      runtime: this.buildForm.runtime,
+      noCache: false,
+      buildArgs: [],
+    };
   }
 
   formatSize(bytes: number): string {

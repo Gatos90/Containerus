@@ -207,6 +207,61 @@ impl CommandBuilder {
         }
     }
 
+    /// Build image build command (from Dockerfile in a local/remote context directory)
+    ///
+    /// Parameters:
+    /// - `context_path`: path to the build context directory on the target system
+    /// - `dockerfile`: optional path to Dockerfile (relative to context, or absolute)
+    /// - `image_name`: name for the resulting image
+    /// - `tag`: tag for the resulting image
+    /// - `build_args`: list of `(key, value)` pairs passed as `--build-arg`
+    /// - `no_cache`: disable layer cache
+    pub fn build_image(
+        runtime: ContainerRuntime,
+        context_path: &str,
+        dockerfile: Option<&str>,
+        image_name: &str,
+        tag: &str,
+        build_args: &[(String, String)],
+        no_cache: bool,
+    ) -> String {
+        let (binary, image_subcommand) = match runtime {
+            ContainerRuntime::Docker => ("docker", "build"),
+            ContainerRuntime::Podman => ("podman", "build"),
+            ContainerRuntime::Apple => ("container", "image build"),
+        };
+
+        let full_tag = format!("{}:{}", image_name, tag);
+        let mut cmd = format!("{} {} -t {}", binary, image_subcommand, Self::shell_escape(&full_tag));
+
+        if no_cache {
+            cmd.push_str(" --no-cache");
+        }
+
+        for (key, value) in build_args {
+            let escaped_key = key.replace('\'', "'\\''");
+            let escaped_val = value.replace('\'', "'\\''");
+            cmd.push_str(&format!(" --build-arg '{}={}'", escaped_key, escaped_val));
+        }
+
+        if let Some(df) = dockerfile {
+            cmd.push_str(&format!(" -f {}", Self::shell_escape(df)));
+        }
+
+        // Use plain progress for readable log output
+        match runtime {
+            ContainerRuntime::Docker | ContainerRuntime::Podman => {
+                cmd.push_str(" --progress=plain");
+            }
+            ContainerRuntime::Apple => {}
+        }
+
+        cmd.push(' ');
+        cmd.push_str(&Self::shell_escape(context_path));
+
+        cmd
+    }
+
     /// Build image inspect command
     pub fn inspect_image(runtime: ContainerRuntime, image_id: &str) -> String {
         match runtime {

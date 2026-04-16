@@ -38,4 +38,26 @@ export class ImageService {
       runtime,
     });
   }
+
+  buildImage(
+    systemId: string,
+    contextPath: string,
+    dockerfile: string | null,
+    imageName: string,
+    tag: string,
+    runtime: ContainerRuntime,
+    buildArgs: [string, string][],
+    noCache: boolean
+  ): Promise<string> {
+    return this.tauri.invoke<string>('build_image', {
+      systemId,
+      contextPath,
+      dockerfile,
+      imageName,
+      tag,
+      runtime,
+      buildArgs,
+      noCache,
+    });
+  }
 }
