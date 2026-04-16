@@ -174,20 +174,23 @@ pub async fn start_terminal_session(
     })
 }
 
-/// Build the command to run in the terminal
+/// Build the command to run in the terminal.
+///
+/// Routes through `containerus_core::runtime::CommandBuilder::exec_terminal`,
+/// which shell-escapes both the container id and shell path. This is critical:
+/// the returned string is handed to `SshClient::open_pty_channel_raw`, which
+/// wraps it in `bash -lc '<cmd>'` on the remote. Single-quoting at the outer
+/// SSH layer only protects the top-level `sh -c` parse — `bash -lc` then
+/// re-interprets its argument as shell code, so any unescaped metacharacters
+/// in `container_id` or `shell` would execute under the SSH user. (CON-41)
 fn build_terminal_command(
     container_id: &Option<String>,
     shell: &str,
     runtime: &ContainerRuntime,
 ) -> Option<String> {
-    container_id.as_ref().map(|cid| {
-        let runtime_cmd = match runtime {
-            ContainerRuntime::Docker => "docker",
-            ContainerRuntime::Podman => "podman",
-            ContainerRuntime::Apple => "container",
-        };
-        format!("{} exec -it {} {}", runtime_cmd, cid, shell)
-    })
+    container_id
+        .as_ref()
+        .map(|cid| containerus_core::runtime::CommandBuilder::exec_terminal(*runtime, cid, shell))
 }
 
 /// Start a local PTY session (desktop only - not available on Android)
@@ -565,4 +568,102 @@ pub async fn fetch_shell_history(
 
     // No history found - return empty (not an error)
     Ok(vec![])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // CON-41 regression: `build_terminal_command` must shell-escape
+    // user-controlled `container_id` and `shell` values. The returned string
+    // is wrapped in `bash -lc '<cmd>'` on the remote by
+    // `SshClient::open_pty_channel_raw`, so any metacharacter that survives
+    // unquoted would be re-interpreted by the login shell.
+    #[test]
+    fn build_terminal_command_escapes_injection_payloads() {
+        let payloads = [
+            "abc; echo pwned",
+            "abc && echo pwned",
+            "$(echo pwned)",
+            "`echo pwned`",
+            "abc'; echo pwned; #",
+        ];
+        for p in payloads {
+            let cmd =
+                build_terminal_command(&Some(p.to_string()), "/bin/bash", &ContainerRuntime::Docker)
+                    .expect("container_id is Some");
+            assert_single_quoted(&cmd, "echo pwned");
+            // Also feed the payload through the shell slot.
+            let cmd = build_terminal_command(&Some("abc".into()), p, &ContainerRuntime::Docker)
+                .expect("container_id is Some");
+            assert_single_quoted(&cmd, "echo pwned");
+        }
+    }
+
+    // Assert that every occurrence of `needle` in `cmd` sits inside a
+    // single-quoted region — i.e. the outer shell cannot evaluate it.
+    // Mirrors the classifier in
+    // `crates/containerus-core/tests/injection_regression.rs` so the
+    // POSIX `'\''` idiom (close, escaped-quote, reopen) parses correctly.
+    fn assert_single_quoted(cmd: &str, needle: &str) {
+        let chars: Vec<char> = cmd.chars().collect();
+        let needle_chars: Vec<char> = needle.chars().collect();
+
+        #[derive(Copy, Clone, PartialEq, Eq)]
+        enum State {
+            Normal,
+            InSingle,
+        }
+        let mut ctx = Vec::with_capacity(chars.len());
+        let mut state = State::Normal;
+        let mut i = 0;
+        while i < chars.len() {
+            let c = chars[i];
+            match state {
+                State::Normal => {
+                    if c == '\\' && i + 1 < chars.len() {
+                        ctx.push(false);
+                        ctx.push(false);
+                        i += 2;
+                        continue;
+                    }
+                    if c == '\'' {
+                        ctx.push(false);
+                        state = State::InSingle;
+                    } else {
+                        ctx.push(false);
+                    }
+                }
+                State::InSingle => {
+                    if c == '\'' {
+                        ctx.push(false);
+                        state = State::Normal;
+                    } else {
+                        ctx.push(true);
+                    }
+                }
+            }
+            i += 1;
+        }
+
+        let mut found_any = false;
+        if !needle_chars.is_empty() && needle_chars.len() <= chars.len() {
+            for start in 0..=chars.len() - needle_chars.len() {
+                if chars[start..start + needle_chars.len()] == needle_chars[..] {
+                    found_any = true;
+                    let safe = ctx[start..start + needle_chars.len()].iter().all(|b| *b);
+                    assert!(
+                        safe,
+                        "dangerous fragment {:?} outside single quotes in: {}",
+                        needle, cmd
+                    );
+                }
+            }
+        }
+        assert!(
+            found_any,
+            "test payload missing — expected {:?} somewhere in: {}",
+            needle, cmd
+        );
+    }
 }
