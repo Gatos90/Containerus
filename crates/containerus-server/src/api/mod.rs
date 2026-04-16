@@ -11,14 +11,40 @@ pub mod projects;
 pub mod roles;
 pub mod systems;
 
-use axum::Router;
+use axum::body::Body;
+use axum::extract::Request;
+use axum::http::StatusCode;
+use axum::middleware::{self, Next};
+use axum::response::IntoResponse;
+use axum::{Json, Router};
+use serde_json::json;
+use crate::rate_limit::{client_ip, RateLimiter};
 use crate::AppState;
 
 /// Build the full API router.
-pub fn router() -> Router<AppState> {
+///
+/// `auth_limiter` is applied only to the `/api/auth` sub-router so that
+/// login/register attempts are rate-limited per client IP.
+pub fn router(auth_limiter: RateLimiter) -> Router<AppState> {
+    // Apply rate limiting only to auth endpoints (login, register, refresh).
+    let auth = auth::router().layer(middleware::from_fn(move |req: Request<Body>, next: Next| {
+        let limiter = auth_limiter.clone();
+        async move {
+            let ip = client_ip(&req);
+            if !limiter.check(ip) {
+                return (
+                    StatusCode::TOO_MANY_REQUESTS,
+                    Json(json!({"error": "Too many requests — please wait before trying again"})),
+                )
+                    .into_response();
+            }
+            next.run(req).await
+        }
+    }));
+
     Router::new()
         .nest("/api/health", health::router())
-        .nest("/api/auth", auth::router())
+        .nest("/api/auth", auth)
         .nest("/api/projects", projects::router())
         // Environment-scoped list/create routes
         .nest("/api/projects/{project_id}/environments", environments::router())

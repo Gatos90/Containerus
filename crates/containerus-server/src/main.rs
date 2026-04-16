@@ -5,6 +5,7 @@ mod config;
 mod connections;
 mod db;
 mod k8s;
+mod rate_limit;
 mod vault;
 mod ws;
 
@@ -13,9 +14,13 @@ use sqlx::PgPool;
 use axum::http::header::{AUTHORIZATION, CONTENT_TYPE};
 use axum::http::Method;
 use tower_http::cors::{Any, CorsLayer};
+use tower_http::limit::RequestBodyLimitLayer;
 use tower_http::trace::TraceLayer;
+use tower_http::catch_panic::CatchPanicLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use uuid::Uuid;
+
+use rate_limit::RateLimiter;
 
 use config::ServerConfig;
 use connections::ConnectionManager;
@@ -229,7 +234,18 @@ async fn main() {
                 })
                 .collect();
             if origins.is_empty() {
-                panic!("No valid CORS origins configured. Set CORS_ORIGINS to '*' explicitly to allow all origins, or provide valid origin URLs.");
+                tracing::error!(
+                    "No valid CORS origins configured. Set CORS_ORIGINS to '*' to allow all, \
+                     or provide valid origin URLs. Defaulting to localhost:1420 for safety."
+                );
+                CorsLayer::new()
+                    .allow_origin(
+                        "http://localhost:1420"
+                            .parse::<axum::http::HeaderValue>()
+                            .expect("static origin is valid"),
+                    )
+                    .allow_methods(allowed_methods)
+                    .allow_headers(allowed_headers)
             } else {
                 CorsLayer::new()
                     .allow_origin(origins)
@@ -239,11 +255,19 @@ async fn main() {
         }
     };
 
+    // Rate limiter for auth endpoints: 20 requests per IP per 60 seconds.
+    // This throttles brute-force login/register attempts without blocking normal usage.
+    let auth_limiter = RateLimiter::new(20, std::time::Duration::from_secs(60));
+
     // Build the application
-    let app = api::router()
+    let app = api::router(auth_limiter)
         .merge(ws::router())
         .layer(cors)
         .layer(TraceLayer::new_for_http())
+        // Catch handler panics and return 500 instead of crashing the server.
+        .layer(CatchPanicLayer::new())
+        // Reject request bodies larger than 10 MiB to prevent memory exhaustion.
+        .layer(RequestBodyLimitLayer::new(10 * 1024 * 1024))
         .with_state(state);
 
     tracing::info!("Listening on {bind_addr}");

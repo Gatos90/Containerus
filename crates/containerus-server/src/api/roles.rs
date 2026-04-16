@@ -125,11 +125,15 @@ async fn create_role(
         return Err((StatusCode::FORBIDDEN, Json(json!({ "error": "Company admin required" }))));
     }
 
-    if req.name.trim().is_empty() {
-        return Err((StatusCode::BAD_REQUEST, Json(json!({ "error": "Role name is required" }))));
+    if req.name.trim().is_empty() || req.name.trim().len() > 100 {
+        return Err((StatusCode::BAD_REQUEST, Json(json!({ "error": "Role name must be 1-100 characters" }))));
     }
-    if req.slug.trim().is_empty() {
-        return Err((StatusCode::BAD_REQUEST, Json(json!({ "error": "Role slug is required" }))));
+    let slug = req.slug.trim();
+    if slug.is_empty() || slug.len() > 64 {
+        return Err((StatusCode::BAD_REQUEST, Json(json!({ "error": "Role slug must be 1-64 characters" }))));
+    }
+    if !slug.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-' || c == '_') {
+        return Err((StatusCode::BAD_REQUEST, Json(json!({ "error": "Role slug may only contain lowercase letters, digits, hyphens, and underscores" }))));
     }
 
     let role_id = Uuid::new_v4();

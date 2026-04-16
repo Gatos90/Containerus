@@ -65,12 +65,20 @@ async fn create_cluster(
 ) -> Result<axum::response::Response, (StatusCode, Json<serde_json::Value>)> {
     user.require("clusters.create").map_err(|_| (StatusCode::FORBIDDEN, Json(json!({"error": "Insufficient permissions"}))))?;
 
+    let name = req.name.trim();
+    if name.is_empty() || name.len() > 255 {
+        return Ok((StatusCode::BAD_REQUEST, Json(json!({"error": "Cluster name must be 1-255 characters"}))).into_response());
+    }
+    if req.kubeconfig.trim().is_empty() {
+        return Ok((StatusCode::BAD_REQUEST, Json(json!({"error": "kubeconfig is required"}))).into_response());
+    }
+
     match state
         .k8s
         .store_cluster(
             &state.db,
             environment_id,
-            &req.name,
+            name,
             &req.kubeconfig,
             req.context_name.as_deref(),
             user.claims.sub,
@@ -114,6 +122,13 @@ async fn update_cluster(
 ) -> Result<axum::response::Response, (StatusCode, Json<serde_json::Value>)> {
     let cluster = get_verified_cluster(&state, id).await?;
     verify_cluster_access(&state, &auth.claims, &cluster, "clusters.edit").await?;
+
+    if let Some(ref name) = req.name {
+        let name = name.trim();
+        if name.is_empty() || name.len() > 255 {
+            return Ok((StatusCode::BAD_REQUEST, Json(json!({"error": "Cluster name must be 1-255 characters"}))).into_response());
+        }
+    }
 
     match state
         .k8s
