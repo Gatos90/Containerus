@@ -5,19 +5,16 @@ import {
   input,
   output,
 } from '@angular/core';
-import { CdkTrapFocus } from '@angular/cdk/a11y';
+import { AppModalDirective } from '../../directives/app-modal.directive';
 import { LucideAngularModule, X, Sparkles, Tag } from 'lucide-angular';
 import { ChangelogEntry } from '../../../state/changelog.state';
 
 @Component({
   selector: 'app-whats-new-modal',
   standalone: true,
-  imports: [CommonModule, LucideAngularModule, CdkTrapFocus],
+  imports: [CommonModule, LucideAngularModule, AppModalDirective],
   templateUrl: './whats-new-modal.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  host: {
-    '(document:keydown.escape)': 'onDismiss()',
-  },
 })
 export class WhatsNewModalComponent {
   readonly entries = input.required<ChangelogEntry[]>();

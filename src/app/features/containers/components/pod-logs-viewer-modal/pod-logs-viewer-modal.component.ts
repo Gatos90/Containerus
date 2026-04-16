@@ -11,7 +11,7 @@ import {
   viewChild,
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { CdkTrapFocus } from '@angular/cdk/a11y';
+import { AppModalDirective } from '../../../../shared/directives/app-modal.directive';
 import {
   LucideAngularModule,
   X,
@@ -31,7 +31,7 @@ import { ClipboardService } from '../../../../core/services/clipboard.service';
 
 @Component({
   selector: 'app-pod-logs-viewer-modal',
-  imports: [LucideAngularModule, FormsModule, CdkTrapFocus],
+  imports: [LucideAngularModule, FormsModule, AppModalDirective],
   templateUrl: './pod-logs-viewer-modal.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })

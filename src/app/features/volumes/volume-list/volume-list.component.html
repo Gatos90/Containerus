@@ -26,13 +26,15 @@
       </button>
 
       <!-- Create Volume Button -->
-      <button
+      <app-button
+        variant="primary"
+        size="md"
         (click)="showCreateDialog = true"
-        class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 transition-colors text-sm"
+        ariaLabel="Create Volume"
       >
         <lucide-icon [img]="Plus" class="w-4 h-4" aria-hidden="true"></lucide-icon>
         <span class="hidden sm:inline">Create Volume</span>
-      </button>
+      </app-button>
 
       <!-- Refresh -->
       <button
@@ -144,9 +146,9 @@
 
 <!-- Mobile Filter Sheet -->
 @if (showMobileFilters()) {
-  <div class="fixed inset-0 bg-black/50 z-50 md:hidden" (click)="showMobileFilters.set(false)">
+  <div class="fixed inset-0 bg-black/50 z-50 md:hidden cx-modal-backdrop" (click)="showMobileFilters.set(false)">
     <div
-      class="absolute bottom-0 left-0 right-0 bg-zinc-900 rounded-t-2xl p-6 space-y-4 max-h-[80vh] overflow-y-auto"
+      class="absolute bottom-0 left-0 right-0 bg-zinc-900 rounded-t-2xl p-6 space-y-4 max-h-[80vh] overflow-y-auto cx-sheet-panel"
       (click)="$event.stopPropagation()"
     >
       <div class="flex items-center justify-between">
@@ -215,12 +217,16 @@
 <!-- Create Volume Dialog -->
 @if (showCreateDialog) {
   <div
-    class="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
-    role="dialog"
-    aria-modal="true"
-    aria-labelledby="create-volume-title"
+    class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 cx-modal-backdrop"
+    (click)="showCreateDialog = false"
   >
-    <div class="bg-zinc-900 rounded-lg p-6 w-full max-w-md space-y-4">
+    <div
+      class="bg-zinc-900 rounded-lg p-6 w-full max-w-md space-y-4 cx-modal-panel"
+      appModal
+      aria-labelledby="create-volume-title"
+      (modalClose)="showCreateDialog = false"
+      (click)="$event.stopPropagation()"
+    >
       <h2 id="create-volume-title" class="text-xl font-bold">Create Volume</h2>
 
       <div class="space-y-3">
@@ -267,20 +273,36 @@
       </div>
 
       <div class="flex justify-end gap-2">
-        <button
+        <app-button
+          variant="secondary"
+          size="md"
+          [disabled]="creating()"
           (click)="showCreateDialog = false"
-          class="px-4 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700"
         >
           Cancel
-        </button>
-        <button
-          (click)="createVolume()"
-          class="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500"
+        </app-button>
+        <app-button
+          variant="primary"
+          size="md"
+          [loading]="creating()"
           [disabled]="!createForm.name || !createForm.systemId"
+          (click)="createVolume()"
         >
-          Create
-        </button>
+          {{ creating() ? 'Creating…' : 'Create' }}
+        </app-button>
       </div>
     </div>
   </div>
 }
+
+<!-- Delete Volume Confirmation -->
+<app-confirm-dialog
+  [open]="pendingDelete() !== null"
+  title="Remove volume?"
+  [message]="pendingDelete() ? 'Remove volume &quot;' + pendingDelete()!.name + '&quot;? This action cannot be undone.' : ''"
+  confirmText="Remove"
+  variant="destructive"
+  [busy]="deleting()"
+  (confirmed)="confirmDelete()"
+  (cancelled)="cancelDelete()"
+/>

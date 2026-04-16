@@ -24,12 +24,14 @@ import { SystemImageSectionComponent } from '../components/system-image-section/
 import { EmptyStateComponent } from '../../../shared/components/empty-state/empty-state.component';
 import { HelpTooltipComponent } from '../../../shared/components/help-tooltip/help-tooltip.component';
 import { AppModalDirective } from '../../../shared/directives/app-modal.directive';
+import { AppButtonComponent } from '../../../shared/components/ui-button/ui-button.component';
+import { ConfirmDialogComponent } from '../../../shared/components/confirm-dialog/confirm-dialog.component';
 import { Router } from '@angular/router';
 import { Layers } from 'lucide-angular';
 
 @Component({
   selector: 'app-image-list',
-  imports: [CommonModule, FormsModule, LucideAngularModule, SystemImageSectionComponent, EmptyStateComponent, HelpTooltipComponent, AppModalDirective],
+  imports: [CommonModule, FormsModule, LucideAngularModule, SystemImageSectionComponent, EmptyStateComponent, HelpTooltipComponent, AppModalDirective, AppButtonComponent, ConfirmDialogComponent],
   templateUrl: './image-list.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
@@ -114,6 +116,14 @@ export class ImageListComponent implements OnInit {
   buildError = '';
   showBuildOutput = false;
 
+  readonly pulling = signal(false);
+  readonly pendingDelete = signal<ContainerImage | null>(null);
+  readonly deleting = signal(false);
+
+  imageFullName(image: ContainerImage): string {
+    return getImageFullName(image);
+  }
+
   /** Images grouped by system, filtered */
   readonly filteredImagesBySystem = computed(() => {
     const filtered = this.imageState.filteredImages();
@@ -161,12 +171,17 @@ export class ImageListComponent implements OnInit {
     if (nameErr) { this.pullNameError.set(nameErr); return; }
     if (!this.pullForm.systemId) return;
 
-    await this.imageState.pullImage(
-      this.pullForm.systemId,
-      this.pullForm.name,
-      this.pullForm.tag,
-      this.pullForm.runtime
-    );
+    this.pulling.set(true);
+    try {
+      await this.imageState.pullImage(
+        this.pullForm.systemId,
+        this.pullForm.name,
+        this.pullForm.tag,
+        this.pullForm.runtime
+      );
+    } finally {
+      this.pulling.set(false);
+    }
 
     this.showPullDialog = false;
     this.pullNameError.set(null);
@@ -178,9 +193,24 @@ export class ImageListComponent implements OnInit {
     };
   }
 
-  async onImageDeleted(image: ContainerImage): Promise<void> {
-    if (confirm(`Remove image "${getImageFullName(image)}"? This action cannot be undone.`)) {
+  onImageDeleted(image: ContainerImage): void {
+    this.pendingDelete.set(image);
+  }
+
+  cancelDelete(): void {
+    if (this.deleting()) return;
+    this.pendingDelete.set(null);
+  }
+
+  async confirmDelete(): Promise<void> {
+    const image = this.pendingDelete();
+    if (!image || this.deleting()) return;
+    this.deleting.set(true);
+    try {
       await this.imageState.removeImage(image);
+    } finally {
+      this.deleting.set(false);
+      this.pendingDelete.set(null);
     }
   }
 

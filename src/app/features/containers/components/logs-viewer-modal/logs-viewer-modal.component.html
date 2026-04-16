@@ -1,15 +1,14 @@
 <!-- Backdrop -->
 <div
-  class="fixed inset-0 bg-black/70 z-50 flex items-end sm:items-center justify-center sm:p-4"
+  class="fixed inset-0 bg-black/70 z-50 flex items-end sm:items-center justify-center sm:p-4 cx-modal-backdrop"
   (click)="onBackdropClick($event)"
 >
   <!-- Modal - Full screen on mobile with proper viewport height -->
   <div
-    class="bg-zinc-900 w-full h-[100dvh] sm:h-auto sm:rounded-xl sm:max-w-5xl sm:max-h-[90vh] overflow-hidden flex flex-col shadow-2xl"
-    role="dialog"
-    aria-modal="true"
+    class="bg-zinc-900 w-full h-[100dvh] sm:h-auto sm:rounded-xl sm:max-w-5xl sm:max-h-[90vh] overflow-hidden flex flex-col shadow-2xl cx-sheet-panel sm:[animation-name:cx-scale-in]"
+    appModal
     aria-labelledby="logs-viewer-title"
-    cdkTrapFocus
+    (modalClose)="close.emit()"
     (click)="$event.stopPropagation()"
   >
     <!-- Header -->

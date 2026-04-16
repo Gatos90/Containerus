@@ -385,13 +385,14 @@
   <!-- ================================================================== -->
   @if (showHostKeyModal()) {
     <div
-      class="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="host-key-title"
-      (keydown.escape)="dismissHostKeyModal()"
+      class="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4 cx-modal-backdrop"
     >
-      <div class="bg-zinc-900 rounded-xl border border-zinc-800 p-6 w-full max-w-md space-y-4">
+      <div
+        class="bg-zinc-900 rounded-xl border border-zinc-800 p-6 w-full max-w-md space-y-4 cx-modal-panel"
+        appModal
+        aria-labelledby="host-key-title"
+        (modalClose)="dismissHostKeyModal()"
+      >
         <div class="flex items-center gap-2 text-amber-400">
           <lucide-icon [img]="AlertCircle" [size]="20" />
           <h3 id="host-key-title" class="text-lg font-medium">Host Key Mismatch</h3>

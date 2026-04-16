@@ -1,0 +1,19 @@
+@let spinnerSize = size() === 'sm' ? 12 : 14;
+<button
+  [type]="type()"
+  [disabled]="isDisabled()"
+  [attr.aria-busy]="loading() ? 'true' : null"
+  [attr.aria-label]="ariaLabel()"
+  [attr.title]="title()"
+  [class]="classes()"
+>
+  @if (loading()) {
+    <lucide-angular
+      [img]="Loader2"
+      [size]="spinnerSize"
+      class="animate-spin"
+      aria-hidden="true"
+    />
+  }
+  <ng-content />
+</button>

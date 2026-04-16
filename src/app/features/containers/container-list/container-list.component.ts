@@ -63,6 +63,7 @@ import { K8sCluster, K8sPod } from '../../../core/models/backend.model';
 import { EmptyStateComponent } from '../../../shared/components/empty-state/empty-state.component';
 import { HelpTooltipComponent } from '../../../shared/components/help-tooltip/help-tooltip.component';
 import { AppModalDirective } from '../../../shared/directives/app-modal.directive';
+import { ConfirmDialogComponent } from '../../../shared/components/confirm-dialog/confirm-dialog.component';
 import { Router } from '@angular/router';
 
 export type Workload =
@@ -91,6 +92,7 @@ interface SystemDisplayInfo {
     HelpTooltipComponent,
     ContainerWorkloadComponent,
     AppModalDirective,
+    ConfirmDialogComponent,
   ],
   templateUrl: './container-list.component.html',
   host: {
@@ -422,6 +424,7 @@ export class ContainerListComponent implements OnInit {
   }
 
   confirmAction = signal<{ container: Container; action: ContainerAction } | null>(null);
+  readonly confirmBusy = signal(false);
 
   async performAction(container: Container, action: ContainerAction): Promise<void> {
     if (this.actionsService.isDestructiveAction(action)) {
@@ -433,13 +436,46 @@ export class ContainerListComponent implements OnInit {
 
   async confirmAndExecute(): Promise<void> {
     const pending = this.confirmAction();
-    if (!pending) return;
-    this.confirmAction.set(null);
-    await this.executeAction(pending.container, pending.action);
+    if (!pending || this.confirmBusy()) return;
+    this.confirmBusy.set(true);
+    try {
+      await this.executeAction(pending.container, pending.action);
+    } finally {
+      this.confirmBusy.set(false);
+      this.confirmAction.set(null);
+    }
   }
 
   cancelAction(): void {
+    if (this.confirmBusy()) return;
     this.confirmAction.set(null);
+  }
+
+  confirmDialogTitle(): string {
+    const pending = this.confirmAction();
+    if (!pending) return '';
+    const verb = pending.action.charAt(0).toUpperCase() + pending.action.slice(1);
+    return `Confirm ${verb}`;
+  }
+
+  confirmDialogMessage(): string {
+    const pending = this.confirmAction();
+    if (!pending) return '';
+    return `Are you sure you want to ${pending.action} "${this.getDisplayName(pending.container)}"?`;
+  }
+
+  confirmDialogButton(): string {
+    const pending = this.confirmAction();
+    if (!pending) return 'Confirm';
+    return pending.action.charAt(0).toUpperCase() + pending.action.slice(1);
+  }
+
+  confirmDialogVariant(): 'default' | 'destructive' {
+    const pending = this.confirmAction();
+    if (!pending) return 'destructive';
+    return pending.action === 'stop' || pending.action === 'remove'
+      ? 'destructive'
+      : 'default';
   }
 
   onEscape(): void {
@@ -602,7 +638,31 @@ export class ContainerListComponent implements OnInit {
     return `pod:${workload.connectionId}/${workload.clusterId}/${workload.pod.namespace}/${workload.pod.name}`;
   }
 
-  async deletePod(workload: Workload & { kind: 'pod' }): Promise<void> {
+  readonly pendingPodDelete = signal<(Workload & { kind: 'pod' }) | null>(null);
+  readonly podDeleteBusy = signal(false);
+
+  deletePod(workload: Workload & { kind: 'pod' }): void {
+    this.pendingPodDelete.set(workload);
+  }
+
+  cancelPodDelete(): void {
+    if (this.podDeleteBusy()) return;
+    this.pendingPodDelete.set(null);
+  }
+
+  async confirmPodDelete(): Promise<void> {
+    const workload = this.pendingPodDelete();
+    if (!workload || this.podDeleteBusy()) return;
+    this.podDeleteBusy.set(true);
+    try {
+      await this.executePodDelete(workload);
+    } finally {
+      this.podDeleteBusy.set(false);
+      this.pendingPodDelete.set(null);
+    }
+  }
+
+  private async executePodDelete(workload: Workload & { kind: 'pod' }): Promise<void> {
     if (this.workloadComponent) {
       await this.workloadComponent.deletePod(
         workload.connectionId, workload.clusterId,
@@ -611,9 +671,7 @@ export class ContainerListComponent implements OnInit {
       this.backendPods.set(this.workloadComponent.backendPods());
       return;
     }
-    // Fallback when workload component not yet available
     const key = `pod:${workload.connectionId}/${workload.clusterId}/${workload.pod.namespace}/${workload.pod.name}`;
-    if (!confirm(`Delete pod "${workload.pod.name}" in namespace "${workload.pod.namespace}"? This action cannot be undone.`)) return;
     this.podActionLoading.update(s => { const n = new Set(s); n.add(key); return n; });
     try {
       await this.backend.deleteK8sResourceFor(

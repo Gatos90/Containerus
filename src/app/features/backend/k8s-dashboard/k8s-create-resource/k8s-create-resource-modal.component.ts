@@ -13,27 +13,29 @@ import {
 import { formToYaml } from './k8s-form-to-yaml';
 import { yamlToForm } from './k8s-yaml-to-form';
 import { getResourceTemplate } from '../k8s-resource-templates';
+import { AppModalDirective } from '../../../../shared/directives/app-modal.directive';
 
 @Component({
   selector: 'app-k8s-create-resource-modal',
   standalone: true,
-  imports: [FormsModule, NgTemplateOutlet, LucideAngularModule, MonacoEditorComponent],
+  imports: [FormsModule, NgTemplateOutlet, LucideAngularModule, MonacoEditorComponent, AppModalDirective],
   template: `
     <!-- Backdrop -->
     <div
-      class="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4"
-      role="dialog" aria-modal="true"
+      class="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4 cx-modal-backdrop"
       (click)="close.emit()"
-      (keydown.escape)="close.emit()"
     >
       <!-- Modal -->
       <div
-        class="bg-zinc-900 rounded-xl border border-zinc-800 w-full max-w-2xl max-h-[85vh] flex flex-col"
+        class="bg-zinc-900 rounded-xl border border-zinc-800 w-full max-w-2xl max-h-[85vh] flex flex-col cx-modal-panel"
+        appModal
+        aria-labelledby="k8s-create-resource-title"
+        (modalClose)="close.emit()"
         (click)="$event.stopPropagation()"
       >
         <!-- Header -->
         <div class="flex items-center justify-between px-6 py-4 border-b border-zinc-800 shrink-0">
-          <h3 class="text-lg font-medium text-zinc-100">Create {{ resourceLabel() }}</h3>
+          <h3 id="k8s-create-resource-title" class="text-lg font-medium text-zinc-100">Create {{ resourceLabel() }}</h3>
           <div class="flex items-center gap-2">
             @if (hasForm()) {
               <div class="flex bg-zinc-800 rounded-lg p-0.5">

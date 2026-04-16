@@ -30,6 +30,8 @@ import { EmptyStateComponent } from '../../../shared/components/empty-state/empt
 import { SetupWizardComponent } from '../../../shared/components/setup-wizard/setup-wizard.component';
 import { FirstSuccessComponent } from '../../../shared/components/first-success/first-success.component';
 import { HelpTooltipComponent } from '../../../shared/components/help-tooltip/help-tooltip.component';
+import { ConfirmDialogComponent } from '../../../shared/components/confirm-dialog/confirm-dialog.component';
+import { AppModalDirective } from '../../../shared/directives/app-modal.directive';
 import { ContainerRuntime } from '../../../core/models/container.model';
 import { ContainerSystem, ExtendedSystemInfo, JumpHost, JumpHostCredentials, LiveSystemMetrics, NewSystemRequest, OsType, SshAuthMethod, SshHostEntry, UpdateSystemRequest } from '../../../core/models/system.model';
 
@@ -53,7 +55,7 @@ import { ToastState } from '../../../state/toast.state';
 @Component({
   selector: 'app-system-list',
   standalone: true,
-  imports: [CommonModule, FormsModule, LucideAngularModule, EmptyStateComponent, SetupWizardComponent, FirstSuccessComponent, HelpTooltipComponent],
+  imports: [CommonModule, FormsModule, LucideAngularModule, EmptyStateComponent, SetupWizardComponent, FirstSuccessComponent, HelpTooltipComponent, ConfirmDialogComponent, AppModalDirective],
   templateUrl: './system-list.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -98,6 +100,8 @@ export class SystemListComponent implements OnInit {
   editingSystemId: string | null = null;
   isMobile = signal(false);
   addingSystem = signal(false);
+  readonly pendingDeleteSystemId = signal<string | null>(null);
+  readonly deletingSystem = signal(false);
 
   // SSH Config host selection
   sshHosts = signal<SshHostEntry[]>([]);
@@ -702,15 +706,35 @@ export class SystemListComponent implements OnInit {
     this.editJumpHostForms = [];
   }
 
-  async deleteSystem(systemId: string): Promise<void> {
-    if (!confirm('Are you sure you want to delete this system?')) return;
+  deleteSystem(systemId: string): void {
+    this.pendingDeleteSystemId.set(systemId);
+  }
 
-    // Disconnect first if connected
-    if (this.getConnectionState(systemId) === 'connected') {
-      await this.disconnect(systemId);
+  cancelDeleteSystem(): void {
+    if (this.deletingSystem()) return;
+    this.pendingDeleteSystemId.set(null);
+  }
+
+  async confirmDeleteSystem(): Promise<void> {
+    const systemId = this.pendingDeleteSystemId();
+    if (!systemId || this.deletingSystem()) return;
+    this.deletingSystem.set(true);
+    try {
+      // Disconnect first if connected
+      if (this.getConnectionState(systemId) === 'connected') {
+        await this.disconnect(systemId);
+      }
+      await this.systemState.removeSystem(systemId);
+    } finally {
+      this.deletingSystem.set(false);
+      this.pendingDeleteSystemId.set(null);
     }
+  }
 
-    await this.systemState.removeSystem(systemId);
+  pendingDeleteSystemName(): string {
+    const id = this.pendingDeleteSystemId();
+    if (!id) return '';
+    return this.systemState.systems().find((s) => s.id === id)?.name ?? id;
   }
 
   async browseForSshKey(formType: 'add' | 'edit'): Promise<void> {

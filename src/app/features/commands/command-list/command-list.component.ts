@@ -37,6 +37,7 @@ import { SystemState } from '../../../state/system.state';
 import { CommandCardComponent } from '../components/command-card/command-card.component';
 import { CommandDetailPanelComponent } from '../components/command-detail-panel/command-detail-panel.component';
 import { CommandFormModalComponent } from '../components/command-form-modal/command-form-modal.component';
+import { ConfirmDialogComponent } from '../../../shared/components/confirm-dialog/confirm-dialog.component';
 
 type CategoryInfo = {
   key: CommandCategory;
@@ -55,6 +56,7 @@ type CategoryInfo = {
     CommandCardComponent,
     CommandDetailPanelComponent,
     CommandFormModalComponent,
+    ConfirmDialogComponent,
   ],
   templateUrl: './command-list.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -100,6 +102,8 @@ export class CommandListComponent implements OnInit {
   readonly showCreateModal = signal(false);
   readonly editingTemplate = signal<CommandTemplate | null>(null);
   readonly collapsedCategories = signal<Set<CommandCategory>>(new Set());
+  readonly pendingDelete = signal<CommandTemplate | null>(null);
+  readonly deleting = signal(false);
   refreshing = false;
 
   // Category icon mapping
@@ -233,12 +237,27 @@ export class CommandListComponent implements OnInit {
     await this.commandState.duplicateTemplate(template.id);
   }
 
-  async onDelete(template: CommandTemplate): Promise<void> {
+  onDelete(template: CommandTemplate): void {
     if (template.isBuiltIn) {
       return;
     }
-    if (confirm(`Delete "${template.name}"? This action cannot be undone.`)) {
+    this.pendingDelete.set(template);
+  }
+
+  cancelDelete(): void {
+    if (this.deleting()) return;
+    this.pendingDelete.set(null);
+  }
+
+  async confirmDelete(): Promise<void> {
+    const template = this.pendingDelete();
+    if (!template || this.deleting()) return;
+    this.deleting.set(true);
+    try {
       await this.commandState.deleteTemplate(template.id);
+    } finally {
+      this.deleting.set(false);
+      this.pendingDelete.set(null);
     }
   }
 

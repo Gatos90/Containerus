@@ -9,6 +9,7 @@ import { K8sTopologyComponent } from './k8s-topology.component';
 import { MonacoEditorComponent } from '../../../shared/components/monaco-editor/monaco-editor.component';
 import { K8sCreateResourceModalComponent } from './k8s-create-resource/k8s-create-resource-modal.component';
 import { K8sResourceHelperService } from './k8s-resource-helper.service';
+import { AppModalDirective } from '../../../shared/directives/app-modal.directive';
 
 type K8sTab = 'pods' | 'deployments' | 'services' | 'statefulsets' | 'daemonsets' | 'jobs' | 'cronjobs'
   | 'configmaps' | 'secrets' | 'ingresses' | 'pvcs' | 'nodes'
@@ -26,7 +27,7 @@ export interface ClusterGroup {
 
 @Component({
   selector: 'app-k8s-dashboard',
-  imports: [FormsModule, LucideAngularModule, K8sResourceDetailComponent, K8sTopologyComponent, MonacoEditorComponent, K8sCreateResourceModalComponent],
+  imports: [FormsModule, LucideAngularModule, K8sResourceDetailComponent, K8sTopologyComponent, MonacoEditorComponent, K8sCreateResourceModalComponent, AppModalDirective],
   template: `
     <div class="p-4 space-y-6">
       <!-- ================================================================ -->
@@ -484,8 +485,14 @@ export interface ClusterGroup {
 
       <!-- Add Cluster Modal -->
       @if (showAddCluster()) {
-        <div class="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4 cx-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="add-cluster-title" (click)="showAddCluster.set(false)" (keydown.escape)="showAddCluster.set(false)">
-          <div class="bg-zinc-900 rounded-xl border border-zinc-800 p-6 w-full max-w-lg space-y-4 cx-modal-panel" (click)="$event.stopPropagation()">
+        <div class="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4 cx-modal-backdrop" (click)="showAddCluster.set(false)">
+          <div
+            class="bg-zinc-900 rounded-xl border border-zinc-800 p-6 w-full max-w-lg space-y-4 cx-modal-panel"
+            appModal
+            aria-labelledby="add-cluster-title"
+            (modalClose)="showAddCluster.set(false)"
+            (click)="$event.stopPropagation()"
+          >
             <h3 id="add-cluster-title" class="text-lg font-medium text-zinc-100">Add Kubernetes Cluster</h3>
 
             <div>
@@ -572,8 +579,14 @@ export interface ClusterGroup {
 
       <!-- Edit Cluster Modal -->
       @if (showEditCluster()) {
-        <div class="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4 cx-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="edit-cluster-title" (click)="showEditCluster.set(false)" (keydown.escape)="showEditCluster.set(false)">
-          <div class="bg-zinc-900 rounded-xl border border-zinc-800 p-6 w-full max-w-lg space-y-4 cx-modal-panel" (click)="$event.stopPropagation()">
+        <div class="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4 cx-modal-backdrop" (click)="showEditCluster.set(false)">
+          <div
+            class="bg-zinc-900 rounded-xl border border-zinc-800 p-6 w-full max-w-lg space-y-4 cx-modal-panel"
+            appModal
+            aria-labelledby="edit-cluster-title"
+            (modalClose)="showEditCluster.set(false)"
+            (click)="$event.stopPropagation()"
+          >
             <h3 id="edit-cluster-title" class="text-lg font-medium text-zinc-100">Edit Cluster</h3>
 
             <div>

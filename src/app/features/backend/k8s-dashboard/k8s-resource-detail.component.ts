@@ -1,6 +1,6 @@
 import {
   Component, Input, Output, EventEmitter, inject, signal, computed,
-  OnChanges, SimpleChanges, OnDestroy, HostListener, ElementRef, ViewChild, AfterViewChecked,
+  OnChanges, SimpleChanges, OnDestroy, ElementRef, ViewChild, AfterViewChecked,
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { BackendService } from '../../../core/services/backend.service';
@@ -14,26 +14,32 @@ import { Terminal as XTerm } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { MonacoEditorComponent } from '../../../shared/components/monaco-editor/monaco-editor.component';
 import { objectToYaml } from './k8s-create-resource/k8s-form-to-yaml';
+import { AppModalDirective } from '../../../shared/directives/app-modal.directive';
 
 type DetailTab = 'overview' | 'logs' | 'events' | 'yaml' | 'exec';
 
 @Component({
   selector: 'app-k8s-resource-detail',
-  imports: [FormsModule, LucideAngularModule, MonacoEditorComponent],
+  imports: [FormsModule, LucideAngularModule, MonacoEditorComponent, AppModalDirective],
   template: `
     <!-- Backdrop -->
     <div
-      class="fixed inset-0 bg-black/40 z-40"
+      class="fixed inset-0 bg-black/40 z-40 cx-modal-backdrop"
       (click)="close.emit()"
     ></div>
 
     <!-- Slide-over panel -->
-    <div class="fixed inset-y-0 right-0 z-50 w-full sm:w-[55%] sm:min-w-[540px] max-w-4xl bg-zinc-950 border-l border-zinc-800 shadow-2xl flex flex-col overflow-hidden animate-slide-in">
+    <div
+      class="fixed inset-y-0 right-0 z-50 w-full sm:w-[55%] sm:min-w-[540px] max-w-4xl bg-zinc-950 border-l border-zinc-800 shadow-2xl flex flex-col overflow-hidden animate-slide-in"
+      appModal
+      aria-labelledby="k8s-resource-detail-title"
+      (modalClose)="close.emit()"
+    >
       <!-- Header -->
       <div class="flex items-center justify-between px-5 py-3 border-b border-zinc-800 shrink-0">
         <div class="min-w-0">
           <div class="text-xs text-zinc-500 font-medium uppercase tracking-wide">{{ kind }}</div>
-          <div class="text-zinc-100 font-semibold truncate">{{ name }}</div>
+          <div id="k8s-resource-detail-title" class="text-zinc-100 font-semibold truncate">{{ name }}</div>
           <div class="text-xs text-zinc-500 mt-0.5">{{ namespace }}</div>
         </div>
         <button (click)="close.emit()" class="text-zinc-400 hover:text-zinc-200 p-1.5 rounded-lg hover:bg-zinc-800" aria-label="Close">
@@ -602,11 +608,6 @@ export class K8sResourceDetailComponent implements OnChanges, OnDestroy, AfterVi
     if (['Failed', 'False', 'CrashLoopBackOff'].includes(s)) return 'bg-red-500/20 text-red-400';
     return 'bg-zinc-700 text-zinc-400';
   });
-
-  @HostListener('document:keydown.escape')
-  onEscape(): void {
-    this.close.emit();
-  }
 
   ngOnChanges(changes: SimpleChanges): void {
     if (changes['rawResource'] || changes['name'] || changes['kind']) {

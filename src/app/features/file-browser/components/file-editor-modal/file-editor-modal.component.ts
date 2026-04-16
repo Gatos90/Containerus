@@ -1,7 +1,7 @@
 import { Component, inject, signal, computed, effect, output, ChangeDetectionStrategy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { CdkTrapFocus } from '@angular/cdk/a11y';
+import { AppModalDirective } from '../../../../shared/directives/app-modal.directive';
 import { LucideAngularModule, X, Save, FileText, AlertTriangle } from 'lucide-angular';
 import { FileBrowserState } from '../../../../state/file-browser.state';
 import { MonacoEditorComponent } from '../../../../shared/components/monaco-editor/monaco-editor.component';
@@ -10,12 +10,9 @@ import { detectLanguage } from '../../../../shared/utils/language-detection';
 @Component({
   selector: 'app-file-editor-modal',
   standalone: true,
-  imports: [CommonModule, FormsModule, LucideAngularModule, MonacoEditorComponent, CdkTrapFocus],
+  imports: [CommonModule, FormsModule, LucideAngularModule, MonacoEditorComponent, AppModalDirective],
   templateUrl: './file-editor-modal.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  host: {
-    '(document:keydown.escape)': 'closeEditor()',
-  },
 })
 export class FileEditorModalComponent {
   readonly state = inject(FileBrowserState);

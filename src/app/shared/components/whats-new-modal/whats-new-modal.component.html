@@ -1,12 +1,11 @@
 <!-- Backdrop -->
-<div class="fixed inset-0 bg-black/60 z-50" (click)="onDismiss()" aria-hidden="true"></div>
+<div class="fixed inset-0 bg-black/60 z-50 cx-modal-backdrop" (click)="onDismiss()" aria-hidden="true"></div>
 <div class="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
   <div
-    role="dialog"
-    aria-modal="true"
+    appModal
     aria-labelledby="whats-new-title"
-    cdkTrapFocus
-    class="bg-zinc-900 border border-zinc-700 rounded-xl w-full max-w-lg shadow-2xl overflow-hidden pointer-events-auto"
+    (modalClose)="onDismiss()"
+    class="bg-zinc-900 border border-zinc-700 rounded-xl w-full max-w-lg shadow-2xl overflow-hidden pointer-events-auto cx-modal-panel"
     (click)="$event.stopPropagation()"
   >
     <!-- Header -->

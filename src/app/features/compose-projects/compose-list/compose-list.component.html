@@ -143,11 +143,11 @@
 <!-- Mobile Filter Sheet -->
 @if (showMobileFilters()) {
   <div
-    class="fixed inset-0 bg-black/50 z-50 md:hidden"
+    class="fixed inset-0 bg-black/50 z-50 md:hidden cx-modal-backdrop"
     (click)="showMobileFilters.set(false)"
   >
     <div
-      class="absolute bottom-0 left-0 right-0 bg-zinc-900 rounded-t-2xl p-6 space-y-4 max-h-[80vh] overflow-y-auto"
+      class="absolute bottom-0 left-0 right-0 bg-zinc-900 rounded-t-2xl p-6 space-y-4 max-h-[80vh] overflow-y-auto cx-sheet-panel"
       (click)="$event.stopPropagation()"
     >
       <div class="flex items-center justify-between">

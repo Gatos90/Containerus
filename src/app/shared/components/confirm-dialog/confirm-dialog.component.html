@@ -1,0 +1,38 @@
+@if (open()) {
+  <div
+    class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 cx-modal-backdrop"
+    (click)="onCancel()"
+    role="presentation"
+  >
+    <div
+      class="bg-zinc-900 border border-zinc-700 rounded-xl p-4 w-[22rem] max-w-[calc(100vw-2rem)] shadow-xl cx-modal-panel focus:outline-none"
+      appModal
+      [attr.aria-labelledby]="titleId"
+      (modalClose)="onCancel()"
+      (click)="$event.stopPropagation()"
+    >
+      <h3 [id]="titleId" class="text-sm font-medium mb-2 text-zinc-100">
+        {{ title() }}
+      </h3>
+      <p class="text-sm text-zinc-400 mb-4 whitespace-pre-line">{{ message() }}</p>
+      <div class="flex justify-end gap-2">
+        <app-button
+          variant="secondary"
+          size="sm"
+          [disabled]="busy()"
+          (click)="onCancel()"
+        >
+          {{ cancelText() }}
+        </app-button>
+        <app-button
+          [variant]="variant() === 'destructive' ? 'destructive' : 'primary'"
+          size="sm"
+          [loading]="busy()"
+          (click)="onConfirm()"
+        >
+          {{ confirmText() }}
+        </app-button>
+      </div>
+    </div>
+  </div>
+}

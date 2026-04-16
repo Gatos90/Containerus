@@ -66,8 +66,8 @@ import { LucideAngularModule, Users, UserPlus, Loader2 } from 'lucide-angular';
 
       <!-- Invite Modal -->
       @if (showInvite()) {
-        <div class="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4" (click)="showInvite.set(false)">
-          <div class="bg-zinc-900 rounded-xl border border-zinc-800 p-6 w-full max-w-md space-y-4" (click)="$event.stopPropagation()">
+        <div class="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4 cx-modal-backdrop" (click)="showInvite.set(false)">
+          <div class="bg-zinc-900 rounded-xl border border-zinc-800 p-6 w-full max-w-md space-y-4 cx-modal-panel" (click)="$event.stopPropagation()">
             <h3 class="text-lg font-medium text-zinc-100">Invite Member</h3>
 
             <div>

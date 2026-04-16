@@ -130,9 +130,9 @@
 
 <!-- Mobile Filter Sheet -->
 @if (showMobileFilters()) {
-  <div class="fixed inset-0 bg-black/50 z-50 md:hidden" (click)="showMobileFilters.set(false)">
+  <div class="fixed inset-0 bg-black/50 z-50 md:hidden cx-modal-backdrop" (click)="showMobileFilters.set(false)">
     <div
-      class="absolute bottom-0 left-0 right-0 bg-zinc-900 rounded-t-2xl p-6 space-y-4 max-h-[80vh] overflow-y-auto"
+      class="absolute bottom-0 left-0 right-0 bg-zinc-900 rounded-t-2xl p-6 space-y-4 max-h-[80vh] overflow-y-auto cx-sheet-panel"
       (click)="$event.stopPropagation()"
     >
       <div class="flex items-center justify-between">
@@ -173,12 +173,16 @@
 <!-- Create Network Dialog -->
 @if (showCreateDialog) {
   <div
-    class="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
-    role="dialog"
-    aria-modal="true"
-    aria-labelledby="create-network-title"
+    class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 cx-modal-backdrop"
+    (click)="showCreateDialog = false"
   >
-    <div class="bg-zinc-900 rounded-lg p-6 w-full max-w-md space-y-4">
+    <div
+      class="bg-zinc-900 rounded-lg p-6 w-full max-w-md space-y-4 cx-modal-panel"
+      appModal
+      aria-labelledby="create-network-title"
+      (modalClose)="showCreateDialog = false"
+      (click)="$event.stopPropagation()"
+    >
       <h2 id="create-network-title" class="text-xl font-bold">Create Network</h2>
 
       <div class="space-y-3">

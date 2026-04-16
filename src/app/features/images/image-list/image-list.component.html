@@ -31,22 +31,34 @@
       </button>
 
       <!-- Build Image Button -->
-      <button
+      <app-button
+        variant="secondary"
+        size="md"
+        [loading]="building"
+        [disabled]="building"
         (click)="openBuildDialog()"
-        class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-700 hover:bg-emerald-600 transition-colors text-sm"
+        ariaLabel="Build Image"
       >
-        <lucide-icon [img]="Hammer" class="w-4 h-4"></lucide-icon>
-        <span class="hidden sm:inline">Build Image</span>
-      </button>
+        @if (!building) {
+          <lucide-icon [img]="Hammer" class="w-4 h-4" aria-hidden="true"></lucide-icon>
+        }
+        <span class="hidden sm:inline">{{ building ? 'Building…' : 'Build Image' }}</span>
+      </app-button>
 
       <!-- Pull Image Button -->
-      <button
+      <app-button
+        variant="primary"
+        size="md"
+        [loading]="pulling()"
+        [disabled]="pulling()"
         (click)="showPullDialog = true"
-        class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 transition-colors text-sm"
+        ariaLabel="Pull Image"
       >
-        <lucide-icon [img]="Download" class="w-4 h-4" aria-hidden="true"></lucide-icon>
-        <span class="hidden sm:inline">Pull Image</span>
-      </button>
+        @if (!pulling()) {
+          <lucide-icon [img]="Download" class="w-4 h-4" aria-hidden="true"></lucide-icon>
+        }
+        <span class="hidden sm:inline">{{ pulling() ? 'Pulling…' : 'Pull Image' }}</span>
+      </app-button>
 
       <!-- Refresh -->
       <button
@@ -440,26 +452,26 @@
 
       <!-- Footer -->
       <div class="flex justify-end gap-2 p-4 border-t border-zinc-700 shrink-0">
-        <button
-          (click)="closeBuildDialog()"
+        <app-button
+          variant="secondary"
+          size="md"
           [disabled]="building"
-          class="px-4 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-sm disabled:opacity-40 transition-colors"
+          (click)="closeBuildDialog()"
         >
           {{ showBuildOutput && !building ? 'Close' : 'Cancel' }}
-        </button>
-        <button
+        </app-button>
+        <app-button
+          variant="primary"
+          size="md"
+          [loading]="building"
+          [disabled]="!!buildNameError() || !buildForm.imageName || !buildForm.systemId || !buildForm.contextPath"
           (click)="buildImage()"
-          [disabled]="building || !!buildNameError() || !buildForm.imageName || !buildForm.systemId || !buildForm.contextPath"
-          class="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-700 hover:bg-emerald-600 text-sm disabled:opacity-40 transition-colors"
         >
-          @if (building) {
-            <lucide-icon [img]="Loader" class="w-4 h-4 animate-spin"></lucide-icon>
-            Building…
-          } @else {
-            <lucide-icon [img]="Hammer" class="w-4 h-4"></lucide-icon>
-            Build
+          @if (!building) {
+            <lucide-icon [img]="Hammer" class="w-4 h-4" aria-hidden="true"></lucide-icon>
           }
-        </button>
+          {{ building ? 'Building…' : 'Build' }}
+        </app-button>
       </div>
 
     </div>
@@ -533,20 +545,36 @@
       </div>
 
       <div class="flex justify-end gap-2">
-        <button
+        <app-button
+          variant="secondary"
+          size="md"
+          [disabled]="pulling()"
           (click)="showPullDialog = false"
-          class="px-4 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700"
         >
           Cancel
-        </button>
-        <button
-          (click)="pullImage()"
-          class="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 transition-colors"
+        </app-button>
+        <app-button
+          variant="primary"
+          size="md"
+          [loading]="pulling()"
           [disabled]="!!pullNameError() || !pullForm.name || !pullForm.systemId"
+          (click)="pullImage()"
         >
-          Pull
-        </button>
+          {{ pulling() ? 'Pulling…' : 'Pull' }}
+        </app-button>
       </div>
     </div>
   </div>
 }
+
+<!-- Delete Image Confirmation -->
+<app-confirm-dialog
+  [open]="pendingDelete() !== null"
+  title="Remove image?"
+  [message]="pendingDelete() ? 'Remove image &quot;' + imageFullName(pendingDelete()!) + '&quot;? This action cannot be undone.' : ''"
+  confirmText="Remove"
+  variant="destructive"
+  [busy]="deleting()"
+  (confirmed)="confirmDelete()"
+  (cancelled)="cancelDelete()"
+/>

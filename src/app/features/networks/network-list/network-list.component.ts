@@ -18,6 +18,7 @@ import { SystemState } from '../../../state/system.state';
 import { ContainerState } from '../../../state/container.state';
 import { SystemNetworkSectionComponent } from '../components/system-network-section/system-network-section.component';
 import { EmptyStateComponent } from '../../../shared/components/empty-state/empty-state.component';
+import { AppModalDirective } from '../../../shared/directives/app-modal.directive';
 
 @Component({
   selector: 'app-network-list',
@@ -27,6 +28,7 @@ import { EmptyStateComponent } from '../../../shared/components/empty-state/empt
     LucideAngularModule,
     SystemNetworkSectionComponent,
     EmptyStateComponent,
+    AppModalDirective,
   ],
   templateUrl: './network-list.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,

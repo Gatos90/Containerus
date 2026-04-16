@@ -14,10 +14,13 @@ import { VolumeState } from '../../../state/volume.state';
 import { SystemState } from '../../../state/system.state';
 import { ContainerState } from '../../../state/container.state';
 import { SystemVolumeSectionComponent } from '../components/system-volume-section/system-volume-section.component';
+import { AppModalDirective } from '../../../shared/directives/app-modal.directive';
+import { AppButtonComponent } from '../../../shared/components/ui-button/ui-button.component';
+import { ConfirmDialogComponent } from '../../../shared/components/confirm-dialog/confirm-dialog.component';
 
 @Component({
   selector: 'app-volume-list',
-  imports: [CommonModule, FormsModule, LucideAngularModule, SystemVolumeSectionComponent],
+  imports: [CommonModule, FormsModule, LucideAngularModule, SystemVolumeSectionComponent, AppModalDirective, AppButtonComponent, ConfirmDialogComponent],
   templateUrl: './volume-list.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
@@ -38,6 +41,9 @@ export class VolumeListComponent implements OnInit {
   readonly showMobileFilters = signal(false);
   refreshing = false;
   showCreateDialog = false;
+  readonly creating = signal(false);
+  readonly pendingDelete = signal<Volume | null>(null);
+  readonly deleting = signal(false);
 
   createForm = {
     name: '',
@@ -91,12 +97,17 @@ export class VolumeListComponent implements OnInit {
   async createVolume(): Promise<void> {
     if (!this.createForm.name || !this.createForm.systemId) return;
 
-    await this.volumeState.createVolume(
-      this.createForm.systemId,
-      this.createForm.name,
-      this.createForm.runtime,
-      this.createForm.driver || undefined
-    );
+    this.creating.set(true);
+    try {
+      await this.volumeState.createVolume(
+        this.createForm.systemId,
+        this.createForm.name,
+        this.createForm.runtime,
+        this.createForm.driver || undefined
+      );
+    } finally {
+      this.creating.set(false);
+    }
 
     this.showCreateDialog = false;
     this.createForm = {
@@ -107,9 +118,24 @@ export class VolumeListComponent implements OnInit {
     };
   }
 
-  async onVolumeDeleted(volume: Volume): Promise<void> {
-    if (confirm(`Remove volume "${volume.name}"? This action cannot be undone.`)) {
+  onVolumeDeleted(volume: Volume): void {
+    this.pendingDelete.set(volume);
+  }
+
+  cancelDelete(): void {
+    if (this.deleting()) return;
+    this.pendingDelete.set(null);
+  }
+
+  async confirmDelete(): Promise<void> {
+    const volume = this.pendingDelete();
+    if (!volume || this.deleting()) return;
+    this.deleting.set(true);
+    try {
       await this.volumeState.removeVolume(volume);
+    } finally {
+      this.deleting.set(false);
+      this.pendingDelete.set(null);
     }
   }
 }

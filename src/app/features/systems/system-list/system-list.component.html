@@ -161,12 +161,17 @@
             } @else {
               <button
                 (click)="connect(system.id)"
-                title="Connect"
-              aria-label="Connect"
-                class="p-2.5 sm:p-2 touch-target rounded-lg hover:bg-zinc-700 transition-colors"
+                [title]="getConnectionState(system.id) === 'connecting' ? 'Connecting…' : 'Connect'"
+                [attr.aria-label]="getConnectionState(system.id) === 'connecting' ? 'Connecting' : 'Connect'"
+                [attr.aria-busy]="getConnectionState(system.id) === 'connecting' ? 'true' : null"
+                class="p-2.5 sm:p-2 touch-target rounded-lg hover:bg-zinc-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 [disabled]="getConnectionState(system.id) === 'connecting'"
               >
-                <lucide-icon [img]="Link" class="w-4 h-4"></lucide-icon>
+                <lucide-icon
+                  [img]="Link"
+                  class="w-4 h-4"
+                  [class.animate-spin]="getConnectionState(system.id) === 'connecting'"
+                ></lucide-icon>
               </button>
             }
 
@@ -435,9 +440,9 @@
 
 @if (showAddDialog) {
   <!-- Backdrop -->
-  <div class="fixed inset-0 bg-black/70 z-50 flex items-end sm:items-center justify-center sm:p-4" role="presentation">
+  <div class="fixed inset-0 bg-black/70 z-50 flex items-end sm:items-center justify-center sm:p-4 cx-modal-backdrop" role="presentation">
     <!-- Modal - full screen on mobile -->
-    <div class="bg-zinc-900 w-full h-[100dvh] sm:h-auto sm:rounded-xl sm:max-w-lg sm:max-h-[90vh] flex flex-col overflow-hidden shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="add-system-title">
+    <div class="bg-zinc-900 w-full h-[100dvh] sm:h-auto sm:rounded-xl sm:max-w-lg sm:max-h-[90vh] flex flex-col overflow-hidden shadow-2xl cx-sheet-panel sm:[animation-name:cx-scale-in]" appModal aria-labelledby="add-system-title" (modalClose)="showAddDialog = false; jumpHostForms = []">
       <!-- Header (fixed) -->
       <div class="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 border-b border-zinc-800 flex-shrink-0">
         <h2 id="add-system-title" class="text-lg sm:text-xl font-bold">Add System</h2>
@@ -798,9 +803,9 @@
 
 @if (showEditDialog) {
   <!-- Backdrop -->
-  <div class="fixed inset-0 bg-black/70 z-50 flex items-end sm:items-center justify-center sm:p-4" role="presentation">
+  <div class="fixed inset-0 bg-black/70 z-50 flex items-end sm:items-center justify-center sm:p-4 cx-modal-backdrop" role="presentation">
     <!-- Modal - full screen on mobile -->
-    <div class="bg-zinc-900 w-full h-[100dvh] sm:h-auto sm:rounded-xl sm:max-w-lg sm:max-h-[90vh] flex flex-col overflow-hidden shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="edit-system-title">
+    <div class="bg-zinc-900 w-full h-[100dvh] sm:h-auto sm:rounded-xl sm:max-w-lg sm:max-h-[90vh] flex flex-col overflow-hidden shadow-2xl cx-sheet-panel sm:[animation-name:cx-scale-in]" appModal aria-labelledby="edit-system-title" (modalClose)="showEditDialog = false; editJumpHostForms = []">
       <!-- Header (fixed) -->
       <div class="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 border-b border-zinc-800 flex-shrink-0">
         <h2 id="edit-system-title" class="text-lg sm:text-xl font-bold">Edit System</h2>
@@ -1126,8 +1131,8 @@
 }
 
 @if (systemState.hostKeyMismatch(); as mismatch) {
-  <div class="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4" role="presentation">
-    <div class="bg-zinc-900 border border-red-500/50 rounded-xl max-w-md w-full p-6 space-y-4 shadow-2xl" role="alertdialog" aria-modal="true" aria-labelledby="host-key-title">
+  <div class="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4 cx-modal-backdrop" role="presentation">
+    <div class="bg-zinc-900 border border-red-500/50 rounded-xl max-w-md w-full p-6 space-y-4 shadow-2xl cx-modal-panel" role="alertdialog" aria-modal="true" aria-labelledby="host-key-title">
       <h3 id="host-key-title" class="text-lg font-bold text-red-400">Host Key Changed</h3>
       <p class="text-sm text-zinc-300">
         The host key for <strong>{{ mismatch.hostname }}:{{ mismatch.port }}</strong>
@@ -1154,3 +1159,15 @@
     </div>
   </div>
 }
+
+<!-- Delete System Confirmation -->
+<app-confirm-dialog
+  [open]="pendingDeleteSystemId() !== null"
+  title="Delete system?"
+  [message]="'Delete system &quot;' + pendingDeleteSystemName() + '&quot;? This will disconnect and remove it permanently.'"
+  confirmText="Delete"
+  variant="destructive"
+  [busy]="deletingSystem()"
+  (confirmed)="confirmDeleteSystem()"
+  (cancelled)="cancelDeleteSystem()"
+/>
