@@ -57,6 +57,10 @@ scripts/*.jks
 target/
 src-tauri/gen/
 
+# Playwright E2E test artifacts
+/playwright-report/
+/test-results/
+
 # Environment files with secrets
 .env
 .env.local

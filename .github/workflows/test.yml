@@ -137,18 +137,76 @@ jobs:
             echo '```' >> $GITHUB_STEP_SUMMARY
           fi
 
+  e2e-tests:
+    name: E2E Tests (Playwright)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 9
+
+      - name: Get pnpm store directory
+        id: pnpm-cache
+        shell: bash
+        run: echo "store=$(pnpm store path)" >> $GITHUB_OUTPUT
+
+      - name: Cache pnpm dependencies
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-cache.outputs.store }}
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright browsers
+        run: pnpm exec playwright install chromium --with-deps
+
+      - name: Run E2E tests
+        run: pnpm test:e2e
+        env:
+          CI: true
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 14
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: test-results/
+          retention-days: 14
+
   test-results:
     name: All Tests Pass
-    needs: [frontend-tests, rust-tests]
+    needs: [frontend-tests, rust-tests, e2e-tests]
     runs-on: ubuntu-latest
     if: always()
     steps:
       - name: Check test results
         run: |
-          if [ "${{ needs.frontend-tests.result }}" != "success" ] || [ "${{ needs.rust-tests.result }}" != "success" ]; then
+          if [ "${{ needs.frontend-tests.result }}" != "success" ] || [ "${{ needs.rust-tests.result }}" != "success" ] || [ "${{ needs.e2e-tests.result }}" != "success" ]; then
             echo "::error::One or more test jobs failed"
             echo "Frontend: ${{ needs.frontend-tests.result }}"
             echo "Rust: ${{ needs.rust-tests.result }}"
+            echo "E2E: ${{ needs.e2e-tests.result }}"
             exit 1
           fi
           echo "All tests passed!"
