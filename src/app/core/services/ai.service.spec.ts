@@ -135,6 +135,24 @@ describe('AiService', () => {
         apiVersion: undefined,
       });
     });
+
+    it('should return false and set error on failure', async () => {
+      mockTauri.invoke.mockRejectedValue(new Error('Invalid API key'));
+      const result = await service.testConnectionWithSettings('anthropic', 'bad-key');
+      expect(result).toBe(false);
+      expect(service.error()).toContain('Invalid API key');
+    });
+
+    it('should include apiVersion when provided', async () => {
+      mockTauri.invoke.mockResolvedValue(undefined);
+      await service.testConnectionWithSettings('azure', 'key', 'https://endpoint', '2024-01');
+      expect(mockTauri.invoke).toHaveBeenCalledWith('test_ai_connection_with_settings', {
+        providerType: 'azure',
+        apiKey: 'key',
+        endpointUrl: 'https://endpoint',
+        apiVersion: '2024-01',
+      });
+    });
   });
 
   describe('loadAvailableModels', () => {
@@ -143,6 +161,34 @@ describe('AiService', () => {
       mockTauri.invoke.mockResolvedValue(models);
       const result = await service.loadAvailableModels();
       expect(result).toEqual(models);
+      expect(service.availableModels()).toEqual(models);
+    });
+
+    it('should throw and set error on failure', async () => {
+      mockTauri.invoke.mockRejectedValue(new Error('models unavailable'));
+      await expect(service.loadAvailableModels()).rejects.toThrow('models unavailable');
+      expect(service.error()).toContain('models unavailable');
+    });
+  });
+
+  describe('loadModelsForProvider', () => {
+    it('should return models for provider', async () => {
+      const models = [{ id: 'claude-3-5', name: 'Claude 3.5', provider: 'anthropic' }];
+      mockTauri.invoke.mockResolvedValue(models);
+      const result = await service.loadModelsForProvider('anthropic', 'sk-ant');
+      expect(result).toEqual(models);
+      expect(mockTauri.invoke).toHaveBeenCalledWith('list_models_for_provider', {
+        providerType: 'anthropic',
+        apiKey: 'sk-ant',
+        endpointUrl: undefined,
+        apiVersion: undefined,
+      });
+    });
+
+    it('should throw and set error on failure', async () => {
+      mockTauri.invoke.mockRejectedValue(new Error('provider error'));
+      await expect(service.loadModelsForProvider('openai')).rejects.toThrow('provider error');
+      expect(service.error()).toContain('provider error');
     });
   });
 

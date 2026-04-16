@@ -401,6 +401,7 @@ describe('SystemState', () => {
 
       mockSystemService.removeKnownHost.mockResolvedValue(undefined);
       mockSystemService.connectSystem.mockResolvedValue('connected');
+      mockSystemService.getExtendedSystemInfo.mockResolvedValue({});
 
       await state.trustNewHostKey();
 
