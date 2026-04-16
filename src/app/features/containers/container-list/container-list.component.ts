@@ -29,6 +29,8 @@ import {
   FolderOpen,
   Loader2,
   Server,
+  Cloud,
+  Box,
 } from 'lucide-angular';
 import {
   Container,
@@ -133,6 +135,8 @@ export class ContainerListComponent implements OnInit {
   readonly Link = Link;
   readonly Loader2 = Loader2;
   readonly Server = Server;
+  readonly Cloud = Cloud;
+  readonly Box = Box;
 
   // Helper functions
   readonly getDisplayName = getDisplayName;
