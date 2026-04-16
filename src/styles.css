@@ -122,6 +122,23 @@
     @apply bg-background text-foreground;
   }
 
+  /* ---------------------------------------------------------------------------
+     Focus indicators (CON-51)
+     Single global focus token so every interactive element has a visible ring.
+     Individual components can still override with their own focus classes.
+     --------------------------------------------------------------------------- */
+  :where(a, button, input, select, textarea, summary, [tabindex]:not([tabindex="-1"])):focus-visible {
+    outline: 2px solid theme("colors.blue.500");
+    outline-offset: 2px;
+    border-radius: inherit;
+  }
+
+  /* Dialog panels already manage their own chrome; suppress the body ring when
+     the trap auto-captures focus onto the container element itself. */
+  [role="dialog"]:focus-visible {
+    outline: none;
+  }
+
   input[type="number"]::-webkit-inner-spin-button,
   input[type="number"]::-webkit-outer-spin-button {
     -webkit-appearance: none;

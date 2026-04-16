@@ -23,12 +23,13 @@ import { ContainerState } from '../../../state/container.state';
 import { SystemImageSectionComponent } from '../components/system-image-section/system-image-section.component';
 import { EmptyStateComponent } from '../../../shared/components/empty-state/empty-state.component';
 import { HelpTooltipComponent } from '../../../shared/components/help-tooltip/help-tooltip.component';
+import { AppModalDirective } from '../../../shared/directives/app-modal.directive';
 import { Router } from '@angular/router';
 import { Layers } from 'lucide-angular';
 
 @Component({
   selector: 'app-image-list',
-  imports: [CommonModule, FormsModule, LucideAngularModule, SystemImageSectionComponent, EmptyStateComponent, HelpTooltipComponent],
+  imports: [CommonModule, FormsModule, LucideAngularModule, SystemImageSectionComponent, EmptyStateComponent, HelpTooltipComponent, AppModalDirective],
   templateUrl: './image-list.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {

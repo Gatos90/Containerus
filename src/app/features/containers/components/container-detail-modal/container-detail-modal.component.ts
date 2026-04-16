@@ -5,7 +5,7 @@ import {
   input,
   output,
 } from '@angular/core';
-import { CdkTrapFocus } from '@angular/cdk/a11y';
+import { AppModalDirective } from '../../../../shared/directives/app-modal.directive';
 import {
   LucideAngularModule,
   X,
@@ -29,12 +29,9 @@ const DEFAULT_SHELL = '/bin/sh';
 
 @Component({
   selector: 'app-container-detail-modal',
-  imports: [LucideAngularModule, ContainerDetailsComponent, CdkTrapFocus],
+  imports: [LucideAngularModule, ContainerDetailsComponent, AppModalDirective],
   templateUrl: './container-detail-modal.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  host: {
-    '(document:keydown.escape)': 'close.emit()',
-  },
 })
 export class ContainerDetailModalComponent {
   private readonly terminalState = inject(TerminalState);

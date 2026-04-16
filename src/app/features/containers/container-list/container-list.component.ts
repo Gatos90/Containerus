@@ -62,6 +62,7 @@ import { BackendService } from '../../../core/services/backend.service';
 import { K8sCluster, K8sPod } from '../../../core/models/backend.model';
 import { EmptyStateComponent } from '../../../shared/components/empty-state/empty-state.component';
 import { HelpTooltipComponent } from '../../../shared/components/help-tooltip/help-tooltip.component';
+import { AppModalDirective } from '../../../shared/directives/app-modal.directive';
 import { Router } from '@angular/router';
 
 export type Workload =
@@ -89,6 +90,7 @@ interface SystemDisplayInfo {
     EmptyStateComponent,
     HelpTooltipComponent,
     ContainerWorkloadComponent,
+    AppModalDirective,
   ],
   templateUrl: './container-list.component.html',
   host: {

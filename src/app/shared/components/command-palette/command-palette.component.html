@@ -1,12 +1,12 @@
 <div
   class="fixed inset-0 bg-black/60 flex items-start justify-center z-50 pt-[15vh] cx-modal-backdrop"
-  role="dialog"
-  aria-modal="true"
-  aria-label="Command Palette"
   (click)="onClose()"
 >
   <div
     class="bg-zinc-900 border border-zinc-700 rounded-xl w-full max-w-xl shadow-2xl overflow-hidden cx-modal-panel"
+    appModal
+    aria-label="Command Palette"
+    (modalClose)="onClose()"
     (click)="$event.stopPropagation()"
     (keydown)="onKeydown($event)"
   >

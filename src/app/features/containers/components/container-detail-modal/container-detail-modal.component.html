@@ -6,10 +6,9 @@
   <!-- Modal - Full screen on mobile with proper viewport height -->
   <div
     class="bg-zinc-900 w-full h-[100dvh] sm:h-auto sm:rounded-xl sm:max-w-3xl sm:max-h-[90vh] overflow-hidden flex flex-col shadow-2xl cx-sheet-panel sm:[animation-name:cx-scale-in]"
-    role="dialog"
-    aria-modal="true"
+    appModal
     aria-labelledby="container-detail-title"
-    cdkTrapFocus
+    (modalClose)="close.emit()"
     (click)="$event.stopPropagation()"
   >
     <!-- Header -->

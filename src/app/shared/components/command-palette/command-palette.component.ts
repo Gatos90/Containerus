@@ -31,15 +31,13 @@ import {
 import { ContainerRuntime, getRuntimeIcon } from '../../../core/models/container.model';
 import { CommandTemplateState } from '../../../state/command-template.state';
 import { SystemState } from '../../../state/system.state';
+import { AppModalDirective } from '../../directives/app-modal.directive';
 
 @Component({
   selector: 'app-command-palette',
-  imports: [CommonModule, FormsModule, LucideAngularModule],
+  imports: [CommonModule, FormsModule, LucideAngularModule, AppModalDirective],
   templateUrl: './command-palette.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  host: {
-    '(document:keydown.escape)': 'onClose()',
-  },
 })
 export class CommandPaletteComponent implements OnInit {
   // Inputs
