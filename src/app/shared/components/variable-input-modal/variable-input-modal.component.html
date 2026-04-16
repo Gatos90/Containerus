@@ -12,9 +12,10 @@
       </div>
       <button
         (click)="onCancel()"
+        aria-label="Close"
         class="p-1.5 rounded hover:bg-zinc-800 text-zinc-400 hover:text-zinc-200 transition-colors"
       >
-        <lucide-icon [img]="X" class="w-5 h-5"></lucide-icon>
+        <lucide-icon [img]="X" class="w-5 h-5" aria-hidden="true"></lucide-icon>
       </button>
     </div>
 
@@ -23,7 +24,7 @@
       @for (variable of variables(); track variable.name; let i = $index) {
         <div class="space-y-1.5">
           <div class="flex items-center justify-between">
-            <label class="flex items-center gap-2 text-sm font-medium">
+            <label [for]="'variable-input-' + variable.name" class="flex items-center gap-2 text-sm font-medium">
               <code class="px-1.5 py-0.5 rounded bg-zinc-800 text-yellow-400 font-mono text-xs">${{ variable.name }}</code>
               @if (variable.required) {
                 <span class="text-red-400 text-xs">*</span>
@@ -37,6 +38,8 @@
 
           @if (variable.suggestions.length > 0) {
             <select
+              [id]="'variable-select-' + variable.name"
+              [attr.aria-label]="'Select value for ' + variable.name"
               [ngModel]="variable.value"
               (ngModelChange)="updateValue(i, $event)"
               class="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -51,6 +54,7 @@
 
           <input
             #firstInput
+            [id]="'variable-input-' + variable.name"
             type="text"
             [ngModel]="variable.value"
             (ngModelChange)="updateValue(i, $event)"

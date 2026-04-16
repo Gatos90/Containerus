@@ -22,8 +22,9 @@
         (click)="showMobileFilters.set(true)"
         class="md:hidden p-2.5 touch-target rounded-lg border border-zinc-700 hover:bg-zinc-800 transition-colors"
         title="Filters"
+        aria-label="Filters"
       >
-        <lucide-icon [img]="SlidersHorizontal" class="w-4 h-4"></lucide-icon>
+        <lucide-icon [img]="SlidersHorizontal" class="w-4 h-4" aria-hidden="true"></lucide-icon>
       </button>
 
       <!-- Refresh -->
@@ -32,6 +33,7 @@
         class="flex items-center p-2.5 sm:px-3 sm:py-1.5 rounded-lg border border-zinc-700 text-sm hover:bg-zinc-800 transition-colors"
         [disabled]="isRefreshing()"
         title="Refresh"
+        aria-label="Refresh"
       >
         <lucide-icon
           [img]="RefreshCw"
@@ -54,6 +56,7 @@
       <input
         type="text"
         placeholder="Search containers..."
+        aria-label="Search containers"
         [ngModel]="containerState.searchQuery()"
         (ngModelChange)="containerState.setSearchQuery($event)"
         class="w-full h-9 pl-10 pr-4 bg-zinc-800 border border-zinc-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -117,16 +120,18 @@
           class="p-1.5 rounded transition-colors"
           [class.bg-zinc-700]="viewMode() === 'grid'"
           title="Grid view"
+          aria-label="Grid view"
         >
-          <lucide-icon [img]="LayoutGrid" class="w-4 h-4"></lucide-icon>
+          <lucide-icon [img]="LayoutGrid" class="w-4 h-4" aria-hidden="true"></lucide-icon>
         </button>
         <button
           (click)="viewMode.set('list')"
           class="p-1.5 rounded transition-colors"
           [class.bg-zinc-700]="viewMode() === 'list'"
           title="List view"
+          aria-label="List view"
         >
-          <lucide-icon [img]="List" class="w-4 h-4"></lucide-icon>
+          <lucide-icon [img]="List" class="w-4 h-4" aria-hidden="true"></lucide-icon>
         </button>
       </div>
     </div>
@@ -141,15 +146,17 @@
           (click)="viewMode.set('grid')"
           class="p-2 touch-target-sm rounded transition-colors"
           [class.bg-zinc-700]="viewMode() === 'grid'"
+          aria-label="Grid view"
         >
-          <lucide-icon [img]="LayoutGrid" class="w-4 h-4"></lucide-icon>
+          <lucide-icon [img]="LayoutGrid" class="w-4 h-4" aria-hidden="true"></lucide-icon>
         </button>
         <button
           (click)="viewMode.set('list')"
           class="p-2 touch-target-sm rounded transition-colors"
           [class.bg-zinc-700]="viewMode() === 'list'"
+          aria-label="List view"
         >
-          <lucide-icon [img]="List" class="w-4 h-4"></lucide-icon>
+          <lucide-icon [img]="List" class="w-4 h-4" aria-hidden="true"></lucide-icon>
         </button>
       </div>
     </div>
@@ -206,15 +213,17 @@
                 (click)="openModal(container)"
                 class="p-1 rounded-md hover:bg-zinc-700/50 transition-colors text-zinc-500 hover:text-zinc-300"
                 title="Open full details"
+                aria-label="Open full details"
               >
-                <lucide-icon [img]="Maximize2" class="w-3.5 h-3.5"></lucide-icon>
+                <lucide-icon [img]="Maximize2" class="w-3.5 h-3.5" aria-hidden="true"></lucide-icon>
               </button>
               <button
                 (click)="toggleDetails(container)"
                 class="p-1 rounded-md hover:bg-zinc-700/50 transition-colors text-zinc-500 hover:text-zinc-300"
                 title="View details"
+                aria-label="View details"
               >
-                <lucide-icon [img]="Info" class="w-3.5 h-3.5"></lucide-icon>
+                <lucide-icon [img]="Info" class="w-3.5 h-3.5" aria-hidden="true"></lucide-icon>
               </button>
             </div>
           </div>
@@ -272,7 +281,7 @@
                 [disabled]="containerState.isLoading(container.id)"
                 title="Stop"
               >
-                <lucide-icon [img]="Square" class="w-3 h-3"></lucide-icon>
+                <lucide-icon [img]="Square" class="w-3 h-3" aria-hidden="true"></lucide-icon>
                 Stop
               </button>
               <button
@@ -281,7 +290,7 @@
                 [disabled]="containerState.isLoading(container.id)"
                 title="Restart"
               >
-                <lucide-icon [img]="RotateCcw" class="w-3 h-3"></lucide-icon>
+                <lucide-icon [img]="RotateCcw" class="w-3 h-3" aria-hidden="true"></lucide-icon>
                 Restart
               </button>
               <div class="flex-1"></div>
@@ -289,22 +298,25 @@
                 (click)="showLogs(container)"
                 class="p-1.5 rounded-md text-zinc-500 hover:bg-zinc-700/50 hover:text-zinc-300 transition-colors"
                 title="Logs"
+                aria-label="Logs"
               >
-                <lucide-icon [img]="FileText" class="w-3.5 h-3.5"></lucide-icon>
+                <lucide-icon [img]="FileText" class="w-3.5 h-3.5" aria-hidden="true"></lucide-icon>
               </button>
               <button
                 (click)="dockTerminal(container)"
                 class="p-1.5 rounded-md text-zinc-500 hover:bg-zinc-700/50 hover:text-zinc-300 transition-colors"
                 title="Terminal"
+                aria-label="Terminal"
               >
-                <lucide-icon [img]="Terminal" class="w-3.5 h-3.5"></lucide-icon>
+                <lucide-icon [img]="Terminal" class="w-3.5 h-3.5" aria-hidden="true"></lucide-icon>
               </button>
               <button
                 (click)="dockFileBrowser(container)"
                 class="p-1.5 rounded-md text-zinc-500 hover:bg-zinc-700/50 hover:text-zinc-300 transition-colors"
                 title="Files"
+                aria-label="Files"
               >
-                <lucide-icon [img]="FolderOpen" class="w-3.5 h-3.5"></lucide-icon>
+                <lucide-icon [img]="FolderOpen" class="w-3.5 h-3.5" aria-hidden="true"></lucide-icon>
               </button>
             } @else {
               <button
@@ -313,7 +325,7 @@
                 [disabled]="containerState.isLoading(container.id)"
                 title="Start"
               >
-                <lucide-icon [img]="Play" class="w-3 h-3"></lucide-icon>
+                <lucide-icon [img]="Play" class="w-3 h-3" aria-hidden="true"></lucide-icon>
                 Start
               </button>
               <button
@@ -322,7 +334,7 @@
                 [disabled]="containerState.isLoading(container.id)"
                 title="Restart"
               >
-                <lucide-icon [img]="RotateCcw" class="w-3 h-3"></lucide-icon>
+                <lucide-icon [img]="RotateCcw" class="w-3 h-3" aria-hidden="true"></lucide-icon>
                 Restart
               </button>
               <div class="flex-1"></div>
@@ -330,8 +342,9 @@
                 (click)="showLogs(container)"
                 class="p-1.5 rounded-md text-zinc-500 hover:bg-zinc-700/50 hover:text-zinc-300 transition-colors"
                 title="Logs"
+                aria-label="Logs"
               >
-                <lucide-icon [img]="FileText" class="w-3.5 h-3.5"></lucide-icon>
+                <lucide-icon [img]="FileText" class="w-3.5 h-3.5" aria-hidden="true"></lucide-icon>
               </button>
             }
           </div>
@@ -421,8 +434,9 @@
         <button
           (click)="showMobileFilters.set(false)"
           class="p-2 touch-target rounded-lg hover:bg-zinc-800 transition-colors"
+          aria-label="Close filters"
         >
-          <lucide-icon [img]="X" class="w-5 h-5"></lucide-icon>
+          <lucide-icon [img]="X" class="w-5 h-5" aria-hidden="true"></lucide-icon>
         </button>
       </div>
 

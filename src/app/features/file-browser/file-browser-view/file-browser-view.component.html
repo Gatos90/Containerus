@@ -110,8 +110,9 @@
               (click)="popOutToDock()"
               class="flex items-center p-2.5 sm:px-3 sm:py-1.5 rounded-lg border border-zinc-700 text-sm hover:bg-zinc-800 transition-colors"
               title="Pop out to dock"
+              aria-label="Pop out to dock"
             >
-              <lucide-icon [img]="PanelBottomOpen" class="w-4 h-4"></lucide-icon>
+              <lucide-icon [img]="PanelBottomOpen" class="w-4 h-4" aria-hidden="true"></lucide-icon>
               <span class="hidden sm:inline ml-2">Dock</span>
             </button>
           }
@@ -119,8 +120,9 @@
             (click)="refresh()"
             class="flex items-center p-2.5 sm:px-3 sm:py-1.5 rounded-lg border border-zinc-700 text-sm hover:bg-zinc-800 transition-colors"
             title="Refresh"
+            aria-label="Refresh"
           >
-            <lucide-icon [img]="RefreshCw" class="w-4 h-4" [class.animate-spin]="refreshing()"></lucide-icon>
+            <lucide-icon [img]="RefreshCw" class="w-4 h-4" [class.animate-spin]="refreshing()" aria-hidden="true"></lucide-icon>
             <span class="hidden sm:inline ml-2">Refresh</span>
           </button>
         </div>
@@ -135,24 +137,27 @@
             [disabled]="!state.canGoBack()"
             class="p-1.5 rounded-lg hover:bg-zinc-800 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
             title="Back"
+            aria-label="Back"
           >
-            <lucide-icon [img]="ArrowLeft" class="w-4 h-4"></lucide-icon>
+            <lucide-icon [img]="ArrowLeft" class="w-4 h-4" aria-hidden="true"></lucide-icon>
           </button>
           <button
             (click)="state.goForward()"
             [disabled]="!state.canGoForward()"
             class="p-1.5 rounded-lg hover:bg-zinc-800 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
             title="Forward"
+            aria-label="Forward"
           >
-            <lucide-icon [img]="ArrowRight" class="w-4 h-4"></lucide-icon>
+            <lucide-icon [img]="ArrowRight" class="w-4 h-4" aria-hidden="true"></lucide-icon>
           </button>
           <button
             (click)="state.goUp()"
             [disabled]="!state.parentPath()"
             class="p-1.5 rounded-lg hover:bg-zinc-800 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
             title="Up"
+            aria-label="Up"
           >
-            <lucide-icon [img]="ArrowUp" class="w-4 h-4"></lucide-icon>
+            <lucide-icon [img]="ArrowUp" class="w-4 h-4" aria-hidden="true"></lucide-icon>
           </button>
         </div>
 
@@ -190,22 +195,25 @@
             (click)="state.toggleHiddenFiles()"
             class="p-1.5 rounded-lg hover:bg-zinc-800 transition-colors"
             [title]="state.showHiddenFiles() ? 'Hide hidden files' : 'Show hidden files'"
+            [attr.aria-label]="state.showHiddenFiles() ? 'Hide hidden files' : 'Show hidden files'"
           >
-            <lucide-icon [img]="state.showHiddenFiles() ? EyeOff : Eye" class="w-4 h-4" [class.text-blue-400]="state.showHiddenFiles()"></lucide-icon>
+            <lucide-icon [img]="state.showHiddenFiles() ? EyeOff : Eye" class="w-4 h-4" [class.text-blue-400]="state.showHiddenFiles()" aria-hidden="true"></lucide-icon>
           </button>
           <button
             (click)="uploadFile()"
             class="p-1.5 rounded-lg hover:bg-zinc-800 transition-colors"
             title="Upload file"
+            aria-label="Upload file"
           >
-            <lucide-icon [img]="Upload" class="w-4 h-4"></lucide-icon>
+            <lucide-icon [img]="Upload" class="w-4 h-4" aria-hidden="true"></lucide-icon>
           </button>
           <button
             (click)="showCreateDirDialog.set(true)"
             class="p-1.5 rounded-lg hover:bg-zinc-800 transition-colors"
             title="New folder"
+            aria-label="New folder"
           >
-            <lucide-icon [img]="FolderPlus" class="w-4 h-4"></lucide-icon>
+            <lucide-icon [img]="FolderPlus" class="w-4 h-4" aria-hidden="true"></lucide-icon>
           </button>
         </div>
       </div>
@@ -215,8 +223,8 @@
     @if (state.error()) {
       <div class="flex items-center justify-between mx-3 sm:mx-4 md:mx-6 px-4 py-2 bg-red-500/10 border border-red-500/50 text-sm text-red-300 rounded-lg">
         <span>{{ state.error() }}</span>
-        <button (click)="state.clearError()" class="p-1 hover:bg-red-800/50 rounded">
-          <lucide-icon [img]="X" class="w-3.5 h-3.5"></lucide-icon>
+        <button (click)="state.clearError()" class="p-1 hover:bg-red-800/50 rounded" aria-label="Dismiss error">
+          <lucide-icon [img]="X" class="w-3.5 h-3.5" aria-hidden="true"></lucide-icon>
         </button>
       </div>
     }
@@ -322,8 +330,9 @@
                 <button
                   (click)="onContextMenu($event, entry); $event.stopPropagation()"
                   class="p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-zinc-700 transition-all"
+                  aria-label="More actions"
                 >
-                  <lucide-icon [img]="MoreVertical" class="w-3.5 h-3.5 text-zinc-400"></lucide-icon>
+                  <lucide-icon [img]="MoreVertical" class="w-3.5 h-3.5 text-zinc-400" aria-hidden="true"></lucide-icon>
                 </button>
               </div>
             </div>

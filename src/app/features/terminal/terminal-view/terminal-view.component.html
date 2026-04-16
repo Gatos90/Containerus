@@ -37,8 +37,9 @@
         (click)="openCommandPalette()"
         class="p-2 sm:px-2 sm:py-1 rounded bg-zinc-800 hover:bg-zinc-700 transition-colors text-xs text-zinc-400 hover:text-zinc-200 flex items-center gap-1.5"
         title="Open Command Palette (Ctrl+K)"
+        aria-label="Open Command Palette"
       >
-        <lucide-icon [img]="Command" class="w-4 h-4"></lucide-icon>
+        <lucide-icon [img]="Command" class="w-4 h-4" aria-hidden="true"></lucide-icon>
         <span class="hidden sm:inline">Commands</span>
         <kbd class="hidden md:inline px-1 py-0.5 text-[10px] bg-zinc-700 rounded">⌘K</kbd>
       </button>
@@ -47,8 +48,9 @@
         (click)="openSearch()"
         class="p-2 rounded hover:bg-zinc-800 transition-colors hidden sm:block"
         title="Search (Ctrl+F)"
+        aria-label="Search"
       >
-        <lucide-icon [img]="Search" class="w-4 h-4"></lucide-icon>
+        <lucide-icon [img]="Search" class="w-4 h-4" aria-hidden="true"></lucide-icon>
       </button>
       <!-- Warp toggle - always visible -->
       <button
@@ -56,26 +58,30 @@
         class="p-2 rounded hover:bg-zinc-800 transition-colors"
         [class.bg-zinc-800]="showWarpTerminal()"
         title="Toggle Warp-style terminal"
+        aria-label="Toggle Warp-style terminal"
       >
-        <lucide-icon [img]="Sparkles" class="w-4 h-4"></lucide-icon>
+        <lucide-icon [img]="Sparkles" class="w-4 h-4" aria-hidden="true"></lucide-icon>
       </button>
       <!-- Pop out to dock - always visible (essential for mobile navigation) -->
       <button
         (click)="popOutToDock()"
         class="p-2 rounded hover:bg-zinc-800 transition-colors"
         title="Pop out to dock (keep terminal alive)"
+        aria-label="Pop out to dock"
       >
-        <lucide-icon [img]="PanelBottomOpen" class="w-4 h-4"></lucide-icon>
+        <lucide-icon [img]="PanelBottomOpen" class="w-4 h-4" aria-hidden="true"></lucide-icon>
       </button>
       <!-- Fullscreen - hidden on mobile -->
       <button
         (click)="toggleFullscreen()"
         class="p-2 rounded hover:bg-zinc-800 transition-colors hidden sm:block"
         title="Toggle Fullscreen"
+        aria-label="Toggle Fullscreen"
       >
         <lucide-icon
           [img]="isFullscreen ? Minimize2 : Maximize2"
           class="w-4 h-4"
+          aria-hidden="true"
         ></lucide-icon>
       </button>
       <!-- Close - always visible with good touch target -->
@@ -83,8 +89,9 @@
         (click)="close()"
         class="p-2 rounded hover:bg-red-900/50 transition-colors text-zinc-400 hover:text-red-400"
         title="Close Terminal"
+        aria-label="Close Terminal"
       >
-        <lucide-icon [img]="X" class="w-4 h-4"></lucide-icon>
+        <lucide-icon [img]="X" class="w-4 h-4" aria-hidden="true"></lucide-icon>
       </button>
     </div>
   </div>
@@ -101,28 +108,32 @@
         (keydown.shift.enter)="findPrevious()"
         (keydown.escape)="closeSearch()"
         placeholder="Search..."
+        aria-label="Search terminal output"
         class="w-48 px-2 py-1 text-sm bg-zinc-800 border-none rounded text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-600"
       />
       <button
         (click)="findPrevious()"
         class="p-1 rounded hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200"
         title="Previous (Shift+Enter)"
+        aria-label="Previous result"
       >
-        <lucide-icon [img]="ChevronUp" class="w-4 h-4"></lucide-icon>
+        <lucide-icon [img]="ChevronUp" class="w-4 h-4" aria-hidden="true"></lucide-icon>
       </button>
       <button
         (click)="findNext()"
         class="p-1 rounded hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200"
         title="Next (Enter)"
+        aria-label="Next result"
       >
-        <lucide-icon [img]="ChevronDown" class="w-4 h-4"></lucide-icon>
+        <lucide-icon [img]="ChevronDown" class="w-4 h-4" aria-hidden="true"></lucide-icon>
       </button>
       <button
         (click)="closeSearch()"
         class="p-1 rounded hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200"
         title="Close (Escape)"
+        aria-label="Close search"
       >
-        <lucide-icon [img]="X" class="w-4 h-4"></lucide-icon>
+        <lucide-icon [img]="X" class="w-4 h-4" aria-hidden="true"></lucide-icon>
       </button>
     </div>
   }

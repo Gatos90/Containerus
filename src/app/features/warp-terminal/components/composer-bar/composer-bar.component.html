@@ -8,6 +8,7 @@
         <input
           type="text"
           placeholder="Search history..."
+          aria-label="Search command history"
           [value]="historyFilter()"
           (input)="onHistoryFilterInput($event)"
           (keydown)="onKeyDown($event)"
@@ -56,8 +57,8 @@
     ></textarea>
   </div>
   <div class="composer-right">
-    <button class="history-button" (click)="openHistoryPopup()" title="Command history">
-      <lucide-icon [img]="History" class="w-4 h-4"></lucide-icon>
+    <button class="history-button" (click)="openHistoryPopup()" title="Command history" aria-label="Command history">
+      <lucide-icon [img]="History" class="w-4 h-4" aria-hidden="true"></lucide-icon>
     </button>
     <button
       class="mode-pill"

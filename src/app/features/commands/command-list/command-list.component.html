@@ -24,8 +24,9 @@
           (click)="showMobileFilters.set(true)"
           class="md:hidden p-2.5 rounded-lg border border-zinc-700 hover:bg-zinc-800 transition-colors"
           title="Filters"
+          aria-label="Filters"
         >
-          <lucide-icon [img]="SlidersHorizontal" class="w-4 h-4"></lucide-icon>
+          <lucide-icon [img]="SlidersHorizontal" class="w-4 h-4" aria-hidden="true"></lucide-icon>
         </button>
 
         <!-- Create Command Button -->
@@ -33,7 +34,7 @@
           (click)="openCreateModal()"
           class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 transition-colors text-sm"
         >
-          <lucide-icon [img]="Plus" class="w-4 h-4"></lucide-icon>
+          <lucide-icon [img]="Plus" class="w-4 h-4" aria-hidden="true"></lucide-icon>
           <span class="hidden sm:inline">Create Command</span>
         </button>
 
@@ -43,6 +44,7 @@
           class="flex items-center p-2.5 sm:px-3 sm:py-1.5 rounded-lg border border-zinc-700 text-sm hover:bg-zinc-800 transition-colors"
           [disabled]="refreshing"
           title="Refresh"
+          aria-label="Refresh"
         >
           <lucide-icon
             [img]="RefreshCw"
@@ -65,6 +67,7 @@
         <input
           type="text"
           placeholder="Search commands..."
+          aria-label="Search commands"
           [ngModel]="commandState.searchQuery()"
           (ngModelChange)="commandState.setSearchQuery($event)"
           class="w-full h-9 pl-10 pr-4 bg-zinc-800 border border-zinc-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"

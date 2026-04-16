@@ -10,32 +10,35 @@
         class="icon-button"
         (click)="clearTerminal()"
         title="Clear terminal (Ctrl+L)"
+        aria-label="Clear terminal"
       >
-        <lucide-icon [img]="Trash2" class="w-4 h-4"></lucide-icon>
+        <lucide-icon [img]="Trash2" class="w-4 h-4" aria-hidden="true"></lucide-icon>
       </button>
       <button
         class="icon-button"
         (click)="toggleSearch(true)"
         title="Search (Ctrl+F)"
+        aria-label="Search"
       >
-        <lucide-icon [img]="Search" class="w-4 h-4"></lucide-icon>
+        <lucide-icon [img]="Search" class="w-4 h-4" aria-hidden="true"></lucide-icon>
       </button>
       <button
         class="icon-button"
         (click)="toggleFollowMode()"
         [class.active]="followMode()"
         title="Follow output"
+        aria-label="Follow output"
       >
-        <lucide-icon [img]="ArrowDownToLine" class="w-4 h-4"></lucide-icon>
+        <lucide-icon [img]="ArrowDownToLine" class="w-4 h-4" aria-hidden="true"></lucide-icon>
       </button>
       @if (isAiThinking()) {
         <span class="mode-badge thinking" title="AI is processing...">
-          <lucide-icon [img]="Sparkles" class="w-4 h-4 animate-pulse"></lucide-icon>
+          <lucide-icon [img]="Sparkles" class="w-4 h-4 animate-pulse" aria-hidden="true"></lucide-icon>
           Thinking...
         </span>
       } @else {
-        <button class="mode-badge" title="AI mediation">
-          <lucide-icon [img]="Sparkles" class="w-4 h-4"></lucide-icon>
+        <button class="mode-badge" title="AI mediation" aria-label="AI mediation">
+          <lucide-icon [img]="Sparkles" class="w-4 h-4" aria-hidden="true"></lucide-icon>
           AI ready
         </button>
       }
