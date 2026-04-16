@@ -1,0 +1,2417 @@
+openapi: 3.1.0
+info:
+  title: Containerus IPC API
+  description: >
+    Tauri inter-process communication (IPC) command reference for Containerus.
+    Commands are invoked from the Angular frontend via `invoke('<command_name>', { ...params })`.
+    All commands are async unless noted. Errors are returned as strings or domain-specific error objects.
+  version: "1.0.0"
+  license:
+    name: MIT
+
+tags:
+  - name: containers
+    description: Container lifecycle management
+  - name: images
+    description: Container image operations
+  - name: volumes
+    description: Volume management
+  - name: networks
+    description: Network management
+  - name: compose
+    description: Docker/Podman Compose project operations
+  - name: ai
+    description: AI provider settings and shell suggestion
+  - name: systems
+    description: Managed system (local/remote) configuration and connection
+  - name: ssh
+    description: SSH key and config utilities
+  - name: settings
+    description: Application-level settings
+  - name: terminal
+    description: Interactive terminal sessions
+  - name: agent
+    description: AI shell agent sessions
+  - name: file-browser
+    description: Remote and container filesystem operations
+  - name: backend
+    description: Saved Kubernetes backend connections
+  - name: command-template
+    description: Reusable command snippets
+  - name: port-forward
+    description: Container port forwarding
+
+# ─── Shared schemas ────────────────────────────────────────────────────────────
+components:
+  schemas:
+
+    ContainerRuntime:
+      type: string
+      enum: [docker, podman, apple]
+      description: Container runtime to target
+
+    ConnectionState:
+      type: string
+      enum: [connected, disconnected, connecting, error]
+
+    ContainerAction:
+      type: string
+      enum: [start, stop, restart, pause, unpause, remove, kill]
+
+    Container:
+      type: object
+      description: Basic container summary returned by list_containers
+      properties:
+        id: { type: string }
+        name: { type: string }
+        image: { type: string }
+        status: { type: string }
+        runtime: { $ref: '#/components/schemas/ContainerRuntime' }
+        systemId: { type: string }
+      required: [id, name, image, status, runtime, systemId]
+
+    ContainerDetails:
+      type: object
+      description: Full container inspect output
+      properties:
+        id: { type: string }
+        name: { type: string }
+        image: { type: string }
+        status: { type: string }
+        runtime: { $ref: '#/components/schemas/ContainerRuntime' }
+        ports: { type: array, items: { type: object } }
+        mounts: { type: array, items: { type: object } }
+        env: { type: array, items: { type: string } }
+        labels: { type: object, additionalProperties: { type: string } }
+      required: [id, name, image, status, runtime]
+
+    ContainerImage:
+      type: object
+      properties:
+        id: { type: string }
+        tags: { type: array, items: { type: string } }
+        size: { type: integer }
+        created: { type: string, format: date-time }
+        runtime: { $ref: '#/components/schemas/ContainerRuntime' }
+      required: [id, tags, size, created, runtime]
+
+    Volume:
+      type: object
+      properties:
+        name: { type: string }
+        driver: { type: string }
+        mountpoint: { type: string }
+        runtime: { $ref: '#/components/schemas/ContainerRuntime' }
+      required: [name, driver, mountpoint, runtime]
+
+    Network:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        driver: { type: string }
+        runtime: { $ref: '#/components/schemas/ContainerRuntime' }
+      required: [id, name, driver, runtime]
+
+    AiProviderType:
+      type: string
+      enum: [ollama, openai, anthropic, azure_open_ai, groq, gemini, deep_seek, mistral]
+
+    AiModel:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        provider: { $ref: '#/components/schemas/AiProviderType' }
+        contextWindow: { type: integer, nullable: true }
+        parameterSize: { type: string, nullable: true }
+        quantizationLevel: { type: string, nullable: true }
+      required: [id, name, provider]
+
+    AiSettingsResponse:
+      type: object
+      properties:
+        provider: { type: string }
+        apiKey: { type: string, nullable: true }
+        modelName: { type: string }
+        endpointUrl: { type: string }
+        temperature: { type: number, format: float }
+        maxTokens: { type: integer }
+        memoryEnabled: { type: boolean }
+        summaryModel: { type: string, nullable: true }
+        summaryMaxTokens: { type: integer }
+        apiVersion: { type: string, nullable: true }
+      required: [provider, modelName, endpointUrl, temperature, maxTokens, memoryEnabled, summaryMaxTokens]
+
+    UpdateAiSettingsRequest:
+      type: object
+      properties:
+        provider: { type: string }
+        apiKey: { type: string, nullable: true }
+        modelName: { type: string }
+        endpointUrl: { type: string }
+        temperature: { type: number, format: float }
+        maxTokens: { type: integer }
+        memoryEnabled: { type: boolean }
+        summaryModel: { type: string, nullable: true }
+        summaryMaxTokens: { type: integer }
+        apiVersion: { type: string, nullable: true }
+      required: [provider, modelName, endpointUrl, temperature, maxTokens, memoryEnabled, summaryMaxTokens]
+
+    ShellSuggestionRequest:
+      type: object
+      properties:
+        prompt: { type: string }
+        systemId: { type: string, nullable: true }
+        shell: { type: string, nullable: true }
+        cwd: { type: string, nullable: true }
+        recentCommands: { type: array, items: { type: string } }
+      required: [prompt]
+
+    ShellCommandResponse:
+      type: object
+      properties:
+        command: { type: string }
+        explanation: { type: string }
+        isDangerous: { type: boolean }
+        requiresSudo: { type: boolean }
+        affectsFiles: { type: array, items: { type: string } }
+        alternatives:
+          type: array
+          items:
+            type: object
+            properties:
+              command: { type: string }
+              description: { type: string }
+            required: [command, description]
+        warning: { type: string, nullable: true }
+      required: [command, explanation, isDangerous, requiresSudo, affectsFiles, alternatives]
+
+    ContainerSystem:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        hostname: { type: string }
+        connectionType: { type: string, enum: [local, remote] }
+        availableRuntimes: { type: array, items: { $ref: '#/components/schemas/ContainerRuntime' } }
+      required: [id, name, hostname, connectionType]
+
+    NewSystemRequest:
+      type: object
+      properties:
+        name: { type: string }
+        hostname: { type: string }
+        port: { type: integer, nullable: true }
+        username: { type: string, nullable: true }
+        connectionType: { type: string, enum: [local, remote] }
+      required: [name, hostname, connectionType]
+
+    UpdateSystemRequest:
+      allOf:
+        - $ref: '#/components/schemas/NewSystemRequest'
+        - type: object
+          properties:
+            id: { type: string }
+          required: [id]
+
+    JumpHostCredentials:
+      type: object
+      properties:
+        password: { type: string, nullable: true }
+        passphrase: { type: string, nullable: true }
+        privateKey: { type: string, nullable: true }
+
+    ExtendedSystemInfo:
+      type: object
+      properties:
+        os: { type: string }
+        kernel: { type: string }
+        arch: { type: string }
+        cpuCount: { type: integer }
+        totalMemory: { type: integer }
+        diskTotal: { type: integer }
+        diskUsed: { type: integer }
+
+    LiveSystemMetrics:
+      type: object
+      properties:
+        systemId: { type: string }
+        cpuUsage: { type: number }
+        memoryUsed: { type: integer }
+        memoryTotal: { type: integer }
+        timestamp: { type: string, format: date-time }
+
+    SshHostEntry:
+      type: object
+      properties:
+        host: { type: string }
+        hostname: { type: string, nullable: true }
+        user: { type: string, nullable: true }
+        port: { type: integer, nullable: true }
+        identityFile: { type: string, nullable: true }
+
+    AppSettings:
+      type: object
+      properties:
+        theme: { type: string }
+        language: { type: string }
+        autoConnect: { type: boolean }
+
+    TerminalSession:
+      type: object
+      properties:
+        sessionId: { type: string }
+        systemId: { type: string }
+        containerId: { type: string, nullable: true }
+        shell: { type: string }
+      required: [sessionId, systemId, shell]
+
+    AgentSessionInfo:
+      type: object
+      properties:
+        sessionId: { type: string }
+        terminalSessionId: { type: string }
+        containerId: { type: string, nullable: true }
+        status: { type: string }
+      required: [sessionId, terminalSessionId, status]
+
+    AgentQueryRequest:
+      type: object
+      properties:
+        sessionId: { type: string }
+        query: { type: string }
+      required: [sessionId, query]
+
+    ConfirmationResponse:
+      type: object
+      properties:
+        confirmed: { type: boolean }
+        queryId: { type: string, nullable: true }
+      required: [confirmed]
+
+    AgentPreferences:
+      type: object
+      properties:
+        autoConfirm: { type: boolean }
+        maxContextTokens: { type: integer }
+
+    ContextSummary:
+      type: object
+      properties:
+        summary: { type: string }
+        tokenCount: { type: integer }
+
+    DirectoryListing:
+      type: object
+      properties:
+        path: { type: string }
+        entries:
+          type: array
+          items:
+            type: object
+            properties:
+              name: { type: string }
+              isDir: { type: boolean }
+              size: { type: integer }
+              modified: { type: string, format: date-time, nullable: true }
+            required: [name, isDir, size]
+
+    FileContent:
+      type: object
+      properties:
+        content: { type: string }
+        encoding: { type: string }
+        size: { type: integer }
+      required: [content, encoding, size]
+
+    SavedBackendResponse:
+      type: object
+      properties:
+        id: { type: string }
+        serverUrl: { type: string }
+        label: { type: string }
+        hasAccessToken: { type: boolean }
+      required: [id, serverUrl, label, hasAccessToken]
+
+    CommandTemplate:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        command: { type: string }
+        description: { type: string, nullable: true }
+        tags: { type: array, items: { type: string } }
+        isFavorite: { type: boolean }
+        variables: { type: array, items: { type: object } }
+      required: [id, name, command, isFavorite]
+
+    CreateCommandTemplateRequest:
+      type: object
+      properties:
+        name: { type: string }
+        command: { type: string }
+        description: { type: string, nullable: true }
+        tags: { type: array, items: { type: string } }
+        variables: { type: array, items: { type: object } }
+      required: [name, command]
+
+    UpdateCommandTemplateRequest:
+      allOf:
+        - $ref: '#/components/schemas/CreateCommandTemplateRequest'
+        - type: object
+          properties:
+            id: { type: string }
+          required: [id]
+
+    PortForward:
+      type: object
+      properties:
+        id: { type: string }
+        systemId: { type: string }
+        containerId: { type: string }
+        containerPort: { type: integer }
+        localPort: { type: integer }
+        runtime: { $ref: '#/components/schemas/ContainerRuntime' }
+        active: { type: boolean }
+      required: [id, systemId, containerId, containerPort, localPort, runtime, active]
+
+    CreatePortForwardRequest:
+      type: object
+      properties:
+        systemId: { type: string }
+        containerId: { type: string }
+        containerPort: { type: integer }
+        localPort: { type: integer, nullable: true }
+        runtime: { $ref: '#/components/schemas/ContainerRuntime' }
+      required: [systemId, containerId, containerPort, runtime]
+
+# ─── Commands ─────────────────────────────────────────────────────────────────
+# Each "path" represents one Tauri IPC command.
+# Invoke pattern: invoke('command_name', { param1: value1, ... })
+paths:
+
+  # ── Containers ──────────────────────────────────────────────────────────────
+
+  /ipc/list_containers:
+    post:
+      operationId: list_containers
+      tags: [containers]
+      summary: List all containers for a system across all available runtimes
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                systemId: { type: string }
+              required: [systemId]
+      responses:
+        '200':
+          description: List of containers
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Container' }
+
+  /ipc/perform_container_action:
+    post:
+      operationId: perform_container_action
+      tags: [containers]
+      summary: Perform a lifecycle action on a container
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                systemId: { type: string }
+                containerId: { type: string }
+                action: { $ref: '#/components/schemas/ContainerAction' }
+                runtime: { $ref: '#/components/schemas/ContainerRuntime' }
+              required: [systemId, containerId, action, runtime]
+      responses:
+        '200':
+          description: Action completed
+
+  /ipc/get_container_logs:
+    post:
+      operationId: get_container_logs
+      tags: [containers]
+      summary: Fetch container log output
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                systemId: { type: string }
+                containerId: { type: string }
+                runtime: { $ref: '#/components/schemas/ContainerRuntime' }
+                tail: { type: integer, nullable: true, description: Number of lines from end }
+                timestamps: { type: boolean }
+              required: [systemId, containerId, runtime, timestamps]
+      responses:
+        '200':
+          description: Log text
+          content:
+            application/json:
+              schema: { type: string }
+
+  /ipc/inspect_container:
+    post:
+      operationId: inspect_container
+      tags: [containers]
+      summary: Return full inspect details for a container
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                systemId: { type: string }
+                containerId: { type: string }
+                runtime: { $ref: '#/components/schemas/ContainerRuntime' }
+              required: [systemId, containerId, runtime]
+      responses:
+        '200':
+          description: Container details
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ContainerDetails' }
+
+  # ── Images ──────────────────────────────────────────────────────────────────
+
+  /ipc/list_images:
+    post:
+      operationId: list_images
+      tags: [images]
+      summary: List all images for a system
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                systemId: { type: string }
+              required: [systemId]
+      responses:
+        '200':
+          description: Image list
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ContainerImage' }
+
+  /ipc/pull_image:
+    post:
+      operationId: pull_image
+      tags: [images]
+      summary: Pull an image from a registry
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                systemId: { type: string }
+                image: { type: string, description: "Image reference (e.g. nginx:latest)" }
+                runtime: { $ref: '#/components/schemas/ContainerRuntime' }
+              required: [systemId, image, runtime]
+      responses:
+        '200':
+          description: Pull output
+          content:
+            application/json:
+              schema: { type: string }
+
+  /ipc/build_image:
+    post:
+      operationId: build_image
+      tags: [images]
+      summary: Build an image from a Dockerfile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                systemId: { type: string }
+                contextPath: { type: string }
+                dockerfile: { type: string, nullable: true }
+                imageName: { type: string }
+                tag: { type: string }
+                runtime: { $ref: '#/components/schemas/ContainerRuntime' }
+                buildArgs:
+                  type: array
+                  items:
+                    type: array
+                    items: { type: string }
+                    minItems: 2
+                    maxItems: 2
+                noCache: { type: boolean }
+              required: [systemId, contextPath, imageName, tag, runtime, buildArgs, noCache]
+      responses:
+        '200':
+          description: Build output
+          content:
+            application/json:
+              schema: { type: string }
+
+  /ipc/remove_image:
+    post:
+      operationId: remove_image
+      tags: [images]
+      summary: Remove an image
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                systemId: { type: string }
+                imageId: { type: string }
+                runtime: { $ref: '#/components/schemas/ContainerRuntime' }
+                force: { type: boolean }
+              required: [systemId, imageId, runtime, force]
+      responses:
+        '200':
+          description: Image removed
+
+  # ── Volumes ─────────────────────────────────────────────────────────────────
+
+  /ipc/list_volumes:
+    post:
+      operationId: list_volumes
+      tags: [volumes]
+      summary: List volumes for a system
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                systemId: { type: string }
+              required: [systemId]
+      responses:
+        '200':
+          description: Volume list
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Volume' }
+
+  /ipc/create_volume:
+    post:
+      operationId: create_volume
+      tags: [volumes]
+      summary: Create a named volume
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                systemId: { type: string }
+                name: { type: string }
+                runtime: { $ref: '#/components/schemas/ContainerRuntime' }
+              required: [systemId, name, runtime]
+      responses:
+        '200':
+          description: Volume created
+
+  /ipc/remove_volume:
+    post:
+      operationId: remove_volume
+      tags: [volumes]
+      summary: Remove a named volume
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                systemId: { type: string }
+                name: { type: string }
+                runtime: { $ref: '#/components/schemas/ContainerRuntime' }
+                force: { type: boolean }
+              required: [systemId, name, runtime, force]
+      responses:
+        '200':
+          description: Volume removed
+
+  # ── Networks ────────────────────────────────────────────────────────────────
+
+  /ipc/list_networks:
+    post:
+      operationId: list_networks
+      tags: [networks]
+      summary: List networks for a system
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                systemId: { type: string }
+              required: [systemId]
+      responses:
+        '200':
+          description: Network list
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Network' }
+
+  /ipc/create_network:
+    post:
+      operationId: create_network
+      tags: [networks]
+      summary: Create a container network
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                systemId: { type: string }
+                name: { type: string }
+                runtime: { $ref: '#/components/schemas/ContainerRuntime' }
+                driver: { type: string, nullable: true }
+                subnet: { type: string, nullable: true, description: "CIDR subnet (e.g. 172.20.0.0/16)" }
+              required: [systemId, name, runtime]
+      responses:
+        '200':
+          description: Network created
+
+  /ipc/remove_network:
+    post:
+      operationId: remove_network
+      tags: [networks]
+      summary: Remove a network
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                systemId: { type: string }
+                name: { type: string }
+                runtime: { $ref: '#/components/schemas/ContainerRuntime' }
+              required: [systemId, name, runtime]
+      responses:
+        '200':
+          description: Network removed
+
+  /ipc/connect_container_to_network:
+    post:
+      operationId: connect_container_to_network
+      tags: [networks]
+      summary: Connect a container to a network
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                systemId: { type: string }
+                containerId: { type: string }
+                networkName: { type: string }
+                runtime: { $ref: '#/components/schemas/ContainerRuntime' }
+              required: [systemId, containerId, networkName, runtime]
+      responses:
+        '200':
+          description: Container connected
+
+  /ipc/disconnect_container_from_network:
+    post:
+      operationId: disconnect_container_from_network
+      tags: [networks]
+      summary: Disconnect a container from a network
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                systemId: { type: string }
+                containerId: { type: string }
+                networkName: { type: string }
+                runtime: { $ref: '#/components/schemas/ContainerRuntime' }
+              required: [systemId, containerId, networkName, runtime]
+      responses:
+        '200':
+          description: Container disconnected
+
+  # ── Compose ─────────────────────────────────────────────────────────────────
+
+  /ipc/compose_up:
+    post:
+      operationId: compose_up
+      tags: [compose]
+      summary: Start a Compose project (docker/podman compose up -d)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                systemId: { type: string }
+                projectName: { type: string }
+                runtime: { $ref: '#/components/schemas/ContainerRuntime' }
+              required: [systemId, projectName, runtime]
+      responses:
+        '200':
+          description: Compose up output
+          content:
+            application/json:
+              schema: { type: string }
+
+  /ipc/compose_down:
+    post:
+      operationId: compose_down
+      tags: [compose]
+      summary: Stop and remove a Compose project
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                systemId: { type: string }
+                projectName: { type: string }
+                runtime: { $ref: '#/components/schemas/ContainerRuntime' }
+              required: [systemId, projectName, runtime]
+      responses:
+        '200':
+          description: Compose down output
+          content:
+            application/json:
+              schema: { type: string }
+
+  /ipc/compose_restart:
+    post:
+      operationId: compose_restart
+      tags: [compose]
+      summary: Restart a Compose project or specific service
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                systemId: { type: string }
+                projectName: { type: string }
+                runtime: { $ref: '#/components/schemas/ContainerRuntime' }
+                serviceName: { type: string, nullable: true }
+              required: [systemId, projectName, runtime]
+      responses:
+        '200':
+          description: Restart output
+          content:
+            application/json:
+              schema: { type: string }
+
+  /ipc/compose_logs:
+    post:
+      operationId: compose_logs
+      tags: [compose]
+      summary: Fetch logs from a Compose project or service
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                systemId: { type: string }
+                projectName: { type: string }
+                runtime: { $ref: '#/components/schemas/ContainerRuntime' }
+                serviceName: { type: string, nullable: true }
+                tail: { type: integer, description: Number of log lines to tail }
+              required: [systemId, projectName, runtime, tail]
+      responses:
+        '200':
+          description: Log output
+          content:
+            application/json:
+              schema: { type: string }
+
+  # ── AI ──────────────────────────────────────────────────────────────────────
+
+  /ipc/get_ai_settings_cmd:
+    post:
+      operationId: get_ai_settings_cmd
+      tags: [ai]
+      summary: Retrieve current AI provider settings
+      responses:
+        '200':
+          description: AI settings
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AiSettingsResponse' }
+
+  /ipc/update_ai_settings_cmd:
+    post:
+      operationId: update_ai_settings_cmd
+      tags: [ai]
+      summary: Update AI provider settings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                request: { $ref: '#/components/schemas/UpdateAiSettingsRequest' }
+              required: [request]
+      responses:
+        '200':
+          description: Settings saved
+
+  /ipc/list_ai_models:
+    post:
+      operationId: list_ai_models
+      tags: [ai]
+      summary: List available AI models for the configured provider
+      responses:
+        '200':
+          description: Model list
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/AiModel' }
+
+  /ipc/list_models_for_provider:
+    post:
+      operationId: list_models_for_provider
+      tags: [ai]
+      summary: List models for a specific provider (without saving settings)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                providerType: { type: string }
+                apiKey: { type: string, nullable: true }
+                endpointUrl: { type: string, nullable: true }
+                apiVersion: { type: string, nullable: true }
+              required: [providerType]
+      responses:
+        '200':
+          description: Model list
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/AiModel' }
+
+  /ipc/test_ai_connection:
+    post:
+      operationId: test_ai_connection
+      tags: [ai]
+      summary: Test AI connection with saved settings
+      responses:
+        '200':
+          description: Connection succeeded
+
+  /ipc/test_ai_connection_with_settings:
+    post:
+      operationId: test_ai_connection_with_settings
+      tags: [ai]
+      summary: Test AI connection with ad-hoc settings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                providerType: { type: string }
+                apiKey: { type: string, nullable: true }
+                endpointUrl: { type: string, nullable: true }
+                apiVersion: { type: string, nullable: true }
+              required: [providerType]
+      responses:
+        '200':
+          description: Connection succeeded
+
+  /ipc/get_shell_suggestion:
+    post:
+      operationId: get_shell_suggestion
+      tags: [ai]
+      summary: Get an AI-generated shell command suggestion
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                request: { $ref: '#/components/schemas/ShellSuggestionRequest' }
+              required: [request]
+      responses:
+        '200':
+          description: Shell command suggestion
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ShellCommandResponse' }
+
+  /ipc/pull_ollama_model:
+    post:
+      operationId: pull_ollama_model
+      tags: [ai]
+      summary: Pull an Ollama model
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                modelName: { type: string }
+                endpointUrl: { type: string, nullable: true }
+              required: [modelName]
+      responses:
+        '200':
+          description: Pull output
+          content:
+            application/json:
+              schema: { type: string }
+
+  /ipc/delete_ollama_model:
+    post:
+      operationId: delete_ollama_model
+      tags: [ai]
+      summary: Delete a local Ollama model
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                modelName: { type: string }
+                endpointUrl: { type: string, nullable: true }
+              required: [modelName]
+      responses:
+        '200':
+          description: Model deleted
+
+  # ── Systems ─────────────────────────────────────────────────────────────────
+
+  /ipc/list_systems:
+    post:
+      operationId: list_systems
+      tags: [systems]
+      summary: List all configured systems
+      responses:
+        '200':
+          description: System list
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ContainerSystem' }
+
+  /ipc/add_system:
+    post:
+      operationId: add_system
+      tags: [systems]
+      summary: Add a new system
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                payload: { $ref: '#/components/schemas/NewSystemRequest' }
+              required: [payload]
+      responses:
+        '200':
+          description: Created system
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ContainerSystem' }
+
+  /ipc/connect_system:
+    post:
+      operationId: connect_system
+      tags: [systems]
+      summary: Connect to a system (local or SSH)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                systemId: { type: string }
+                password: { type: string, nullable: true }
+                passphrase: { type: string, nullable: true }
+                privateKey: { type: string, nullable: true }
+                jumpHostCredentials:
+                  type: object
+                  nullable: true
+                  additionalProperties: { $ref: '#/components/schemas/JumpHostCredentials' }
+              required: [systemId]
+      responses:
+        '200':
+          description: New connection state
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ConnectionState' }
+
+  /ipc/disconnect_system:
+    post:
+      operationId: disconnect_system
+      tags: [systems]
+      summary: Disconnect from a system
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                systemId: { type: string }
+              required: [systemId]
+      responses:
+        '200':
+          description: New connection state
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ConnectionState' }
+
+  /ipc/get_connection_state:
+    post:
+      operationId: get_connection_state
+      tags: [systems]
+      summary: Get the current connection state for a system
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                systemId: { type: string }
+              required: [systemId]
+      responses:
+        '200':
+          description: Connection state
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ConnectionState' }
+
+  /ipc/detect_runtimes:
+    post:
+      operationId: detect_runtimes
+      tags: [systems]
+      summary: Detect available container runtimes on a system
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                systemId: { type: string }
+              required: [systemId]
+      responses:
+        '200':
+          description: Detected runtimes
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ContainerRuntime' }
+
+  /ipc/update_system:
+    post:
+      operationId: update_system
+      tags: [systems]
+      summary: Update system configuration
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                payload: { $ref: '#/components/schemas/UpdateSystemRequest' }
+              required: [payload]
+      responses:
+        '200':
+          description: Updated system
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ContainerSystem' }
+
+  /ipc/remove_system:
+    post:
+      operationId: remove_system
+      tags: [systems]
+      summary: Remove a system
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                systemId: { type: string }
+              required: [systemId]
+      responses:
+        '200':
+          description: true if removed
+          content:
+            application/json:
+              schema: { type: boolean }
+
+  /ipc/store_ssh_credentials:
+    post:
+      operationId: store_ssh_credentials
+      tags: [ssh]
+      summary: Securely store SSH credentials for a system
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                systemId: { type: string }
+                password: { type: string, nullable: true }
+                passphrase: { type: string, nullable: true }
+                privateKey: { type: string, nullable: true }
+                jumpHostCredentials:
+                  type: object
+                  nullable: true
+                  additionalProperties: { $ref: '#/components/schemas/JumpHostCredentials' }
+              required: [systemId]
+      responses:
+        '200':
+          description: Credentials stored
+
+  /ipc/get_ssh_credentials:
+    post:
+      operationId: get_ssh_credentials
+      tags: [ssh]
+      summary: Retrieve stored SSH credentials (keys only — no passwords)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                systemId: { type: string }
+              required: [systemId]
+      responses:
+        '200':
+          description: "(password?, passphrase?, private_key?)"
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { type: string, nullable: true }
+                minItems: 3
+                maxItems: 3
+
+  /ipc/get_extended_system_info:
+    post:
+      operationId: get_extended_system_info
+      tags: [systems]
+      summary: Get detailed OS / hardware info for a connected system
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                systemId: { type: string }
+              required: [systemId]
+      responses:
+        '200':
+          description: Extended system info
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ExtendedSystemInfo' }
+
+  /ipc/start_system_monitoring:
+    post:
+      operationId: start_system_monitoring
+      tags: [systems]
+      summary: Start live metric polling for a system
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                systemId: { type: string }
+                intervalMs: { type: integer, nullable: true, description: Polling interval in milliseconds }
+              required: [systemId]
+      responses:
+        '200':
+          description: true if monitoring started
+          content:
+            application/json:
+              schema: { type: boolean }
+
+  /ipc/stop_system_monitoring:
+    post:
+      operationId: stop_system_monitoring
+      tags: [systems]
+      summary: Stop live metric polling for a system
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                systemId: { type: string }
+              required: [systemId]
+      responses:
+        '200':
+          description: true if monitoring was stopped
+          content:
+            application/json:
+              schema: { type: boolean }
+
+  /ipc/is_system_monitoring:
+    post:
+      operationId: is_system_monitoring
+      tags: [systems]
+      summary: Check whether a system is being monitored
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                systemId: { type: string }
+              required: [systemId]
+      responses:
+        '200':
+          description: Monitoring status
+          content:
+            application/json:
+              schema: { type: boolean }
+
+  /ipc/list_monitored_systems:
+    post:
+      operationId: list_monitored_systems
+      tags: [systems]
+      summary: List system IDs currently being monitored
+      responses:
+        '200':
+          description: List of system IDs
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { type: string }
+
+  /ipc/get_live_metrics:
+    post:
+      operationId: get_live_metrics
+      tags: [systems]
+      summary: Get the latest live metrics snapshot for a system
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                systemId: { type: string }
+              required: [systemId]
+      responses:
+        '200':
+          description: Live metrics
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LiveSystemMetrics' }
+
+  /ipc/import_ssh_key_from_file:
+    post:
+      operationId: import_ssh_key_from_file
+      tags: [ssh]
+      summary: Read an SSH private key from a local file path
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                filePath: { type: string }
+              required: [filePath]
+      responses:
+        '200':
+          description: PEM-encoded private key content
+          content:
+            application/json:
+              schema: { type: string }
+
+  /ipc/has_ssh_config:
+    post:
+      operationId: has_ssh_config
+      tags: [ssh]
+      summary: Check whether an SSH config file exists
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                configPaths: { type: array, items: { type: string }, nullable: true }
+      responses:
+        '200':
+          description: true if any config file found
+          content:
+            application/json:
+              schema: { type: boolean }
+
+  /ipc/list_ssh_config_hosts:
+    post:
+      operationId: list_ssh_config_hosts
+      tags: [ssh]
+      summary: Parse and return all hosts from SSH config
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                configPaths: { type: array, items: { type: string }, nullable: true }
+      responses:
+        '200':
+          description: SSH host entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/SshHostEntry' }
+
+  /ipc/get_ssh_host_config:
+    post:
+      operationId: get_ssh_host_config
+      tags: [ssh]
+      summary: Get SSH config for a specific host alias
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                host: { type: string }
+                configPaths: { type: array, items: { type: string }, nullable: true }
+              required: [host]
+      responses:
+        '200':
+          description: Host config entry
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SshHostEntry' }
+
+  /ipc/remove_known_host:
+    post:
+      operationId: remove_known_host
+      tags: [ssh]
+      summary: Remove a host entry from known_hosts
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                hostname: { type: string }
+                port: { type: integer }
+              required: [hostname, port]
+      responses:
+        '200':
+          description: Number of entries removed
+          content:
+            application/json:
+              schema: { type: integer }
+
+  /ipc/get_app_settings:
+    post:
+      operationId: get_app_settings
+      tags: [settings]
+      summary: Get application-level settings
+      responses:
+        '200':
+          description: App settings
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AppSettings' }
+
+  /ipc/update_app_settings:
+    post:
+      operationId: update_app_settings
+      tags: [settings]
+      summary: Save application-level settings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                settings: { $ref: '#/components/schemas/AppSettings' }
+              required: [settings]
+      responses:
+        '200':
+          description: Settings saved
+
+  /ipc/get_changelog:
+    post:
+      operationId: get_changelog
+      tags: [settings]
+      summary: Get the application changelog
+      responses:
+        '200':
+          description: Changelog text
+          content:
+            application/json:
+              schema: { type: string }
+
+  # ── Terminal ─────────────────────────────────────────────────────────────────
+
+  /ipc/start_terminal_session:
+    post:
+      operationId: start_terminal_session
+      tags: [terminal]
+      summary: Open a new terminal session (local, SSH, or container exec)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                systemId: { type: string }
+                containerId: { type: string, nullable: true }
+                shell: { type: string }
+                cols: { type: integer, nullable: true }
+                rows: { type: integer, nullable: true }
+                runtime: { type: string, nullable: true }
+              required: [systemId, shell]
+      responses:
+        '200':
+          description: Terminal session
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TerminalSession' }
+
+  /ipc/send_terminal_input:
+    post:
+      operationId: send_terminal_input
+      tags: [terminal]
+      summary: Send keystrokes to a terminal session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                sessionId: { type: string }
+                data: { type: string }
+              required: [sessionId, data]
+      responses:
+        '200':
+          description: Input sent
+
+  /ipc/resize_terminal:
+    post:
+      operationId: resize_terminal
+      tags: [terminal]
+      summary: Resize the terminal PTY
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                sessionId: { type: string }
+                cols: { type: integer }
+                rows: { type: integer }
+              required: [sessionId, cols, rows]
+      responses:
+        '200':
+          description: Terminal resized
+
+  /ipc/close_terminal_session:
+    post:
+      operationId: close_terminal_session
+      tags: [terminal]
+      summary: Close and cleanup a terminal session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                sessionId: { type: string }
+              required: [sessionId]
+      responses:
+        '200':
+          description: Session closed
+
+  /ipc/execute_in_terminal:
+    post:
+      operationId: execute_in_terminal
+      tags: [terminal]
+      summary: Run a command in an existing terminal session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                sessionId: { type: string }
+                command: { type: string }
+              required: [sessionId, command]
+      responses:
+        '200':
+          description: Command sent
+
+  /ipc/list_terminal_sessions:
+    post:
+      operationId: list_terminal_sessions
+      tags: [terminal]
+      summary: List active terminal session IDs
+      responses:
+        '200':
+          description: Session ID list
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { type: string }
+
+  /ipc/fetch_shell_history:
+    post:
+      operationId: fetch_shell_history
+      tags: [terminal]
+      summary: Fetch shell command history for a system
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                systemId: { type: string }
+                maxEntries: { type: integer, nullable: true }
+                filter: { type: string, nullable: true }
+              required: [systemId]
+      responses:
+        '200':
+          description: History entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { type: string }
+
+  # ── Agent ────────────────────────────────────────────────────────────────────
+
+  /ipc/start_agent_session:
+    post:
+      operationId: start_agent_session
+      tags: [agent]
+      summary: Start a new AI agent session linked to a terminal session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                terminalSessionId: { type: string }
+                containerId: { type: string, nullable: true }
+              required: [terminalSessionId]
+      responses:
+        '200':
+          description: Agent session info
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AgentSessionInfo' }
+
+  /ipc/get_agent_session:
+    post:
+      operationId: get_agent_session
+      tags: [agent]
+      summary: Get an agent session by session ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                sessionId: { type: string }
+              required: [sessionId]
+      responses:
+        '200':
+          description: Session info or null
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/AgentSessionInfo'
+                  - type: 'null'
+
+  /ipc/get_agent_session_by_terminal:
+    post:
+      operationId: get_agent_session_by_terminal
+      tags: [agent]
+      summary: Get the agent session for a terminal session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                terminalSessionId: { type: string }
+              required: [terminalSessionId]
+      responses:
+        '200':
+          description: Session info or null
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/AgentSessionInfo'
+                  - type: 'null'
+
+  /ipc/submit_agent_query:
+    post:
+      operationId: submit_agent_query
+      tags: [agent]
+      summary: Submit a natural language query to the agent
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                request: { $ref: '#/components/schemas/AgentQueryRequest' }
+              required: [request]
+      responses:
+        '200':
+          description: Query ID for tracking
+          content:
+            application/json:
+              schema: { type: string }
+
+  /ipc/respond_to_confirmation:
+    post:
+      operationId: respond_to_confirmation
+      tags: [agent]
+      summary: Approve or deny an agent confirmation prompt
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                sessionId: { type: string }
+                response: { $ref: '#/components/schemas/ConfirmationResponse' }
+              required: [sessionId, response]
+      responses:
+        '200':
+          description: Response recorded
+
+  /ipc/cancel_agent_query:
+    post:
+      operationId: cancel_agent_query
+      tags: [agent]
+      summary: Cancel the in-progress agent query
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                sessionId: { type: string }
+              required: [sessionId]
+      responses:
+        '200':
+          description: Query cancelled
+
+  /ipc/close_agent_session:
+    post:
+      operationId: close_agent_session
+      tags: [agent]
+      summary: Close an agent session and free resources
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                sessionId: { type: string }
+              required: [sessionId]
+      responses:
+        '200':
+          description: Session closed
+
+  /ipc/update_agent_context:
+    post:
+      operationId: update_agent_context
+      tags: [agent]
+      summary: Update the agent's awareness of the current shell context
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                sessionId: { type: string }
+                cwd: { type: string, nullable: true }
+                gitBranch: { type: string, nullable: true }
+                lastExitCode: { type: integer, nullable: true }
+              required: [sessionId]
+      responses:
+        '200':
+          description: Context updated
+
+  /ipc/append_agent_output:
+    post:
+      operationId: append_agent_output
+      tags: [agent]
+      summary: Append terminal output to agent context buffer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                sessionId: { type: string }
+                output: { type: string }
+              required: [sessionId, output]
+      responses:
+        '200':
+          description: Output appended
+
+  /ipc/get_agent_context_summary:
+    post:
+      operationId: get_agent_context_summary
+      tags: [agent]
+      summary: Get the compressed context summary for an agent session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                sessionId: { type: string }
+              required: [sessionId]
+      responses:
+        '200':
+          description: Context summary
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ContextSummary' }
+
+  /ipc/get_agent_preferences:
+    post:
+      operationId: get_agent_preferences
+      tags: [agent]
+      summary: Get stored agent preferences
+      responses:
+        '200':
+          description: Preferences
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AgentPreferences' }
+
+  /ipc/update_agent_preferences:
+    post:
+      operationId: update_agent_preferences
+      tags: [agent]
+      summary: Save agent preferences
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                preferences: { $ref: '#/components/schemas/AgentPreferences' }
+              required: [preferences]
+      responses:
+        '200':
+          description: Preferences saved
+
+  # ── File Browser ─────────────────────────────────────────────────────────────
+
+  /ipc/list_directory:
+    post:
+      operationId: list_directory
+      tags: [file-browser]
+      summary: List directory contents (system, SSH, or container filesystem)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                systemId: { type: string }
+                path: { type: string }
+                containerId: { type: string, nullable: true }
+                runtime: { $ref: '#/components/schemas/ContainerRuntime', nullable: true }
+              required: [systemId, path]
+      responses:
+        '200':
+          description: Directory listing
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DirectoryListing' }
+
+  /ipc/read_file:
+    post:
+      operationId: read_file
+      tags: [file-browser]
+      summary: Read a file from a system or container
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                systemId: { type: string }
+                path: { type: string }
+                containerId: { type: string, nullable: true }
+                runtime: { $ref: '#/components/schemas/ContainerRuntime', nullable: true }
+              required: [systemId, path]
+      responses:
+        '200':
+          description: File content
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FileContent' }
+
+  /ipc/write_file:
+    post:
+      operationId: write_file
+      tags: [file-browser]
+      summary: Write content to a file on a system or container
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                systemId: { type: string }
+                path: { type: string }
+                content: { type: string }
+                containerId: { type: string, nullable: true }
+                runtime: { $ref: '#/components/schemas/ContainerRuntime', nullable: true }
+              required: [systemId, path, content]
+      responses:
+        '200':
+          description: File written
+
+  /ipc/create_directory:
+    post:
+      operationId: create_directory
+      tags: [file-browser]
+      summary: Create a directory on a system or in a container
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                systemId: { type: string }
+                path: { type: string }
+                containerId: { type: string, nullable: true }
+                runtime: { $ref: '#/components/schemas/ContainerRuntime', nullable: true }
+              required: [systemId, path]
+      responses:
+        '200':
+          description: Directory created
+
+  /ipc/delete_path:
+    post:
+      operationId: delete_path
+      tags: [file-browser]
+      summary: Delete a file or directory
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                systemId: { type: string }
+                path: { type: string }
+                isDirectory: { type: boolean }
+                containerId: { type: string, nullable: true }
+                runtime: { $ref: '#/components/schemas/ContainerRuntime', nullable: true }
+              required: [systemId, path, isDirectory]
+      responses:
+        '200':
+          description: Path deleted
+
+  /ipc/rename_path:
+    post:
+      operationId: rename_path
+      tags: [file-browser]
+      summary: Rename or move a path
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                systemId: { type: string }
+                oldPath: { type: string }
+                newPath: { type: string }
+                containerId: { type: string, nullable: true }
+                runtime: { $ref: '#/components/schemas/ContainerRuntime', nullable: true }
+              required: [systemId, oldPath, newPath]
+      responses:
+        '200':
+          description: Path renamed
+
+  /ipc/download_file:
+    post:
+      operationId: download_file
+      tags: [file-browser]
+      summary: Download a remote file to a local path
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                systemId: { type: string }
+                remotePath: { type: string }
+                localPath: { type: string }
+                containerId: { type: string, nullable: true }
+                runtime: { $ref: '#/components/schemas/ContainerRuntime', nullable: true }
+              required: [systemId, remotePath, localPath]
+      responses:
+        '200':
+          description: File downloaded
+
+  /ipc/upload_file:
+    post:
+      operationId: upload_file
+      tags: [file-browser]
+      summary: Upload a local file to a remote system or container
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                systemId: { type: string }
+                localPath: { type: string }
+                remotePath: { type: string }
+                containerId: { type: string, nullable: true }
+                runtime: { $ref: '#/components/schemas/ContainerRuntime', nullable: true }
+              required: [systemId, localPath, remotePath]
+      responses:
+        '200':
+          description: File uploaded
+
+  # ── Backend ──────────────────────────────────────────────────────────────────
+
+  /ipc/list_backend_connections:
+    post:
+      operationId: list_backend_connections
+      tags: [backend]
+      summary: List saved Kubernetes backend connections
+      responses:
+        '200':
+          description: Backend connection list
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/SavedBackendResponse' }
+
+  /ipc/save_backend_connection:
+    post:
+      operationId: save_backend_connection
+      tags: [backend]
+      summary: Save or update a backend connection
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                id: { type: string }
+                serverUrl: { type: string }
+                label: { type: string }
+                accessToken: { type: string, nullable: true }
+                refreshToken: { type: string, nullable: true }
+              required: [id, serverUrl, label]
+      responses:
+        '200':
+          description: Connection saved
+
+  /ipc/delete_backend_connection:
+    post:
+      operationId: delete_backend_connection
+      tags: [backend]
+      summary: Delete a saved backend connection
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                id: { type: string }
+              required: [id]
+      responses:
+        '200':
+          description: Connection deleted
+
+  /ipc/delete_all_backend_connections:
+    post:
+      operationId: delete_all_backend_connections
+      tags: [backend]
+      summary: Delete all saved backend connections
+      responses:
+        '200':
+          description: All connections deleted
+
+  # ── Command Templates ────────────────────────────────────────────────────────
+
+  /ipc/list_command_templates:
+    post:
+      operationId: list_command_templates
+      tags: [command-template]
+      summary: List all saved command templates
+      responses:
+        '200':
+          description: Template list
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/CommandTemplate' }
+
+  /ipc/get_command_template:
+    post:
+      operationId: get_command_template
+      tags: [command-template]
+      summary: Get a single command template by ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                id: { type: string }
+              required: [id]
+      responses:
+        '200':
+          description: Template or null
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/CommandTemplate'
+                  - type: 'null'
+
+  /ipc/create_command_template:
+    post:
+      operationId: create_command_template
+      tags: [command-template]
+      summary: Create a new command template
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                request: { $ref: '#/components/schemas/CreateCommandTemplateRequest' }
+              required: [request]
+      responses:
+        '200':
+          description: Created template
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CommandTemplate' }
+
+  /ipc/update_command_template:
+    post:
+      operationId: update_command_template
+      tags: [command-template]
+      summary: Update an existing command template
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                request: { $ref: '#/components/schemas/UpdateCommandTemplateRequest' }
+              required: [request]
+      responses:
+        '200':
+          description: Updated template
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CommandTemplate' }
+
+  /ipc/delete_command_template:
+    post:
+      operationId: delete_command_template
+      tags: [command-template]
+      summary: Delete a command template
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                id: { type: string }
+              required: [id]
+      responses:
+        '200':
+          description: true if deleted
+          content:
+            application/json:
+              schema: { type: boolean }
+
+  /ipc/toggle_command_favorite:
+    post:
+      operationId: toggle_command_favorite
+      tags: [command-template]
+      summary: Toggle the favorite flag on a command template
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                id: { type: string }
+              required: [id]
+      responses:
+        '200':
+          description: Updated template
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CommandTemplate' }
+
+  /ipc/duplicate_command_template:
+    post:
+      operationId: duplicate_command_template
+      tags: [command-template]
+      summary: Duplicate an existing command template
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                id: { type: string }
+              required: [id]
+      responses:
+        '200':
+          description: New template copy
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CommandTemplate' }
+
+  # ── Port Forward ─────────────────────────────────────────────────────────────
+
+  /ipc/create_port_forward:
+    post:
+      operationId: create_port_forward
+      tags: [port-forward]
+      summary: Create and start a port forward from container to localhost
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                request: { $ref: '#/components/schemas/CreatePortForwardRequest' }
+              required: [request]
+      responses:
+        '200':
+          description: Port forward info
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PortForward' }
+
+  /ipc/stop_port_forward:
+    post:
+      operationId: stop_port_forward
+      tags: [port-forward]
+      summary: Stop an active port forward
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                forwardId: { type: string }
+              required: [forwardId]
+      responses:
+        '200':
+          description: Forward stopped
+
+  /ipc/list_port_forwards:
+    post:
+      operationId: list_port_forwards
+      tags: [port-forward]
+      summary: List active port forwards, optionally filtered by system or container
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                systemId: { type: string, nullable: true }
+                containerId: { type: string, nullable: true }
+      responses:
+        '200':
+          description: Port forward list
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/PortForward' }
+
+  /ipc/get_port_forward:
+    post:
+      operationId: get_port_forward
+      tags: [port-forward]
+      summary: Get details for a specific port forward
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                forwardId: { type: string }
+              required: [forwardId]
+      responses:
+        '200':
+          description: Port forward or null
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/PortForward'
+                  - type: 'null'
+
+  /ipc/open_forwarded_port:
+    post:
+      operationId: open_forwarded_port
+      tags: [port-forward]
+      summary: Open the forwarded port in the system browser
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                forwardId: { type: string }
+              required: [forwardId]
+      responses:
+        '200':
+          description: Browser opened
+
+  /ipc/is_port_forwarded:
+    post:
+      operationId: is_port_forwarded
+      tags: [port-forward]
+      summary: Check whether a container port is already forwarded
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                containerId: { type: string }
+                containerPort: { type: integer }
+              required: [containerId, containerPort]
+      responses:
+        '200':
+          description: true if the port is forwarded
+          content:
+            application/json:
+              schema: { type: boolean }

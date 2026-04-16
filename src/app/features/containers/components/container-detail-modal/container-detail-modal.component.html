@@ -6,6 +6,10 @@
   <!-- Modal - Full screen on mobile with proper viewport height -->
   <div
     class="bg-zinc-900 w-full h-[100dvh] sm:h-auto sm:rounded-xl sm:max-w-3xl sm:max-h-[90vh] overflow-hidden flex flex-col shadow-2xl"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="container-detail-title"
+    cdkTrapFocus
     (click)="$event.stopPropagation()"
   >
     <!-- Header -->
@@ -14,7 +18,7 @@
     >
       <div class="min-w-0 flex-1">
         <div class="flex items-center gap-2 sm:gap-3">
-          <h2 class="text-lg sm:text-xl font-bold truncate">{{ getDisplayName(container()) }}</h2>
+          <h2 id="container-detail-title" class="text-lg sm:text-xl font-bold truncate">{{ getDisplayName(container()) }}</h2>
           <!-- Status badge -->
           <span
             class="px-2 py-0.5 sm:py-1 rounded text-xs font-medium flex-shrink-0"

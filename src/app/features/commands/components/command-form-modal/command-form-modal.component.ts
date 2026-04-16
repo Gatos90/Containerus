@@ -1,6 +1,7 @@
 import { CommonModule } from '@angular/common';
 import { ChangeDetectionStrategy, Component, inject, input, OnInit, output, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { CdkTrapFocus } from '@angular/cdk/a11y';
 import {
   LucideAngularModule,
   X,
@@ -33,7 +34,7 @@ interface FormData {
 
 @Component({
   selector: 'app-command-form-modal',
-  imports: [CommonModule, FormsModule, LucideAngularModule],
+  imports: [CommonModule, FormsModule, LucideAngularModule, CdkTrapFocus],
   templateUrl: './command-form-modal.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })

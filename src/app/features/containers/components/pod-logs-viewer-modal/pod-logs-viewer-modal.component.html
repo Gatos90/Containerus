@@ -6,6 +6,10 @@
   <!-- Modal -->
   <div
     class="bg-zinc-900 w-full h-[100dvh] sm:h-auto sm:rounded-xl sm:max-w-5xl sm:max-h-[90vh] overflow-hidden flex flex-col shadow-2xl"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="pod-logs-title"
+    cdkTrapFocus
     (click)="$event.stopPropagation()"
   >
     <!-- Header -->
@@ -13,7 +17,7 @@
       <div class="flex items-center gap-2 sm:gap-3 min-w-0">
         <lucide-icon [img]="Cloud" class="w-5 h-5 text-purple-400 flex-shrink-0"></lucide-icon>
         <div class="min-w-0">
-          <h2 class="text-base sm:text-lg font-semibold truncate">Pod Logs</h2>
+          <h2 id="pod-logs-title" class="text-base sm:text-lg font-semibold truncate">Pod Logs</h2>
           <div class="flex items-center gap-1.5">
             <span class="text-xs sm:text-sm text-zinc-400 truncate font-mono">{{ podName() }}</span>
             <span class="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-500">{{ namespace() }}</span>
@@ -24,8 +28,9 @@
       <button
         (click)="close.emit()"
         class="p-2.5 sm:p-2 touch-target text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 rounded-lg transition-colors flex-shrink-0"
+        aria-label="Close"
       >
-        <lucide-icon [img]="X" class="w-5 h-5"></lucide-icon>
+        <lucide-icon [img]="X" class="w-5 h-5" aria-hidden="true"></lucide-icon>
       </button>
     </div>
 

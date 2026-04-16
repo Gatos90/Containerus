@@ -12,6 +12,7 @@ import {
   ViewChild,
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { CdkTrapFocus } from '@angular/cdk/a11y';
 import {
   LucideAngularModule,
   X,
@@ -43,7 +44,7 @@ interface VariableInput {
 
 @Component({
   selector: 'app-variable-input-modal',
-  imports: [CommonModule, FormsModule, LucideAngularModule],
+  imports: [CommonModule, FormsModule, LucideAngularModule, CdkTrapFocus],
   templateUrl: './variable-input-modal.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {

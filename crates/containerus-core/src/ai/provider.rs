@@ -48,6 +48,9 @@ pub struct CompletionRequest {
     /// Enable structured JSON output mode
     #[serde(default)]
     pub json_mode: bool,
+    /// Request timeout in seconds; provider uses its own default when absent
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub timeout_secs: Option<u64>,
 }
 
 /// Response from AI completion

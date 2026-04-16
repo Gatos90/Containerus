@@ -5,6 +5,7 @@ import {
   input,
   output,
 } from '@angular/core';
+import { CdkTrapFocus } from '@angular/cdk/a11y';
 import {
   LucideAngularModule,
   X,
@@ -28,7 +29,7 @@ const DEFAULT_SHELL = '/bin/sh';
 
 @Component({
   selector: 'app-container-detail-modal',
-  imports: [LucideAngularModule, ContainerDetailsComponent],
+  imports: [LucideAngularModule, ContainerDetailsComponent, CdkTrapFocus],
   templateUrl: './container-detail-modal.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {

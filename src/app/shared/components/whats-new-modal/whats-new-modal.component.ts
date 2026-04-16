@@ -5,13 +5,14 @@ import {
   input,
   output,
 } from '@angular/core';
+import { CdkTrapFocus } from '@angular/cdk/a11y';
 import { LucideAngularModule, X, Sparkles, Tag } from 'lucide-angular';
 import { ChangelogEntry } from '../../../state/changelog.state';
 
 @Component({
   selector: 'app-whats-new-modal',
   standalone: true,
-  imports: [CommonModule, LucideAngularModule],
+  imports: [CommonModule, LucideAngularModule, CdkTrapFocus],
   templateUrl: './whats-new-modal.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {

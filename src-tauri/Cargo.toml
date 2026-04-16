@@ -36,7 +36,7 @@ serde_json = "1"
 chrono = { version = "0.4", features = ["serde"] }
 
 # Async runtime
-tokio = { version = "1", features = ["full"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "fs", "net", "process", "io-util"] }
 tokio-util = { version = "0.7", features = ["rt"] }
 async-trait = "0.1"
 futures-util = "0.3"
