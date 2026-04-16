@@ -3,7 +3,7 @@ use axum::{
         ws::{Message, WebSocket, WebSocketUpgrade},
         Path, State,
     },
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     response::IntoResponse,
     routing::get,
     Json, Router,
@@ -41,11 +41,19 @@ async fn ws_terminal(
     ws: WebSocketUpgrade,
     State(state): State<AppState>,
     Path(system_id): Path<Uuid>,
-) -> impl IntoResponse {
-    // Accept WebSocket upgrade unconditionally — auth happens inside the session
-    ws.on_upgrade(move |socket| {
+    headers: HeaderMap,
+) -> Result<axum::response::Response, (StatusCode, Json<serde_json::Value>)> {
+    // Reject cross-site WebSocket hijacking attempts before upgrade.
+    if !super::security::origin_allowed(&headers, &state.config.cors_origins) {
+        tracing::warn!("WebSocket terminal upgrade rejected: disallowed origin for system={}", system_id);
+        return Err((
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": "Origin not allowed" })),
+        ));
+    }
+    Ok(ws.on_upgrade(move |socket| {
         handle_terminal_session(socket, state, system_id)
-    })
+    }))
 }
 
 /// Message from client to start a PTY session.
@@ -99,7 +107,7 @@ async fn handle_terminal_session(
     let (mut ws_sender, mut ws_receiver) = socket.split();
 
     // Phase 1: Wait for auth message (with timeout)
-    let (user_id, runtime_str) = match tokio::time::timeout(
+    let (user_id, runtime_str, token_exp, project_id, is_company_admin) = match tokio::time::timeout(
         std::time::Duration::from_secs(30),
         wait_for_auth(&mut ws_sender, &mut ws_receiver, &state, system_id),
     )
@@ -140,8 +148,26 @@ async fn handle_terminal_session(
         }
     };
 
+    let authz = super::security::LiveAuthz {
+        user_id,
+        project_id,
+        is_company_admin,
+        token_exp,
+        required_permission: "containers.exec",
+    };
+
     // Proceed with PTY setup (moved from the old inline loop)
-    run_terminal_pty(ws_sender, ws_receiver, state, user_id, system_id, runtime_str, start_msg).await;
+    run_terminal_pty(
+        ws_sender,
+        ws_receiver,
+        state,
+        user_id,
+        system_id,
+        runtime_str,
+        start_msg,
+        authz,
+    )
+    .await;
 }
 
 /// Wait for the auth message and validate credentials.
@@ -150,9 +176,22 @@ async fn wait_for_auth(
     ws_receiver: &mut futures_util::stream::SplitStream<WebSocket>,
     state: &AppState,
     system_id: Uuid,
-) -> Result<(Uuid, String), ()> {
-    // Returns (user_id, primary_runtime)
+) -> Result<(Uuid, String, i64, Uuid, bool), ()> {
+    // Returns (user_id, primary_runtime, token_exp_unix, project_id, is_company_admin)
+    let mut message_count: u32 = 0;
+    const MAX_PRE_AUTH_MESSAGES: u32 = 5;
     loop {
+        message_count += 1;
+        if message_count > MAX_PRE_AUTH_MESSAGES {
+            let _ = ws_sender
+                .send(Message::Text(
+                    json!({"type": "error", "message": "Too many messages before authentication"})
+                        .to_string()
+                        .into(),
+                ))
+                .await;
+            return Err(());
+        }
         match ws_receiver.next().await {
             Some(Ok(Message::Text(text))) => {
                 let text_str: &str = &text;
@@ -305,7 +344,13 @@ async fn wait_for_auth(
                             system_id
                         );
 
-                        return Ok((claims.sub, system.primary_runtime.clone()));
+                        return Ok((
+                            claims.sub,
+                            system.primary_runtime.clone(),
+                            claims.exp,
+                            project_id,
+                            claims.is_company_admin,
+                        ));
                     }
                 }
             }
@@ -363,6 +408,7 @@ async fn run_terminal_pty(
     system_id: Uuid,
     runtime_str: String,
     start_msg: StartMessage,
+    authz: super::security::LiveAuthz,
 ) {
     let cols = start_msg.validated_cols();
     let rows = start_msg.validated_rows();
@@ -474,9 +520,34 @@ async fn run_terminal_pty(
         let _ = ws_sender.close().await;
     });
 
+    // Periodic revocation / token-expiry check (closes socket within
+    // REVOCATION_CHECK_INTERVAL of a role change or token expiry).
+    let mut revocation_tick =
+        tokio::time::interval(super::security::REVOCATION_CHECK_INTERVAL);
+    revocation_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    // Skip the immediate first tick (fires at t=0).
+    revocation_tick.tick().await;
+
     // Main I/O loop
     loop {
         tokio::select! {
+            _ = revocation_tick.tick() => {
+                if !authz.still_authorized(&state).await {
+                    tracing::info!(
+                        "PTY session {} revoked mid-stream for user {} system {}",
+                        session_id, user_id, system_id
+                    );
+                    let _ = ws_write_tx
+                        .send(Message::Text(
+                            json!({"type": "error", "message": "Session revoked"})
+                                .to_string()
+                                .into(),
+                        ))
+                        .await;
+                    let _ = channel.close().await;
+                    break;
+                }
+            }
             msg = channel.wait() => {
                 match msg {
                     Some(ChannelMsg::Data { data }) => {

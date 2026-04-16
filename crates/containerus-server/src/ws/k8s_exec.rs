@@ -3,9 +3,10 @@ use axum::{
         ws::{Message, WebSocket, WebSocketUpgrade},
         Path, State,
     },
+    http::{HeaderMap, StatusCode},
     response::IntoResponse,
     routing::get,
-    Router,
+    Json, Router,
 };
 use futures_util::{SinkExt, StreamExt};
 use k8s_openapi::api::core::v1::Pod;
@@ -26,8 +27,16 @@ async fn ws_k8s_exec(
     ws: WebSocketUpgrade,
     State(state): State<AppState>,
     Path(cluster_id): Path<Uuid>,
-) -> impl IntoResponse {
-    ws.on_upgrade(move |socket| handle_k8s_exec_session(socket, state, cluster_id))
+    headers: HeaderMap,
+) -> Result<axum::response::Response, (StatusCode, Json<serde_json::Value>)> {
+    if !super::security::origin_allowed(&headers, &state.config.cors_origins) {
+        tracing::warn!("WebSocket k8s-exec upgrade rejected: disallowed origin for cluster={}", cluster_id);
+        return Err((
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": "Origin not allowed" })),
+        ));
+    }
+    Ok(ws.on_upgrade(move |socket| handle_k8s_exec_session(socket, state, cluster_id)))
 }
 
 #[derive(Debug, Deserialize)]

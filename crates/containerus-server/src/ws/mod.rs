@@ -1,5 +1,6 @@
 pub mod k8s_exec;
 pub mod k8s_watch;
+pub mod security;
 pub mod terminal;
 pub mod tunnel;
 

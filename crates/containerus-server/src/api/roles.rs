@@ -59,10 +59,14 @@ pub struct UpdateRoleRequest {
 // ============================================================================
 
 /// List all roles, ordered by system roles first then by name.
+/// Requires company admin — role enumeration is privileged (privilege-escalation recon).
 async fn list_roles(
     State(state): State<AppState>,
-    _auth: AuthUser,
+    auth: AuthUser,
 ) -> Result<Json<Vec<Role>>, (StatusCode, Json<Value>)> {
+    if !auth.claims.is_company_admin {
+        return Err((StatusCode::FORBIDDEN, Json(json!({ "error": "Company admin required" }))));
+    }
     let roles = sqlx::query_as::<_, Role>(
         "SELECT * FROM roles ORDER BY is_system DESC, name",
     )
@@ -77,11 +81,15 @@ async fn list_roles(
 }
 
 /// Get a single role by ID, including its permission keys.
+/// Requires company admin — role+permission detail is privileged.
 async fn get_role(
     State(state): State<AppState>,
-    _auth: AuthUser,
+    auth: AuthUser,
     Path(id): Path<Uuid>,
 ) -> Result<Json<RoleWithPermissions>, (StatusCode, Json<Value>)> {
+    if !auth.claims.is_company_admin {
+        return Err((StatusCode::FORBIDDEN, Json(json!({ "error": "Company admin required" }))));
+    }
     let role = sqlx::query_as::<_, Role>(
         "SELECT * FROM roles WHERE id = $1",
     )
@@ -487,10 +495,14 @@ async fn delete_role(
 // ============================================================================
 
 /// List all available permissions, ordered by category and key.
+/// Requires company admin — permission catalog is privileged.
 async fn list_permissions(
     State(state): State<AppState>,
-    _auth: AuthUser,
+    auth: AuthUser,
 ) -> Result<Json<Vec<Permission>>, (StatusCode, Json<Value>)> {
+    if !auth.claims.is_company_admin {
+        return Err((StatusCode::FORBIDDEN, Json(json!({ "error": "Company admin required" }))));
+    }
     let permissions = sqlx::query_as::<_, Permission>(
         "SELECT * FROM permissions ORDER BY category, key",
     )

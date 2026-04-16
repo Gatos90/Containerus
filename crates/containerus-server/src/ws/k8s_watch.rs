@@ -3,9 +3,10 @@ use axum::{
         ws::{Message, WebSocket, WebSocketUpgrade},
         Path, State,
     },
+    http::{HeaderMap, StatusCode},
     response::IntoResponse,
     routing::get,
-    Router,
+    Json, Router,
 };
 use futures_util::{SinkExt, StreamExt};
 use kube::{
@@ -39,8 +40,16 @@ async fn ws_k8s_watch(
     ws: WebSocketUpgrade,
     State(state): State<AppState>,
     Path(cluster_id): Path<Uuid>,
-) -> impl IntoResponse {
-    ws.on_upgrade(move |socket| handle_k8s_watch_session(socket, state, cluster_id))
+    headers: HeaderMap,
+) -> Result<axum::response::Response, (StatusCode, Json<serde_json::Value>)> {
+    if !super::security::origin_allowed(&headers, &state.config.cors_origins) {
+        tracing::warn!("WebSocket k8s-watch upgrade rejected: disallowed origin for cluster={}", cluster_id);
+        return Err((
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": "Origin not allowed" })),
+        ));
+    }
+    Ok(ws.on_upgrade(move |socket| handle_k8s_watch_session(socket, state, cluster_id)))
 }
 
 #[derive(Debug, Deserialize)]

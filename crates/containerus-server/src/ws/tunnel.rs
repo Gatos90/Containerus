@@ -3,9 +3,10 @@ use axum::{
         ws::{Message, WebSocket, WebSocketUpgrade},
         Path, State,
     },
+    http::{HeaderMap, StatusCode},
     response::IntoResponse,
     routing::get,
-    Router,
+    Json, Router,
 };
 use futures_util::{SinkExt, StreamExt};
 use russh::ChannelMsg;
@@ -165,9 +166,17 @@ async fn ws_tunnel(
     ws: WebSocketUpgrade,
     State(state): State<AppState>,
     Path(system_id): Path<Uuid>,
-) -> impl IntoResponse {
-    // Accept WebSocket upgrade unconditionally — auth happens inside the session
-    ws.on_upgrade(move |socket| handle_tunnel_auth(socket, state, system_id))
+    headers: HeaderMap,
+) -> Result<axum::response::Response, (StatusCode, Json<serde_json::Value>)> {
+    // Reject cross-site WebSocket hijacking attempts before upgrade.
+    if !super::security::origin_allowed(&headers, &state.config.cors_origins) {
+        tracing::warn!("WebSocket tunnel upgrade rejected: disallowed origin for system={}", system_id);
+        return Err((
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": "Origin not allowed" })),
+        ));
+    }
+    Ok(ws.on_upgrade(move |socket| handle_tunnel_auth(socket, state, system_id)))
 }
 
 /// Handle the WebSocket tunnel: authenticate via first message, then relay.
@@ -179,7 +188,7 @@ async fn handle_tunnel_auth(
     let (mut ws_sender, mut ws_receiver) = socket.split();
 
     // Wait for auth message (with timeout)
-    let (user_id, remote_host, remote_port) = match tokio::time::timeout(
+    let (user_id, remote_host, remote_port, authz) = match tokio::time::timeout(
         std::time::Duration::from_secs(30),
         wait_for_tunnel_auth(&mut ws_sender, &mut ws_receiver, &state, system_id),
     )
@@ -206,7 +215,7 @@ async fn handle_tunnel_auth(
         ))
         .await;
 
-    run_tunnel_relay(ws_sender, ws_receiver, state, user_id, system_id, remote_host, remote_port).await;
+    run_tunnel_relay(ws_sender, ws_receiver, state, user_id, system_id, remote_host, remote_port, authz).await;
 }
 
 /// Wait for the auth message containing token, host, and port.
@@ -215,8 +224,8 @@ async fn wait_for_tunnel_auth(
     ws_receiver: &mut futures_util::stream::SplitStream<WebSocket>,
     state: &AppState,
     system_id: Uuid,
-) -> Result<(Uuid, String, u16), ()> {
-    // Returns (user_id, resolved_host, remote_port)
+) -> Result<(Uuid, String, u16, super::security::LiveAuthz), ()> {
+    // Returns (user_id, resolved_host, remote_port, live_authz)
     let mut message_count: u32 = 0;
     const MAX_PRE_AUTH_MESSAGES: u32 = 5;
     loop {
@@ -439,7 +448,14 @@ async fn wait_for_tunnel_auth(
                             resolved_host
                         );
 
-                        return Ok((claims.sub, resolved_host, remote_port));
+                        let authz = super::security::LiveAuthz {
+                            user_id: claims.sub,
+                            project_id,
+                            is_company_admin: claims.is_company_admin,
+                            token_exp: claims.exp,
+                            required_permission: "systems.connect",
+                        };
+                        return Ok((claims.sub, resolved_host, remote_port, authz));
                     }
                 }
             }
@@ -458,6 +474,7 @@ async fn run_tunnel_relay(
     system_id: Uuid,
     remote_host: String,
     remote_port: u16,
+    authz: super::security::LiveAuthz,
 ) {
     // Get SSH client and open direct-tcpip channel
     let client = match state.connections.get_client(user_id, system_id) {
@@ -496,9 +513,32 @@ async fn run_tunnel_relay(
         let _ = ws_sender.close().await;
     });
 
+    // Periodic revocation / token-expiry check.
+    let mut revocation_tick =
+        tokio::time::interval(super::security::REVOCATION_CHECK_INTERVAL);
+    revocation_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    revocation_tick.tick().await;
+
     // Bidirectional relay loop
     loop {
         tokio::select! {
+            _ = revocation_tick.tick() => {
+                if !authz.still_authorized(&state).await {
+                    tracing::info!(
+                        "Tunnel session revoked mid-stream for user {} system {} -> {}:{}",
+                        user_id, system_id, remote_host, remote_port
+                    );
+                    let _ = ws_write_tx
+                        .send(Message::Text(
+                            json!({"type": "error", "message": "Session revoked"})
+                                .to_string()
+                                .into(),
+                        ))
+                        .await;
+                    let _ = channel.eof().await;
+                    break;
+                }
+            }
             // SSH channel -> WebSocket
             msg = channel.wait() => {
                 match msg {
