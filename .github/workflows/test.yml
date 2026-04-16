@@ -97,7 +97,9 @@ jobs:
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: src-tauri
+          workspaces: |
+            src-tauri
+            .
 
       - name: Run Rust tests
         working-directory: src-tauri
@@ -106,36 +108,76 @@ jobs:
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
 
-      - name: Generate Rust coverage
+      - name: Generate src-tauri coverage
         working-directory: src-tauri
         run: cargo llvm-cov --lib --json --output-path ../rust-coverage.json
 
-      - name: Upload Rust coverage report
+      - name: Check src-tauri coverage threshold (60%)
+        run: |
+          node -e "
+            const data = require('./rust-coverage.json');
+            const pct = data.data[0].totals.lines.percent;
+            console.log('src-tauri lines coverage: ' + pct.toFixed(2) + '%');
+            if (pct < 60) {
+              console.error('ERROR: src-tauri coverage ' + pct.toFixed(2) + '% is below 60% threshold');
+              process.exit(1);
+            }
+            console.log('src-tauri coverage gate passed');
+          "
+
+      - name: Generate containerus-server coverage
+        run: cargo llvm-cov --package containerus-server --lib --json --output-path server-coverage.json
+
+      - name: Check containerus-server coverage threshold (70%)
+        run: |
+          node -e "
+            const data = require('./server-coverage.json');
+            const pct = data.data[0].totals.lines.percent;
+            console.log('containerus-server lines coverage: ' + pct.toFixed(2) + '%');
+            if (pct < 70) {
+              console.error('ERROR: containerus-server coverage ' + pct.toFixed(2) + '% is below 70% threshold');
+              process.exit(1);
+            }
+            console.log('containerus-server coverage gate passed');
+          "
+
+      - name: Upload Rust coverage reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: rust-coverage
-          path: rust-coverage.json
+          path: |
+            rust-coverage.json
+            server-coverage.json
           retention-days: 14
 
       - name: Rust coverage summary
         if: always()
         run: |
+          echo "## Rust Coverage Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
           if [ -f rust-coverage.json ]; then
-            echo "## Rust Coverage Summary" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo '```' >> $GITHUB_STEP_SUMMARY
             node -e "
               const data = require('./rust-coverage.json');
               if (data.data && data.data[0]) {
                 const totals = data.data[0].totals;
-                if (totals.lines) console.log('Lines      : ' + (totals.lines.percent || 0).toFixed(2) + '%');
-                if (totals.functions) console.log('Functions  : ' + (totals.functions.percent || 0).toFixed(2) + '%');
-                if (totals.regions) console.log('Regions    : ' + (totals.regions.percent || 0).toFixed(2) + '%');
+                if (totals.lines) console.log('src-tauri lines      : ' + (totals.lines.percent || 0).toFixed(2) + '% (threshold: 60%)');
+                if (totals.functions) console.log('src-tauri functions  : ' + (totals.functions.percent || 0).toFixed(2) + '%');
               }
             " >> $GITHUB_STEP_SUMMARY
-            echo '```' >> $GITHUB_STEP_SUMMARY
           fi
+          if [ -f server-coverage.json ]; then
+            node -e "
+              const data = require('./server-coverage.json');
+              if (data.data && data.data[0]) {
+                const totals = data.data[0].totals;
+                if (totals.lines) console.log('server lines         : ' + (totals.lines.percent || 0).toFixed(2) + '% (threshold: 70%)');
+                if (totals.functions) console.log('server functions     : ' + (totals.functions.percent || 0).toFixed(2) + '%');
+              }
+            " >> $GITHUB_STEP_SUMMARY
+          fi
+          echo '```' >> $GITHUB_STEP_SUMMARY
 
   test-results:
     name: All Tests Pass
