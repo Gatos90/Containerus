@@ -184,12 +184,16 @@ impl SshConnectionPool {
     ) -> Result<(), ContainerError> {
         let system_id = &system.id.0;
 
-        if let Some(client_ref) = self.connections.get(system_id) {
-            let mut client = client_ref.lock().await;
+        // Clone the Arc out of the DashMap and release the shard's read lock
+        // before calling `remove`. Holding the `Ref` across `remove` would
+        // deadlock, because `remove` takes a write lock on the same shard.
+        let existing = self.connections.get(system_id).map(|r| r.value().clone());
+        if let Some(client_arc) = existing {
+            let mut client = client_arc.lock().await;
             if client.is_alive().await {
                 return Ok(());
             }
-            // Connection is dead, remove it
+            // Connection is dead, remove it.
             drop(client);
             self.connections.remove(system_id);
         }
