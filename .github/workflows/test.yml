@@ -72,6 +72,40 @@ jobs:
             echo '```' >> $GITHUB_STEP_SUMMARY
           fi
 
+  security-audit:
+    name: Security Audit (pnpm + cargo)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 9
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: pnpm audit (prod, fail on high)
+        run: pnpm audit --prod --audit-level high
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-audit
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+
+      - name: cargo audit
+        run: cargo audit
+
   rust-tests:
     name: Rust Tests
     runs-on: ubuntu-22.04
@@ -238,17 +272,18 @@ jobs:
 
   test-results:
     name: All Tests Pass
-    needs: [frontend-tests, rust-tests, e2e-tests]
+    needs: [frontend-tests, rust-tests, e2e-tests, security-audit]
     runs-on: ubuntu-latest
     if: always()
     steps:
       - name: Check test results
         run: |
-          if [ "${{ needs.frontend-tests.result }}" != "success" ] || [ "${{ needs.rust-tests.result }}" != "success" ] || [ "${{ needs.e2e-tests.result }}" != "success" ]; then
+          if [ "${{ needs.frontend-tests.result }}" != "success" ] || [ "${{ needs.rust-tests.result }}" != "success" ] || [ "${{ needs.e2e-tests.result }}" != "success" ] || [ "${{ needs.security-audit.result }}" != "success" ]; then
             echo "::error::One or more test jobs failed"
             echo "Frontend: ${{ needs.frontend-tests.result }}"
             echo "Rust: ${{ needs.rust-tests.result }}"
             echo "E2E: ${{ needs.e2e-tests.result }}"
+            echo "Security Audit: ${{ needs.security-audit.result }}"
             exit 1
           fi
           echo "All tests passed!"

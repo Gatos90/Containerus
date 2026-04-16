@@ -12,17 +12,18 @@
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
-    "test:e2e:report": "playwright show-report"
+    "test:e2e:report": "playwright show-report",
+    "test:e2e:real-docker": "REAL_DOCKER=1 playwright test --config playwright.real-docker.config.ts"
   },
   "private": true,
   "dependencies": {
-    "@angular/cdk": "^21.0.5",
-    "@angular/common": "^21.0.6",
-    "@angular/compiler": "^21.0.6",
-    "@angular/core": "^21.0.6",
-    "@angular/forms": "^21.0.6",
-    "@angular/platform-browser": "^21.0.6",
-    "@angular/router": "^21.0.6",
+    "@angular/cdk": "^21.2.0",
+    "@angular/common": "^21.2.9",
+    "@angular/compiler": "^21.2.9",
+    "@angular/core": "^21.2.9",
+    "@angular/forms": "^21.2.9",
+    "@angular/platform-browser": "^21.2.9",
+    "@angular/router": "^21.2.9",
     "@monaco-editor/loader": "^1.7.0",
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-dialog": "^2.4.2",
@@ -50,10 +51,10 @@
   "devDependencies": {
     "@analogjs/vite-plugin-angular": "^2.2.3",
     "@analogjs/vitest-angular": "^2.2.3",
-    "@angular/build": "^21.0.4",
-    "@angular/cli": "^21.0.4",
-    "@angular/compiler-cli": "^21.0.6",
-    "@angular/platform-browser-dynamic": "^21.0.6",
+    "@angular/build": "^21.2.0",
+    "@angular/cli": "^21.2.0",
+    "@angular/compiler-cli": "^21.2.9",
+    "@angular/platform-browser-dynamic": "^21.2.9",
     "@tailwindcss/postcss": "^4.1.18",
     "@tauri-apps/cli": "^2",
     "@testing-library/dom": "^10.4.1",
@@ -66,5 +67,13 @@
     "@playwright/test": "^1.52.0",
     "typescript": "~5.9.3",
     "vitest": "^4.0.18"
+  },
+  "pnpm": {
+    "overrides": {
+      "rollup@<4.59.0": ">=4.60.1",
+      "picomatch@<4.0.4": ">=4.0.4",
+      "serialize-javascript@<7.0.5": ">=7.0.5",
+      "dompurify@<3.4.0": ">=3.4.0"
+    }
   }
 }
