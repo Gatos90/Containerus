@@ -8,6 +8,8 @@ import {
   Plus,
   Circle,
   SlidersHorizontal,
+  Network as NetworkIcon,
+  Server,
 } from 'lucide-angular';
 import { Container } from '../../../core/models/container.model';
 import { Network } from '../../../core/models/network.model';
@@ -15,6 +17,7 @@ import { NetworkState, NetworkDriverFilter } from '../../../state/network.state'
 import { SystemState } from '../../../state/system.state';
 import { ContainerState } from '../../../state/container.state';
 import { SystemNetworkSectionComponent } from '../components/system-network-section/system-network-section.component';
+import { EmptyStateComponent } from '../../../shared/components/empty-state/empty-state.component';
 
 @Component({
   selector: 'app-network-list',
@@ -23,9 +26,13 @@ import { SystemNetworkSectionComponent } from '../components/system-network-sect
     FormsModule,
     LucideAngularModule,
     SystemNetworkSectionComponent,
+    EmptyStateComponent,
   ],
   templateUrl: './network-list.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
+  host: {
+    '(document:keydown.escape)': 'onEscape()',
+  },
 })
 export class NetworkListComponent implements OnInit {
   readonly networkState = inject(NetworkState);
@@ -37,6 +44,8 @@ export class NetworkListComponent implements OnInit {
   readonly Plus = Plus;
   readonly Circle = Circle;
   readonly SlidersHorizontal = SlidersHorizontal;
+  readonly NetworkIcon = NetworkIcon;
+  readonly Server = Server;
 
   readonly showMobileFilters = signal(false);
   refreshing = false;
@@ -64,6 +73,12 @@ export class NetworkListComponent implements OnInit {
 
     return grouped;
   });
+
+  onEscape(): void {
+    if (this.showMobileFilters()) {
+      this.showMobileFilters.set(false);
+    }
+  }
 
   async ngOnInit(): Promise<void> {
     await this.refresh();

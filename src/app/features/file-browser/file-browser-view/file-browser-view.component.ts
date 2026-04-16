@@ -25,6 +25,9 @@ import { Subscription } from 'rxjs';
   imports: [CommonModule, FormsModule, LucideAngularModule, FileEditorModalComponent],
   templateUrl: './file-browser-view.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
+  host: {
+    '(document:keydown.escape)': 'onEscape()',
+  },
 })
 export class FileBrowserViewComponent implements OnInit, OnDestroy {
   readonly state = inject(FileBrowserState);
@@ -324,6 +327,18 @@ export class FileBrowserViewComponent implements OnInit, OnDestroy {
 
   cancelDelete(): void {
     this.confirmDeleteEntry.set(null);
+  }
+
+  onEscape(): void {
+    if (this.showCreateDirDialog()) {
+      this.showCreateDirDialog.set(false);
+    } else if (this.confirmDeleteEntry()) {
+      this.confirmDeleteEntry.set(null);
+    } else if (this.renameEntry()) {
+      this.renameEntry.set(null);
+    } else if (this.contextMenuEntry()) {
+      this.closeContextMenu();
+    }
   }
 
   async downloadEntry(entry: FileEntry): Promise<void> {

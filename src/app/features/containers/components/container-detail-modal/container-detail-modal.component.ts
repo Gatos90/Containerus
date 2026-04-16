@@ -29,6 +29,9 @@ import { ToastState } from '../../../../state/toast.state';
   imports: [LucideAngularModule, ContainerDetailsComponent],
   templateUrl: './container-detail-modal.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
+  host: {
+    '(document:keydown.escape)': 'close.emit()',
+  },
 })
 export class ContainerDetailModalComponent {
   private readonly terminalState = inject(TerminalState);

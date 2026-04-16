@@ -60,6 +60,7 @@ type CategoryInfo = {
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
     class: 'block w-full min-w-0',
+    '(document:keydown.escape)': 'onEscape()',
   },
 })
 export class CommandListComponent implements OnInit {
@@ -177,6 +178,12 @@ export class CommandListComponent implements OnInit {
       },
     ];
   });
+
+  onEscape(): void {
+    if (this.showMobileFilters()) {
+      this.showMobileFilters.set(false);
+    }
+  }
 
   async ngOnInit(): Promise<void> {
     await this.refresh();

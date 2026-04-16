@@ -108,13 +108,19 @@
         />
       }
     } @empty {
-      <div class="text-center py-12 text-zinc-500">
-        @if (systemState.connectedSystems().length === 0) {
-          <p>No systems connected. Go to Systems to connect.</p>
-        } @else {
-          <p>No networks match your filters.</p>
-        }
-      </div>
+      @if (systemState.connectedSystems().length === 0) {
+        <app-empty-state
+          [icon]="Server"
+          headline="No systems connected"
+          description="Connect a container host in the Systems section to start managing networks."
+        ></app-empty-state>
+      } @else {
+        <app-empty-state
+          [icon]="NetworkIcon"
+          headline="No networks found"
+          description="No networks match your current filters. Try adjusting or clearing them."
+        ></app-empty-state>
+      }
     }
   </div>
 </div>

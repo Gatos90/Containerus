@@ -24,6 +24,9 @@ import { WarpTerminalStore } from '../../state/warp-terminal-store.service';
   imports: [CommonModule, FormsModule, LucideAngularModule],
   templateUrl: './composer-bar.component.html',
   styleUrl: './composer-bar.component.css',
+  host: {
+    '(document:keydown.escape)': 'onDocumentEscape()',
+  },
 })
 export class ComposerBarComponent {
   @Output() submit = new EventEmitter<{ text: string; mode: 'command' | 'ai' }>();
@@ -240,6 +243,12 @@ export class ComposerBarComponent {
     this.showHistoryPopup.set(false);
     this.displayLimit.set(50); // Reset limit
     this.composerInput?.nativeElement.focus();
+  }
+
+  onDocumentEscape(): void {
+    if (this.showHistoryPopup()) {
+      this.closeHistoryPopup();
+    }
   }
 
   navigatePopup(direction: 1 | -1): void {

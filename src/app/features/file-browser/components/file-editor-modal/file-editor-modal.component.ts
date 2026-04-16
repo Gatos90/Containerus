@@ -10,6 +10,9 @@ import { FileBrowserState } from '../../../../state/file-browser.state';
   imports: [CommonModule, FormsModule, LucideAngularModule],
   templateUrl: './file-editor-modal.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
+  host: {
+    '(document:keydown.escape)': 'closeEditor()',
+  },
 })
 export class FileEditorModalComponent {
   readonly state = inject(FileBrowserState);
