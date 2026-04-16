@@ -404,8 +404,14 @@
 <!-- Create directory dialog -->
 @if (showCreateDirDialog()) {
   <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/60" (click)="showCreateDirDialog.set(false)">
-    <div class="bg-zinc-900 border border-zinc-700 rounded-xl p-4 w-80 shadow-xl" (click)="$event.stopPropagation()">
-      <h3 class="text-sm font-medium mb-3">Create New Folder</h3>
+    <div
+      class="bg-zinc-900 border border-zinc-700 rounded-xl p-4 w-80 shadow-xl"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="create-dir-title"
+      (click)="$event.stopPropagation()"
+    >
+      <h3 id="create-dir-title" class="text-sm font-medium mb-3">Create New Folder</h3>
       <input
         [ngModel]="newDirName()"
         (ngModelChange)="newDirName.set($event)"
@@ -437,8 +443,14 @@
 <!-- Delete confirmation dialog -->
 @if (confirmDeleteEntry()) {
   <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/60" (click)="cancelDelete()">
-    <div class="bg-zinc-900 border border-zinc-700 rounded-xl p-4 w-80 shadow-xl" (click)="$event.stopPropagation()">
-      <h3 class="text-sm font-medium mb-2">Confirm Delete</h3>
+    <div
+      class="bg-zinc-900 border border-zinc-700 rounded-xl p-4 w-80 shadow-xl"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="delete-confirm-title"
+      (click)="$event.stopPropagation()"
+    >
+      <h3 id="delete-confirm-title" class="text-sm font-medium mb-2">Confirm Delete</h3>
       <p class="text-sm text-zinc-400 mb-4">
         Are you sure you want to delete
         <span class="text-white font-medium">{{ confirmDeleteEntry()!.name }}</span>?
