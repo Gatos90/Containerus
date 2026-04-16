@@ -81,6 +81,71 @@ pub async fn pull_image(
     Ok(result.stdout)
 }
 
+/// Build an image from a Dockerfile in a context directory on the target system.
+///
+/// Returns the combined build log (stdout + stderr).
+#[tauri::command]
+pub async fn build_image(
+    state: State<'_, AppState>,
+    system_id: String,
+    context_path: String,
+    dockerfile: Option<String>,
+    image_name: String,
+    tag: String,
+    runtime: ContainerRuntime,
+    build_args: Vec<(String, String)>,
+    no_cache: bool,
+) -> Result<String, ContainerError> {
+    let system = state
+        .get_system(&system_id)
+        .ok_or_else(|| ContainerError::SystemNotFound(system_id.clone()))?;
+
+    let command = CommandBuilder::build_image(
+        runtime,
+        &context_path,
+        dockerfile.as_deref(),
+        &image_name,
+        &tag,
+        &build_args,
+        no_cache,
+    );
+
+    let result = match system.connection_type {
+        ConnectionType::Local => {
+            let executor = LocalExecutor::new();
+            executor.execute(&command).await?
+        }
+        ConnectionType::Remote => crate::ssh::execute_on_system(&system_id, &command).await?,
+    };
+
+    // Docker/Podman write build output to stderr; combine both streams
+    let succeeded = result.success();
+    let exit_code = result.exit_code;
+    let mut output = result.stdout;
+    if !result.stderr.is_empty() {
+        if !output.is_empty() {
+            output.push('\n');
+        }
+        output.push_str(&result.stderr);
+    }
+
+    if !succeeded {
+        return Err(ContainerError::CommandExecutionFailed {
+            command,
+            exit_code,
+            stderr: output,
+        });
+    }
+
+    tracing::info!(
+        "Built image {}:{} on system {}",
+        image_name,
+        tag,
+        system_id
+    );
+    Ok(output)
+}
+
 /// Remove an image
 #[tauri::command]
 pub async fn remove_image(

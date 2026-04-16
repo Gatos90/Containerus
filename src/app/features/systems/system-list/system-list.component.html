@@ -53,8 +53,8 @@
   @if (systemState.error()) {
     <div class="bg-red-500/10 border border-red-500/50 text-red-400 px-4 py-3 rounded-lg flex items-center justify-between">
       <span class="text-sm">{{ systemState.error() }}</span>
-      <button (click)="systemState.clearError()" class="p-1 text-red-400 hover:text-red-300">
-        <lucide-icon [img]="X" class="w-4 h-4"></lucide-icon>
+      <button (click)="systemState.clearError()" class="p-1 text-red-400 hover:text-red-300" aria-label="Dismiss error">
+        <lucide-icon [img]="X" class="w-4 h-4" aria-hidden="true"></lucide-icon>
       </button>
     </div>
   }
@@ -70,6 +70,7 @@
       <input
         type="text"
         placeholder="Search systems..."
+        aria-label="Search systems"
         [ngModel]="systemState.searchQuery()"
         (ngModelChange)="systemState.setSearchQuery($event)"
         class="w-full h-9 pl-10 pr-4 bg-zinc-800 border border-zinc-700 rounded-lg text-sm placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -455,8 +456,8 @@
         @if (systemState.error()) {
           <div class="bg-red-500/10 border border-red-500/50 text-red-400 px-4 py-3 rounded-lg flex items-center justify-between mb-4">
             <span class="text-sm">{{ systemState.error() }}</span>
-            <button (click)="systemState.clearError()" class="p-1 text-red-400 hover:text-red-300">
-              <lucide-icon [img]="X" class="w-4 h-4"></lucide-icon>
+            <button (click)="systemState.clearError()" class="p-1 text-red-400 hover:text-red-300" aria-label="Dismiss error">
+              <lucide-icon [img]="X" class="w-4 h-4" aria-hidden="true"></lucide-icon>
             </button>
           </div>
         }
@@ -818,8 +819,8 @@
         @if (systemState.error()) {
           <div class="bg-red-500/10 border border-red-500/50 text-red-400 px-4 py-3 rounded-lg flex items-center justify-between mb-4">
             <span class="text-sm">{{ systemState.error() }}</span>
-            <button (click)="systemState.clearError()" class="p-1 text-red-400 hover:text-red-300">
-              <lucide-icon [img]="X" class="w-4 h-4"></lucide-icon>
+            <button (click)="systemState.clearError()" class="p-1 text-red-400 hover:text-red-300" aria-label="Dismiss error">
+              <lucide-icon [img]="X" class="w-4 h-4" aria-hidden="true"></lucide-icon>
             </button>
           </div>
         }

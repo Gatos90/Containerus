@@ -6,6 +6,19 @@ import { ContainerState } from './container.state';
 
 export type ImageUsageFilter = 'all' | 'in-use' | 'unused' | 'dangling';
 
+export interface ImageBuildJob {
+  /** Stable key: "{systemId}:{imageName}:{tag}" */
+  key: string;
+  systemId: string;
+  imageName: string;
+  tag: string;
+  status: 'building' | 'success' | 'error';
+  log: string;
+  error?: string;
+  startedAt: Date;
+  completedAt?: Date;
+}
+
 @Injectable({ providedIn: 'root' })
 export class ImageState {
   private containerState = inject(ContainerState);
@@ -14,6 +27,7 @@ export class ImageState {
   private _loading = signal<Record<string, boolean>>({});
   private _error = signal<string | null>(null);
   private _pullProgress = signal<Record<string, string>>({});
+  private _buildJobs = signal<ImageBuildJob[]>([]);
 
   private _runtimeFilter = signal<ContainerRuntime | null>(null);
   private _searchQuery = signal<string>('');
@@ -25,6 +39,7 @@ export class ImageState {
   readonly loading = this._loading.asReadonly();
   readonly error = this._error.asReadonly();
   readonly pullProgress = this._pullProgress.asReadonly();
+  readonly buildJobs = this._buildJobs.asReadonly();
 
   readonly runtimeFilter = this._runtimeFilter.asReadonly();
   readonly searchQuery = this._searchQuery.asReadonly();
@@ -201,6 +216,81 @@ export class ImageState {
     } finally {
       this._loading.update((l) => ({ ...l, [image.id]: false }));
     }
+  }
+
+  async buildImage(
+    systemId: string,
+    contextPath: string,
+    dockerfile: string | null,
+    imageName: string,
+    tag: string,
+    runtime: ContainerRuntime,
+    buildArgs: [string, string][],
+    noCache: boolean
+  ): Promise<ImageBuildJob> {
+    const key = `${systemId}:${imageName}:${tag}`;
+    const job: ImageBuildJob = {
+      key,
+      systemId,
+      imageName,
+      tag,
+      status: 'building',
+      log: '',
+      startedAt: new Date(),
+    };
+
+    this._buildJobs.update((jobs) => {
+      // Replace existing job for same key, or append
+      const idx = jobs.findIndex((j) => j.key === key);
+      if (idx >= 0) {
+        const updated = [...jobs];
+        updated[idx] = job;
+        return updated;
+      }
+      return [...jobs, job];
+    });
+
+    try {
+      const log = await this.imageService.buildImage(
+        systemId,
+        contextPath,
+        dockerfile,
+        imageName,
+        tag,
+        runtime,
+        buildArgs,
+        noCache
+      );
+      const finished: ImageBuildJob = {
+        ...job,
+        status: 'success',
+        log,
+        completedAt: new Date(),
+      };
+      this._buildJobs.update((jobs) =>
+        jobs.map((j) => (j.key === key ? finished : j))
+      );
+      // Refresh image list so the newly built image appears
+      await this.loadImages(systemId);
+      return finished;
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      const failed: ImageBuildJob = {
+        ...job,
+        status: 'error',
+        log: '',
+        error: errMsg,
+        completedAt: new Date(),
+      };
+      this._buildJobs.update((jobs) =>
+        jobs.map((j) => (j.key === key ? failed : j))
+      );
+      return failed;
+    }
+  }
+
+  dismissBuildJob(key: string): void {
+    this._buildJobs.update((jobs) => jobs.filter((j) => j.key !== key));
   }
 
   setRuntimeFilter(runtime: ContainerRuntime | null): void {

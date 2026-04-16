@@ -89,6 +89,9 @@ export type Workload =
     HelpTooltipComponent,
   ],
   templateUrl: './container-list.component.html',
+  host: {
+    '(document:keydown.escape)': 'onEscape()',
+  },
 })
 export class ContainerListComponent implements OnInit {
   readonly containerState = inject(ContainerState);
@@ -446,6 +449,14 @@ export class ContainerListComponent implements OnInit {
 
   cancelAction(): void {
     this.confirmAction.set(null);
+  }
+
+  onEscape(): void {
+    if (this.showMobileFilters()) {
+      this.showMobileFilters.set(false);
+    } else if (this.confirmAction()) {
+      this.confirmAction.set(null);
+    }
   }
 
   private async executeAction(container: Container, action: ContainerAction): Promise<void> {

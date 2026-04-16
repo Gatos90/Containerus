@@ -22,6 +22,7 @@
         [ngModel]="searchQuery()"
         (ngModelChange)="onSearchChange($event)"
         placeholder="Search commands or type a new command..."
+        aria-label="Search commands or type a new command"
         class="w-full pl-12 pr-4 py-4 bg-transparent text-lg focus:outline-none placeholder-zinc-500"
         autocomplete="off"
         spellcheck="false"

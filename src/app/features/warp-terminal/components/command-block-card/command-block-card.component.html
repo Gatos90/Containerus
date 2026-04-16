@@ -34,19 +34,20 @@
         <span class="meta">{{ block.status.endedAt | date: 'shortTime' }}</span>
       }
       <div class="action-row">
-        <button class="action-button" (click)="copyCommand.emit()" title="Copy command">
-          <lucide-icon [img]="Terminal" class="w-4 h-4"></lucide-icon>
+        <button class="action-button" (click)="copyCommand.emit()" title="Copy command" aria-label="Copy command">
+          <lucide-icon [img]="Terminal" class="w-4 h-4" aria-hidden="true"></lucide-icon>
         </button>
-        <button class="action-button" (click)="copyOutput.emit()" title="Copy output">
-          <lucide-icon [img]="FileText" class="w-4 h-4"></lucide-icon>
+        <button class="action-button" (click)="copyOutput.emit()" title="Copy output" aria-label="Copy output">
+          <lucide-icon [img]="FileText" class="w-4 h-4" aria-hidden="true"></lucide-icon>
         </button>
-        <button class="action-button" (click)="rerun.emit()" title="Rerun">
-          <lucide-icon [img]="Play" class="w-4 h-4"></lucide-icon>
+        <button class="action-button" (click)="rerun.emit()" title="Rerun" aria-label="Rerun">
+          <lucide-icon [img]="Play" class="w-4 h-4" aria-hidden="true"></lucide-icon>
         </button>
-        <button class="action-button" (click)="toggleCollapse.emit()" title="Collapse">
+        <button class="action-button" (click)="toggleCollapse.emit()" title="Collapse" aria-label="Collapse">
           <lucide-icon
             [img]="block.isCollapsed ? ChevronRight : ChevronDown"
             class="w-4 h-4"
+            aria-hidden="true"
           ></lucide-icon>
         </button>
       </div>

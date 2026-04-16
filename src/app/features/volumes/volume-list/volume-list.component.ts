@@ -20,6 +20,9 @@ import { SystemVolumeSectionComponent } from '../components/system-volume-sectio
   imports: [CommonModule, FormsModule, LucideAngularModule, SystemVolumeSectionComponent],
   templateUrl: './volume-list.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
+  host: {
+    '(document:keydown.escape)': 'onEscape()',
+  },
 })
 export class VolumeListComponent implements OnInit {
   readonly volumeState = inject(VolumeState);
@@ -57,6 +60,12 @@ export class VolumeListComponent implements OnInit {
 
     return grouped;
   });
+
+  onEscape(): void {
+    if (this.showMobileFilters()) {
+      this.showMobileFilters.set(false);
+    }
+  }
 
   async ngOnInit(): Promise<void> {
     await this.refresh();

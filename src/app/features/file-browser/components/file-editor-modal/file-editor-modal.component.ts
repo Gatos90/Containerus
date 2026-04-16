@@ -12,6 +12,9 @@ import { detectLanguage } from '../../../../shared/utils/language-detection';
   imports: [CommonModule, FormsModule, LucideAngularModule, MonacoEditorComponent],
   templateUrl: './file-editor-modal.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
+  host: {
+    '(document:keydown.escape)': 'closeEditor()',
+  },
 })
 export class FileEditorModalComponent {
   readonly state = inject(FileBrowserState);

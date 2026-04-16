@@ -139,6 +139,7 @@ pub fn run() {
             commands::list_images,
             commands::pull_image,
             commands::remove_image,
+            commands::build_image,
             // Volume commands
             commands::list_volumes,
             commands::create_volume,

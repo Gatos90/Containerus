@@ -22,7 +22,7 @@
         title="Filters"
         aria-label="Filters"
       >
-        <lucide-icon [img]="SlidersHorizontal" class="w-4 h-4"></lucide-icon>
+        <lucide-icon [img]="SlidersHorizontal" class="w-4 h-4" aria-hidden="true"></lucide-icon>
       </button>
 
       <!-- Create Volume Button -->
@@ -30,7 +30,7 @@
         (click)="showCreateDialog = true"
         class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 transition-colors text-sm"
       >
-        <lucide-icon [img]="Plus" class="w-4 h-4"></lucide-icon>
+        <lucide-icon [img]="Plus" class="w-4 h-4" aria-hidden="true"></lucide-icon>
         <span class="hidden sm:inline">Create Volume</span>
       </button>
 

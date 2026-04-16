@@ -68,4 +68,3 @@ src-tauri/gen/
 
 scripts/.config.sh
 crates/containerus-server/.env
-target/

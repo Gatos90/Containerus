@@ -24,7 +24,7 @@
         title="Filters"
         aria-label="Filters"
       >
-        <lucide-icon [img]="SlidersHorizontal" class="w-4 h-4"></lucide-icon>
+        <lucide-icon [img]="SlidersHorizontal" class="w-4 h-4" aria-hidden="true"></lucide-icon>
       </button>
 
       <!-- Create Network Button -->
@@ -32,7 +32,7 @@
         (click)="showCreateDialog = true"
         class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 transition-colors text-sm"
       >
-        <lucide-icon [img]="Plus" class="w-4 h-4"></lucide-icon>
+        <lucide-icon [img]="Plus" class="w-4 h-4" aria-hidden="true"></lucide-icon>
         <span class="hidden sm:inline">Create Network</span>
       </button>
 
@@ -111,13 +111,19 @@
         />
       }
     } @empty {
-      <div class="text-center py-12 text-zinc-500">
-        @if (systemState.connectedSystems().length === 0) {
-          <p>No systems connected. Go to Systems to connect.</p>
-        } @else {
-          <p>No networks match your filters.</p>
-        }
-      </div>
+      @if (systemState.connectedSystems().length === 0) {
+        <app-empty-state
+          [icon]="Server"
+          headline="No systems connected"
+          description="Connect a container host in the Systems section to start managing networks."
+        ></app-empty-state>
+      } @else {
+        <app-empty-state
+          [icon]="NetworkIcon"
+          headline="No networks found"
+          description="No networks match your current filters. Try adjusting or clearing them."
+        ></app-empty-state>
+      }
     }
   </div>
 </div>

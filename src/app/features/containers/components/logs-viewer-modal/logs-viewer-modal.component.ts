@@ -34,6 +34,9 @@ import { ClipboardService } from '../../../../core/services/clipboard.service';
   imports: [LucideAngularModule, FormsModule],
   templateUrl: './logs-viewer-modal.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
+  host: {
+    '(document:keydown.escape)': 'close.emit()',
+  },
 })
 export class LogsViewerModalComponent {
   private containerService = inject(ContainerService);

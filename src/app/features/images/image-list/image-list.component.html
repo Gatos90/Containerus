@@ -27,7 +27,16 @@
         title="Filters"
         aria-label="Filters"
       >
-        <lucide-icon [img]="SlidersHorizontal" class="w-4 h-4"></lucide-icon>
+        <lucide-icon [img]="SlidersHorizontal" class="w-4 h-4" aria-hidden="true"></lucide-icon>
+      </button>
+
+      <!-- Build Image Button -->
+      <button
+        (click)="openBuildDialog()"
+        class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-700 hover:bg-emerald-600 transition-colors text-sm"
+      >
+        <lucide-icon [img]="Hammer" class="w-4 h-4"></lucide-icon>
+        <span class="hidden sm:inline">Build Image</span>
       </button>
 
       <!-- Pull Image Button -->
@@ -35,7 +44,7 @@
         (click)="showPullDialog = true"
         class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 transition-colors text-sm"
       >
-        <lucide-icon [img]="Download" class="w-4 h-4"></lucide-icon>
+        <lucide-icon [img]="Download" class="w-4 h-4" aria-hidden="true"></lucide-icon>
         <span class="hidden sm:inline">Pull Image</span>
       </button>
 
@@ -229,6 +238,216 @@
       >
         Apply Filters
       </button>
+    </div>
+  </div>
+}
+
+<!-- Build Image Dialog -->
+@if (showBuildDialog) {
+  <div class="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+    <div class="bg-zinc-900 border border-zinc-700 rounded-xl w-full max-w-lg max-h-[90vh] flex flex-col">
+
+      <!-- Header -->
+      <div class="flex items-center justify-between p-5 border-b border-zinc-700 shrink-0">
+        <div class="flex items-center gap-2">
+          <lucide-icon [img]="Hammer" class="w-5 h-5 text-emerald-400"></lucide-icon>
+          <h2 class="text-lg font-semibold">Build Image</h2>
+        </div>
+        <button
+          (click)="closeBuildDialog()"
+          [disabled]="building"
+          class="p-1.5 rounded-lg hover:bg-zinc-800 disabled:opacity-40 transition-colors"
+        >
+          <lucide-icon [img]="X" class="w-4 h-4"></lucide-icon>
+        </button>
+      </div>
+
+      <!-- Form -->
+      <div class="overflow-y-auto flex-1 p-5 space-y-4">
+
+        <!-- System + Runtime -->
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs text-zinc-400 mb-1">System</label>
+            <select
+              [(ngModel)]="buildForm.systemId"
+              [disabled]="building"
+              class="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm disabled:opacity-50"
+            >
+              @for (system of systemState.connectedSystems(); track system.id) {
+                <option [value]="system.id">{{ system.name }}</option>
+              }
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs text-zinc-400 mb-1">Runtime</label>
+            <select
+              [(ngModel)]="buildForm.runtime"
+              [disabled]="building"
+              class="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm disabled:opacity-50"
+            >
+              <option value="docker">Docker</option>
+              <option value="podman">Podman</option>
+              <option value="apple">Apple</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Image Name + Tag -->
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs text-zinc-400 mb-1">Image Name <span class="text-red-400">*</span></label>
+            <input
+              type="text"
+              [(ngModel)]="buildForm.imageName"
+              [disabled]="building"
+              placeholder="myapp"
+              class="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm disabled:opacity-50"
+            />
+          </div>
+          <div>
+            <label class="block text-xs text-zinc-400 mb-1">Tag</label>
+            <input
+              type="text"
+              [(ngModel)]="buildForm.tag"
+              [disabled]="building"
+              placeholder="latest"
+              class="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm disabled:opacity-50"
+            />
+          </div>
+        </div>
+
+        <!-- Context Path -->
+        <div>
+          <label class="block text-xs text-zinc-400 mb-1">
+            Build Context Path <span class="text-red-400">*</span>
+            <span class="text-zinc-500 font-normal ml-1">(path on target system)</span>
+          </label>
+          <input
+            type="text"
+            [(ngModel)]="buildForm.contextPath"
+            [disabled]="building"
+            placeholder="/home/user/myapp or ."
+            class="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm font-mono disabled:opacity-50"
+          />
+        </div>
+
+        <!-- Dockerfile (optional) -->
+        <div>
+          <label class="block text-xs text-zinc-400 mb-1">
+            Dockerfile
+            <span class="text-zinc-500 font-normal ml-1">(optional, relative to context)</span>
+          </label>
+          <input
+            type="text"
+            [(ngModel)]="buildForm.dockerfile"
+            [disabled]="building"
+            placeholder="Dockerfile"
+            class="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm font-mono disabled:opacity-50"
+          />
+        </div>
+
+        <!-- Build Args -->
+        <div>
+          <div class="flex items-center justify-between mb-1">
+            <label class="text-xs text-zinc-400">Build Args</label>
+            <button
+              (click)="addBuildArg()"
+              [disabled]="building"
+              class="flex items-center gap-1 text-xs text-zinc-400 hover:text-zinc-200 disabled:opacity-40 transition-colors"
+            >
+              <lucide-icon [img]="Plus" class="w-3.5 h-3.5"></lucide-icon>
+              Add
+            </button>
+          </div>
+          @if (buildForm.buildArgs.length > 0) {
+            <div class="space-y-2">
+              @for (arg of buildForm.buildArgs; track $index) {
+                <div class="flex items-center gap-2">
+                  <input
+                    type="text"
+                    [(ngModel)]="arg.key"
+                    [disabled]="building"
+                    placeholder="KEY"
+                    class="flex-1 px-2 py-1.5 bg-zinc-800 border border-zinc-700 rounded-lg text-xs font-mono disabled:opacity-50"
+                  />
+                  <span class="text-zinc-500 text-xs">=</span>
+                  <input
+                    type="text"
+                    [(ngModel)]="arg.value"
+                    [disabled]="building"
+                    placeholder="value"
+                    class="flex-1 px-2 py-1.5 bg-zinc-800 border border-zinc-700 rounded-lg text-xs font-mono disabled:opacity-50"
+                  />
+                  <button
+                    (click)="removeBuildArg($index)"
+                    [disabled]="building"
+                    class="p-1 text-zinc-500 hover:text-red-400 disabled:opacity-40 transition-colors"
+                  >
+                    <lucide-icon [img]="Trash2" class="w-3.5 h-3.5"></lucide-icon>
+                  </button>
+                </div>
+              }
+            </div>
+          }
+        </div>
+
+        <!-- No Cache -->
+        <label class="flex items-center gap-2 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            [(ngModel)]="buildForm.noCache"
+            [disabled]="building"
+            class="w-4 h-4 rounded accent-emerald-500 disabled:opacity-50"
+          />
+          <span class="text-sm text-zinc-300">No cache <span class="text-xs text-zinc-500">(--no-cache)</span></span>
+        </label>
+
+        <!-- Build Output -->
+        @if (showBuildOutput) {
+          <div>
+            <div class="flex items-center gap-2 mb-2">
+              @if (building) {
+                <lucide-icon [img]="Loader" class="w-4 h-4 text-emerald-400 animate-spin"></lucide-icon>
+                <span class="text-xs text-zinc-400">Building…</span>
+              } @else if (buildError) {
+                <lucide-icon [img]="AlertCircle" class="w-4 h-4 text-red-400"></lucide-icon>
+                <span class="text-xs text-red-400">Build failed</span>
+              } @else {
+                <lucide-icon [img]="CheckCircle" class="w-4 h-4 text-emerald-400"></lucide-icon>
+                <span class="text-xs text-emerald-400">Build succeeded</span>
+              }
+            </div>
+            <pre class="bg-zinc-950 border border-zinc-700 rounded-lg p-3 text-xs font-mono text-zinc-300 max-h-52 overflow-y-auto whitespace-pre-wrap break-all">{{ buildError || buildLog || 'Waiting for output…' }}</pre>
+          </div>
+        }
+
+      </div>
+
+      <!-- Footer -->
+      <div class="flex justify-end gap-2 p-4 border-t border-zinc-700 shrink-0">
+        <button
+          (click)="closeBuildDialog()"
+          [disabled]="building"
+          class="px-4 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-sm disabled:opacity-40 transition-colors"
+        >
+          {{ showBuildOutput && !building ? 'Close' : 'Cancel' }}
+        </button>
+        <button
+          (click)="buildImage()"
+          [disabled]="building || !buildForm.imageName || !buildForm.systemId || !buildForm.contextPath"
+          class="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-700 hover:bg-emerald-600 text-sm disabled:opacity-40 transition-colors"
+        >
+          @if (building) {
+            <lucide-icon [img]="Loader" class="w-4 h-4 animate-spin"></lucide-icon>
+            Building…
+          } @else {
+            <lucide-icon [img]="Hammer" class="w-4 h-4"></lucide-icon>
+            Build
+          }
+        </button>
+      </div>
+
     </div>
   </div>
 }
