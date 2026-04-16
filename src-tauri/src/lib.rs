@@ -10,6 +10,7 @@ pub mod agent;
 pub mod backend_forward;
 pub mod commands;
 pub mod credential_migration;
+pub mod crypto;
 pub mod database;
 pub mod keyring_store;
 pub mod monitoring;
@@ -125,6 +126,7 @@ pub fn run() {
             commands::update_app_settings,
             commands::get_changelog,
             commands::remove_known_host,
+            commands::add_known_host,
             // Container commands
             commands::list_containers,
             commands::perform_container_action,

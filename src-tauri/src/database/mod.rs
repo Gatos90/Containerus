@@ -33,7 +33,14 @@ pub use systems::{
 /// Initialize the database and create tables if they don't exist
 pub fn init_database(path: &Path) -> SqliteResult<Connection> {
     let conn = Connection::open(path)?;
+    init_database_schema(&conn)?;
+    Ok(conn)
+}
 
+/// Apply the full schema (tables + idempotent migrations) to an existing
+/// connection. Exposed so in-memory test databases can share the same schema
+/// without touching disk.
+pub fn init_database_schema(conn: &Connection) -> SqliteResult<()> {
     conn.execute(
         "CREATE TABLE IF NOT EXISTS systems (
             id TEXT PRIMARY KEY,
@@ -119,6 +126,51 @@ pub fn init_database(path: &Path) -> SqliteResult<Connection> {
         [],
     );
 
+    // CON-42: replace XOR obfuscation with AES-256-GCM authenticated encryption.
+    // Add per-column random nonces + a crypto_version tag. crypto_version values:
+    //   1 = legacy XOR (read-only, cleared by the startup migration sweep)
+    //   2 = AES-256-GCM (new writes)
+    let _ = conn.execute(
+        "ALTER TABLE ssh_credentials ADD COLUMN password_nonce TEXT",
+        [],
+    );
+    let _ = conn.execute(
+        "ALTER TABLE ssh_credentials ADD COLUMN passphrase_nonce TEXT",
+        [],
+    );
+    let _ = conn.execute(
+        "ALTER TABLE ssh_credentials ADD COLUMN private_key_nonce TEXT",
+        [],
+    );
+    let _ = conn.execute(
+        "ALTER TABLE ssh_credentials ADD COLUMN crypto_version INTEGER",
+        [],
+    );
+    // Tag any pre-existing rows as legacy XOR so the reader picks the right path.
+    let _ = conn.execute(
+        "UPDATE ssh_credentials SET crypto_version = 1
+         WHERE crypto_version IS NULL
+           AND (password_enc IS NOT NULL
+                OR passphrase_enc IS NOT NULL
+                OR private_key_enc IS NOT NULL)",
+        [],
+    );
+
+    // CON-42: AI api_key on Android was stored plaintext. Add dedicated ciphertext
+    // + nonce columns so the legacy plaintext `api_key` column can be cleared.
+    let _ = conn.execute(
+        "ALTER TABLE ai_settings ADD COLUMN api_key_enc TEXT",
+        [],
+    );
+    let _ = conn.execute(
+        "ALTER TABLE ai_settings ADD COLUMN api_key_nonce TEXT",
+        [],
+    );
+    let _ = conn.execute(
+        "ALTER TABLE ai_settings ADD COLUMN api_key_crypto_version INTEGER",
+        [],
+    );
+
     // Backend connections table - stores server URLs for persistent backend connections
     conn.execute(
         "CREATE TABLE IF NOT EXISTS backend_connections (
@@ -168,9 +220,9 @@ pub fn init_database(path: &Path) -> SqliteResult<Connection> {
     );
 
     // Seed built-in templates if table is empty
-    command_templates::seed_built_in_templates(&conn)?;
+    command_templates::seed_built_in_templates(conn)?;
 
-    Ok(conn)
+    Ok(())
 }
 
 #[cfg(test)]
@@ -385,10 +437,14 @@ mod db_tests {
         assert_eq!(after2.is_favorite, initial_fav);
     }
 
+    fn test_vault() -> crate::crypto::LocalVault {
+        crate::crypto::LocalVault::from_key_bytes(&[0x33u8; 32])
+    }
+
     #[test]
     fn test_ai_settings_default() {
         let conn = setup_db();
-        let settings = get_ai_settings(&conn).unwrap();
+        let settings = get_ai_settings(&conn, None).unwrap();
         assert_eq!(settings.provider, crate::ai::AiProviderType::Ollama);
         assert_eq!(settings.model_name, "llama3.2");
         assert_eq!(settings.endpoint_url, "http://localhost:11434");
@@ -397,6 +453,7 @@ mod db_tests {
     #[test]
     fn test_ai_settings_upsert() {
         let conn = setup_db();
+        let v = test_vault();
 
         let settings = crate::ai::AiSettings {
             provider: crate::ai::AiProviderType::OpenAi,
@@ -411,9 +468,9 @@ mod db_tests {
             api_version: None,
         };
 
-        upsert_ai_settings(&conn, &settings).unwrap();
+        upsert_ai_settings(&conn, Some(&v), &settings).unwrap();
 
-        let retrieved = get_ai_settings(&conn).unwrap();
+        let retrieved = get_ai_settings(&conn, Some(&v)).unwrap();
         assert_eq!(retrieved.provider, crate::ai::AiProviderType::OpenAi);
         assert_eq!(retrieved.api_key.as_deref(), Some("sk-test"));
         assert_eq!(retrieved.model_name, "gpt-4o");
@@ -431,16 +488,16 @@ mod db_tests {
             model_name: "gpt-4o".to_string(),
             ..crate::ai::AiSettings::default()
         };
-        upsert_ai_settings(&conn, &settings1).unwrap();
+        upsert_ai_settings(&conn, None, &settings1).unwrap();
 
         let settings2 = crate::ai::AiSettings {
             provider: crate::ai::AiProviderType::Anthropic,
             model_name: "claude-3".to_string(),
             ..crate::ai::AiSettings::default()
         };
-        upsert_ai_settings(&conn, &settings2).unwrap();
+        upsert_ai_settings(&conn, None, &settings2).unwrap();
 
-        let retrieved = get_ai_settings(&conn).unwrap();
+        let retrieved = get_ai_settings(&conn, None).unwrap();
         assert_eq!(retrieved.provider, crate::ai::AiProviderType::Anthropic);
         assert_eq!(retrieved.model_name, "claude-3");
     }
@@ -448,6 +505,7 @@ mod db_tests {
     #[test]
     fn test_ssh_credentials_store_and_retrieve() {
         let conn = setup_db();
+        let v = test_vault();
 
         let system = ContainerSystem {
             id: SystemId("cred-sys".to_string()),
@@ -461,9 +519,9 @@ mod db_tests {
         };
         insert_system(&conn, &system).unwrap();
 
-        store_ssh_credentials(&conn, "cred-sys", Some("mypassword"), None, None).unwrap();
+        store_ssh_credentials(&conn, Some(&v), "cred-sys", Some("mypassword"), None, None).unwrap();
 
-        let creds = get_ssh_credentials(&conn, "cred-sys").unwrap();
+        let creds = get_ssh_credentials(&conn, Some(&v), "cred-sys").unwrap();
         assert_eq!(creds.password.as_deref(), Some("mypassword"));
         assert!(creds.passphrase.is_none());
         assert!(creds.private_key.is_none());
@@ -472,6 +530,7 @@ mod db_tests {
     #[test]
     fn test_ssh_credentials_with_passphrase_and_key() {
         let conn = setup_db();
+        let v = test_vault();
 
         let system = ContainerSystem {
             id: SystemId("key-sys".to_string()),
@@ -487,6 +546,7 @@ mod db_tests {
 
         store_ssh_credentials(
             &conn,
+            Some(&v),
             "key-sys",
             None,
             Some("my-passphrase"),
@@ -494,7 +554,7 @@ mod db_tests {
         )
         .unwrap();
 
-        let creds = get_ssh_credentials(&conn, "key-sys").unwrap();
+        let creds = get_ssh_credentials(&conn, Some(&v), "key-sys").unwrap();
         assert!(creds.password.is_none());
         assert_eq!(creds.passphrase.as_deref(), Some("my-passphrase"));
         assert_eq!(creds.private_key.as_deref(), Some("PEM-KEY-DATA"));
@@ -503,7 +563,7 @@ mod db_tests {
     #[test]
     fn test_ssh_credentials_nonexistent_returns_default() {
         let conn = setup_db();
-        let creds = get_ssh_credentials(&conn, "nonexistent").unwrap();
+        let creds = get_ssh_credentials(&conn, None, "nonexistent").unwrap();
         assert!(creds.password.is_none());
         assert!(creds.passphrase.is_none());
         assert!(creds.private_key.is_none());
@@ -512,6 +572,7 @@ mod db_tests {
     #[test]
     fn test_ssh_credentials_delete() {
         let conn = setup_db();
+        let v = test_vault();
 
         let system = ContainerSystem {
             id: SystemId("del-sys".to_string()),
@@ -525,10 +586,10 @@ mod db_tests {
         };
         insert_system(&conn, &system).unwrap();
 
-        store_ssh_credentials(&conn, "del-sys", Some("pass"), None, None).unwrap();
+        store_ssh_credentials(&conn, Some(&v), "del-sys", Some("pass"), None, None).unwrap();
         delete_ssh_credentials(&conn, "del-sys").unwrap();
 
-        let creds = get_ssh_credentials(&conn, "del-sys").unwrap();
+        let creds = get_ssh_credentials(&conn, Some(&v), "del-sys").unwrap();
         assert!(creds.password.is_none());
     }
 

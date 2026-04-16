@@ -66,6 +66,10 @@ dirs = "5.0"
 glob = "0.3"
 base64 = "0.22"
 
+# Authenticated encryption (AES-256-GCM) for local credential storage (CON-42)
+aes-gcm = "0.10"
+rand = "0.8"
+
 # Concurrency
 parking_lot = "0.12"
 dashmap = "6"
