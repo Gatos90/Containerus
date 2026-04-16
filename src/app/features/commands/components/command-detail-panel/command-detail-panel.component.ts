@@ -8,9 +8,6 @@ import {
   Trash2,
   Edit,
   Play,
-  Ship,
-  Container,
-  Apple,
   Lock,
   Tag,
   Variable,
@@ -23,7 +20,7 @@ import {
   getRuntimeLabel,
   parseVariables,
 } from '../../../../core/models/command-template.model';
-import { ContainerRuntime } from '../../../../core/models/container.model';
+import { ContainerRuntime, getRuntimeIcon } from '../../../../core/models/container.model';
 
 @Component({
   selector: 'app-command-detail-panel',
@@ -219,9 +216,6 @@ export class CommandDetailPanelComponent {
   readonly Trash2 = Trash2;
   readonly Edit = Edit;
   readonly Play = Play;
-  readonly Ship = Ship;
-  readonly Container = Container;
-  readonly Apple = Apple;
   readonly Lock = Lock;
   readonly Tag = Tag;
   readonly Variable = Variable;
@@ -230,22 +224,10 @@ export class CommandDetailPanelComponent {
   readonly getCategoryLabel = getCategoryLabel;
   readonly getCategoryIcon = getCategoryIcon;
   readonly getRuntimeLabel = getRuntimeLabel;
+  readonly getRuntimeIcon = getRuntimeIcon;
 
   get detectedVariables(): string[] {
     return parseVariables(this.template().command);
-  }
-
-  getRuntimeIcon(runtime: ContainerRuntime): typeof Ship {
-    switch (runtime) {
-      case 'docker':
-        return Ship;
-      case 'podman':
-        return Container;
-      case 'apple':
-        return Apple;
-      default:
-        return Container;
-    }
   }
 
   formatDate(dateString: string): string {

@@ -5,7 +5,6 @@ import { ContainerActionsService } from './container-actions.service';
 import { ContainerWorkloadComponent, PodEntry } from './container-workload.component';
 import {
   LucideAngularModule,
-  LucideIconData,
   Play,
   Square,
   RotateCcw,
@@ -28,18 +27,17 @@ import {
   X,
   Link,
   FolderOpen,
-  Cloud,
   Loader2,
-  Ship,
-  Box,
-  Apple,
   Server,
 } from 'lucide-angular';
 import {
   Container,
   ContainerAction,
+  ContainerRuntime,
   getAvailableActions,
   getDisplayName,
+  getRuntimeColor,
+  getRuntimeIcon,
   getRelativeTime,
   getStatusColor,
   getStatusText,
@@ -67,6 +65,12 @@ import { Router } from '@angular/router';
 export type Workload =
   | { kind: 'container'; container: Container }
   | { kind: 'pod'; pod: K8sPod; clusterName: string; clusterId: string; connectionId: string };
+
+interface SystemDisplayInfo {
+  name: string;
+  primaryRuntime: ContainerRuntime | 'kubernetes';
+  hostname: string;
+}
 
 @Component({
   selector: 'app-container-list',
@@ -127,11 +131,7 @@ export class ContainerListComponent implements OnInit {
   readonly SlidersHorizontal = SlidersHorizontal;
   readonly X = X;
   readonly Link = Link;
-  readonly Cloud = Cloud;
   readonly Loader2 = Loader2;
-  readonly Ship = Ship;
-  readonly Box = Box;
-  readonly Apple = Apple;
   readonly Server = Server;
 
   // Helper functions
@@ -142,30 +142,12 @@ export class ContainerListComponent implements OnInit {
   readonly formatPort = formatPort;
   readonly getAvailableActions = getAvailableActions;
   readonly isRunning = isRunning;
-
-  getRuntimeIcon(runtime: string): LucideIconData {
-    switch (runtime) {
-      case 'docker': return Ship;
-      case 'podman': return Box;
-      case 'apple': return Apple;
-      case 'kubernetes': return Cloud;
-      default: return Box;
-    }
-  }
-
-  getRuntimeColor(runtime: string): string {
-    switch (runtime) {
-      case 'docker': return 'text-blue-400';
-      case 'podman': return 'text-indigo-400';
-      case 'apple': return 'text-zinc-400';
-      case 'kubernetes': return 'text-purple-400';
-      default: return 'text-zinc-500';
-    }
-  }
+  readonly getRuntimeIcon = getRuntimeIcon;
+  readonly getRuntimeColor = getRuntimeColor;
 
   // Runtime filter dropdown
   showRuntimeDropdown = signal(false);
-  readonly runtimeOptions = [
+  readonly runtimeOptions: { value: ContainerRuntime | 'kubernetes'; label: string }[] = [
     { value: 'docker', label: 'Docker' },
     { value: 'podman', label: 'Podman' },
     { value: 'apple', label: 'Apple' },
@@ -176,8 +158,8 @@ export class ContainerListComponent implements OnInit {
     this.showRuntimeDropdown.update(v => !v);
   }
 
-  selectRuntimeFilter(value: string | null): void {
-    this.containerState.setRuntimeFilter(value as any);
+  selectRuntimeFilter(value: ContainerRuntime | 'kubernetes' | null): void {
+    this.containerState.setRuntimeFilter(value);
     this.showRuntimeDropdown.set(false);
   }
 
@@ -199,13 +181,13 @@ export class ContainerListComponent implements OnInit {
     return [...seen.values()];
   });
 
-  selectedSystemDisplay = computed(() => {
+  selectedSystemDisplay = computed<SystemDisplayInfo | null>(() => {
     const id = this.containerState.systemFilter();
     if (!id) return null;
     if (id.startsWith('cluster:')) {
       const clusterId = id.slice('cluster:'.length);
       const c = this.availableClusters().find(c => c.clusterId === clusterId);
-      if (c) return { name: c.clusterName, primaryRuntime: 'kubernetes', hostname: 'Kubernetes' } as any;
+      if (c) return { name: c.clusterName, primaryRuntime: 'kubernetes', hostname: 'Kubernetes' };
       return null;
     }
     return this.systemState.connectedSystems().find(s => s.id === id) ?? null;

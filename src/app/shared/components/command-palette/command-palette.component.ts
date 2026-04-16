@@ -17,9 +17,6 @@ import {
   LucideAngularModule,
   Search,
   Star,
-  Ship,
-  Container,
-  Apple,
   ArrowRight,
   Settings,
   Command,
@@ -31,7 +28,7 @@ import {
   getRuntimeLabel,
   getRuntimePrefix,
 } from '../../../core/models/command-template.model';
-import { ContainerRuntime } from '../../../core/models/container.model';
+import { ContainerRuntime, getRuntimeIcon } from '../../../core/models/container.model';
 import { CommandTemplateState } from '../../../state/command-template.state';
 import { SystemState } from '../../../state/system.state';
 
@@ -61,9 +58,6 @@ export class CommandPaletteComponent implements OnInit {
   // Icons
   readonly Search = Search;
   readonly Star = Star;
-  readonly Ship = Ship;
-  readonly Container = Container;
-  readonly Apple = Apple;
   readonly ArrowRight = ArrowRight;
   readonly Settings = Settings;
   readonly Command = Command;
@@ -218,18 +212,7 @@ export class CommandPaletteComponent implements OnInit {
     this.router.navigate(['/commands']);
   }
 
-  getRuntimeIcon(runtime: ContainerRuntime): typeof Ship {
-    switch (runtime) {
-      case 'docker':
-        return Ship;
-      case 'podman':
-        return Container;
-      case 'apple':
-        return Apple;
-      default:
-        return Container;
-    }
-  }
+  readonly getRuntimeIcon = getRuntimeIcon;
 
   async onToggleFavorite(event: Event, template: CommandTemplate): Promise<void> {
     event.stopPropagation();

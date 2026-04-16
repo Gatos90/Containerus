@@ -6,6 +6,7 @@ import {
   ContainerStatus,
 } from '../core/models/container.model';
 import { ContainerService } from '../core/services/container.service';
+import { applyRuntimeFilter, applySearchQuery, applySystemFilter, sortByCreated, sortByName } from '../core/utils/filtering.utils';
 
 export type SortOption = 'name' | 'status' | 'created';
 
@@ -49,27 +50,11 @@ export class ContainerState {
     const runtimeFilter = this._runtimeFilter();
     if (runtimeFilter) {
       // 'kubernetes' means show only K8s pods — hide all containers
-      if (runtimeFilter === 'kubernetes') {
-        result = [];
-      } else {
-        result = result.filter((c) => c.runtime === runtimeFilter);
-      }
+      result = runtimeFilter === 'kubernetes' ? [] : applyRuntimeFilter(result, runtimeFilter);
     }
 
-    const systemFilter = this._systemFilter();
-    if (systemFilter) {
-      result = result.filter((c) => c.systemId === systemFilter);
-    }
-
-    const query = this._searchQuery().toLowerCase();
-    if (query) {
-      result = result.filter(
-        (c) =>
-          c.name.toLowerCase().includes(query) ||
-          c.image.toLowerCase().includes(query) ||
-          c.id.toLowerCase().includes(query)
-      );
-    }
+    result = applySystemFilter(result, this._systemFilter());
+    result = applySearchQuery(result, this._searchQuery(), (c) => [c.name, c.image, c.id]);
 
     return result;
   });
@@ -79,14 +64,10 @@ export class ContainerState {
     const sortOption = this._sortOption();
     return [...result].sort((a, b) => {
       switch (sortOption) {
-        case 'name':
-          return a.name.localeCompare(b.name);
-        case 'status':
-          return a.status.localeCompare(b.status);
-        case 'created':
-          return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-        default:
-          return 0;
+        case 'name': return sortByName(a, b);
+        case 'status': return a.status.localeCompare(b.status);
+        case 'created': return sortByCreated(a, b, (c) => c.createdAt);
+        default: return 0;
       }
     });
   });

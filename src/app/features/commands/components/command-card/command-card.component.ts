@@ -7,9 +7,6 @@ import {
   Trash2,
   Edit,
   MoreHorizontal,
-  Ship,
-  Container,
-  Apple,
   Lock,
 } from 'lucide-angular';
 import {
@@ -17,7 +14,7 @@ import {
   getCategoryIcon,
   getRuntimeLabel,
 } from '../../../../core/models/command-template.model';
-import { ContainerRuntime } from '../../../../core/models/container.model';
+import { ContainerRuntime, getRuntimeIcon } from '../../../../core/models/container.model';
 
 @Component({
   selector: 'app-command-card',
@@ -140,28 +137,13 @@ export class CommandCardComponent {
   readonly Trash2 = Trash2;
   readonly Edit = Edit;
   readonly MoreHorizontal = MoreHorizontal;
-  readonly Ship = Ship;
-  readonly Container = Container;
-  readonly Apple = Apple;
   readonly Lock = Lock;
 
   readonly getCategoryIcon = getCategoryIcon;
   readonly getRuntimeLabel = getRuntimeLabel;
+  readonly getRuntimeIcon = getRuntimeIcon;
 
   showMenu = false;
-
-  getRuntimeIcon(runtime: ContainerRuntime): typeof Ship {
-    switch (runtime) {
-      case 'docker':
-        return Ship;
-      case 'podman':
-        return Container;
-      case 'apple':
-        return Apple;
-      default:
-        return Container;
-    }
-  }
 
   toggleMenu(event: Event): void {
     event.stopPropagation();

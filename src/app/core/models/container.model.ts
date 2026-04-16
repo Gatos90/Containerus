@@ -1,3 +1,5 @@
+import { Apple, Box, Cloud, LucideIconData, Ship } from 'lucide-angular';
+
 export type ContainerStatus =
   | 'running'
   | 'exited'
@@ -174,16 +176,28 @@ export const getStatusColor = (status: ContainerStatus): string => {
   }
 };
 
-export const getRuntimeColor = (runtime: ContainerRuntime): string => {
+export const getRuntimeColor = (runtime: ContainerRuntime | 'kubernetes'): string => {
   switch (runtime) {
     case 'docker':
-      return 'text-blue-500';
+      return 'text-blue-400';
     case 'podman':
-      return 'text-orange-500';
+      return 'text-indigo-400';
     case 'apple':
-      return 'text-purple-500';
+      return 'text-zinc-400';
+    case 'kubernetes':
+      return 'text-purple-400';
     default:
-      return 'text-gray-500';
+      return 'text-zinc-500';
+  }
+};
+
+export const getRuntimeIcon = (runtime: ContainerRuntime | 'kubernetes'): LucideIconData => {
+  switch (runtime) {
+    case 'docker': return Ship;
+    case 'podman': return Box;
+    case 'apple': return Apple;
+    case 'kubernetes': return Cloud;
+    default: return Box;
   }
 };
 

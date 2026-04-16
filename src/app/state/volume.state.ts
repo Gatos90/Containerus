@@ -2,6 +2,7 @@ import { computed, inject, Injectable, signal } from '@angular/core';
 import { ContainerRuntime } from '../core/models/container.model';
 import { Volume } from '../core/models/volume.model';
 import { VolumeService } from '../core/services/volume.service';
+import { applyRuntimeFilter, applySearchQuery, applySystemFilter, sortByCreated, sortByName } from '../core/utils/filtering.utils';
 import { ContainerState } from './container.state';
 
 export type VolumeMountFilter = 'all' | 'mounted' | 'orphaned';
@@ -52,45 +53,22 @@ export class VolumeState {
       result = result.filter((v) => !mountedVolumeNames.has(v.name));
     }
 
-    const runtimeFilter = this._runtimeFilter();
-    if (runtimeFilter) {
-      result = result.filter((v) => v.runtime === runtimeFilter);
-    }
+    result = applyRuntimeFilter(result, this._runtimeFilter());
+    result = applySystemFilter(result, this._systemFilter());
+    result = applySearchQuery(result, this._searchQuery(), (v) => [v.name, v.driver]);
 
-    const systemFilter = this._systemFilter();
-    if (systemFilter) {
-      result = result.filter((v) => v.systemId === systemFilter);
-    }
-
-    const query = this._searchQuery().toLowerCase();
-    if (query) {
-      result = result.filter(
-        (v) =>
-          v.name.toLowerCase().includes(query) ||
-          v.driver.toLowerCase().includes(query)
-      );
-    }
-
-    // Sort results - in-use (mounted) volumes first, then by selected option
+    // Sort results - mounted volumes first, then by selected option
     const sortOption = this._sortOption();
     result = [...result].sort((a, b) => {
-      // First: sort by mounted status (mounted first)
       const aMounted = mountedVolumeNames.has(a.name);
       const bMounted = mountedVolumeNames.has(b.name);
-      if (aMounted !== bMounted) {
-        return aMounted ? -1 : 1;
-      }
+      if (aMounted !== bMounted) return aMounted ? -1 : 1;
 
-      // Then: sort by selected option
       switch (sortOption) {
-        case 'name':
-          return a.name.localeCompare(b.name);
-        case 'driver':
-          return a.driver.localeCompare(b.driver);
-        case 'created':
-          return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
-        default:
-          return 0;
+        case 'name': return sortByName(a, b);
+        case 'driver': return a.driver.localeCompare(b.driver);
+        case 'created': return sortByCreated(a, b, (v) => v.createdAt);
+        default: return 0;
       }
     });
 

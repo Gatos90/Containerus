@@ -2,6 +2,7 @@ import { computed, inject, Injectable, signal } from '@angular/core';
 import { ContainerRuntime } from '../core/models/container.model';
 import { ContainerImage } from '../core/models/image.model';
 import { ImageService } from '../core/services/image.service';
+import { applyRuntimeFilter, applySearchQuery, applySystemFilter, sortByCreated, sortByName } from '../core/utils/filtering.utils';
 import { ContainerState } from './container.state';
 
 export type ImageUsageFilter = 'all' | 'in-use' | 'unused' | 'dangling';
@@ -71,46 +72,22 @@ export class ImageState {
       result = result.filter((i) => !i.tag || i.tag === '<none>');
     }
 
-    const runtimeFilter = this._runtimeFilter();
-    if (runtimeFilter) {
-      result = result.filter((i) => i.runtime === runtimeFilter);
-    }
-
-    const systemFilter = this._systemFilter();
-    if (systemFilter) {
-      result = result.filter((i) => i.systemId === systemFilter);
-    }
-
-    const query = this._searchQuery().toLowerCase();
-    if (query) {
-      result = result.filter(
-        (i) =>
-          i.name.toLowerCase().includes(query) ||
-          i.tag.toLowerCase().includes(query) ||
-          i.id.toLowerCase().includes(query)
-      );
-    }
+    result = applyRuntimeFilter(result, this._runtimeFilter());
+    result = applySystemFilter(result, this._systemFilter());
+    result = applySearchQuery(result, this._searchQuery(), (i) => [i.name, i.tag, i.id]);
 
     // Sort results - in-use images first, then by selected option
     const sortOption = this._sortOption();
     result = [...result].sort((a, b) => {
-      // First: sort by in-use status (in-use first)
       const aInUse = usedImageNames.has(this.getImageFullName(a));
       const bInUse = usedImageNames.has(this.getImageFullName(b));
-      if (aInUse !== bInUse) {
-        return aInUse ? -1 : 1;
-      }
+      if (aInUse !== bInUse) return aInUse ? -1 : 1;
 
-      // Then: sort by selected option
       switch (sortOption) {
-        case 'name':
-          return a.name.localeCompare(b.name);
-        case 'size':
-          return b.size - a.size;
-        case 'created':
-          return new Date(b.created || 0).getTime() - new Date(a.created || 0).getTime();
-        default:
-          return 0;
+        case 'name': return sortByName(a, b);
+        case 'size': return b.size - a.size;
+        case 'created': return sortByCreated(a, b, (i) => i.created);
+        default: return 0;
       }
     });
 

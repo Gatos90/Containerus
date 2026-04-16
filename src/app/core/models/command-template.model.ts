@@ -198,21 +198,6 @@ export const getRuntimeLabel = (runtime: ContainerRuntime): string => {
   }
 };
 
-/**
- * Get the runtime icon character for display
- */
-export const getRuntimeIcon = (runtime: ContainerRuntime): string => {
-  switch (runtime) {
-    case 'docker':
-      return 'ship';
-    case 'podman':
-      return 'container';
-    case 'apple':
-      return 'apple';
-    default:
-      return 'box';
-  }
-};
 
 /**
  * Check if a command template is compatible with a given runtime

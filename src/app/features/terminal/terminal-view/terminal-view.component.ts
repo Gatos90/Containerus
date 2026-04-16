@@ -13,7 +13,7 @@ import {
 } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { FormsModule } from '@angular/forms';
-import { LucideAngularModule, X, Maximize2, Minimize2, Command, Ship, Container, Apple, Search, ChevronUp, ChevronDown, PanelBottomOpen, Sparkles } from 'lucide-angular';
+import { LucideAngularModule, X, Maximize2, Minimize2, Command, Search, ChevronUp, ChevronDown, PanelBottomOpen, Sparkles } from 'lucide-angular';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
@@ -25,7 +25,7 @@ import { TerminalState, DockedTerminal, DEFAULT_TERMINAL_OPTIONS } from '../../.
 import { CommandPaletteComponent } from '../../../shared/components/command-palette/command-palette.component';
 import { VariableInputModalComponent } from '../../../shared/components/variable-input-modal/variable-input-modal.component';
 import { CommandTemplate, parseVariables } from '../../../core/models/command-template.model';
-import { ContainerRuntime } from '../../../core/models/container.model';
+import { ContainerRuntime, getRuntimeIcon } from '../../../core/models/container.model';
 import { WarpTerminalViewComponent } from '../../warp-terminal/warp-terminal-view/warp-terminal-view.component';
 import { CommandHistoryService } from '../../warp-terminal/state/command-history.service';
 import { TerminalEventBus } from '../../warp-terminal/state/warp-terminal.bus';
@@ -54,9 +54,6 @@ export class TerminalViewComponent implements OnInit, AfterViewInit, OnDestroy {
   readonly Maximize2 = Maximize2;
   readonly Minimize2 = Minimize2;
   readonly Command = Command;
-  readonly Ship = Ship;
-  readonly Container = Container;
-  readonly Apple = Apple;
   readonly Search = Search;
   readonly ChevronUp = ChevronUp;
   readonly ChevronDown = ChevronDown;
@@ -265,18 +262,8 @@ export class TerminalViewComponent implements OnInit, AfterViewInit, OnDestroy {
     return system?.primaryRuntime ?? 'docker';
   }
 
-  getRuntimeIcon(): typeof Ship {
-    const runtime = this.getCurrentRuntime();
-    switch (runtime) {
-      case 'docker':
-        return Ship;
-      case 'podman':
-        return Container;
-      case 'apple':
-        return Apple;
-      default:
-        return Container;
-    }
+  getRuntimeIcon() {
+    return getRuntimeIcon(this.getCurrentRuntime());
   }
 
   toggleFullscreen(): void {
