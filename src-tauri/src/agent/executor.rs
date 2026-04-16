@@ -224,6 +224,7 @@ pub async fn run_agent_query(
         temperature: Some(config.ai_settings.temperature),
         max_tokens: Some(2048),
         json_mode: false,
+        timeout_secs: None,
     };
 
     // Execute the completion
@@ -439,6 +440,7 @@ pub async fn run_agent_simple(
         temperature: Some(config.ai_settings.temperature),
         max_tokens: Some(2048),
         json_mode: false,
+        timeout_secs: None,
     };
 
     provider

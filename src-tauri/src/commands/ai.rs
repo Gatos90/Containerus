@@ -288,6 +288,7 @@ pub async fn get_shell_suggestion(
         temperature: Some(settings.temperature),
         max_tokens: Some(settings.max_tokens),
         json_mode: true,
+        timeout_secs: None,
     };
 
     let response = provider.get_completion(completion_request).await?;
