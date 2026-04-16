@@ -51,8 +51,9 @@
       <button
         (click)="close.emit()"
         class="p-2.5 sm:p-2 touch-target text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 rounded-lg transition-colors flex-shrink-0 ml-2"
+        aria-label="Close"
       >
-        <lucide-icon [img]="X" class="w-5 h-5"></lucide-icon>
+        <lucide-icon [img]="X" class="w-5 h-5" aria-hidden="true"></lucide-icon>
       </button>
     </div>
 

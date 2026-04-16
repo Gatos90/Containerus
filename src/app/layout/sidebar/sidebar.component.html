@@ -170,23 +170,26 @@
                   (click)="openTerminal($event, system)"
                   class="flex items-center gap-1 px-2 py-1 text-xs rounded bg-zinc-700/50 hover:bg-zinc-700 text-zinc-400 hover:text-white transition-colors"
                   title="Open Terminal"
+                  aria-label="Open Terminal"
                 >
-                  <lucide-icon [img]="Terminal" class="w-3 h-3"></lucide-icon>
+                  <lucide-icon [img]="Terminal" class="w-3 h-3" aria-hidden="true"></lucide-icon>
                   Terminal
                 </button>
                 <button
                   (click)="viewSystem($event, system)"
                   class="flex items-center gap-1 px-2 py-1 text-xs rounded bg-zinc-700/50 hover:bg-zinc-700 text-zinc-400 hover:text-white transition-colors"
                   title="View Details"
+                  aria-label="View Details"
                 >
-                  <lucide-icon [img]="ExternalLink" class="w-3 h-3"></lucide-icon>
+                  <lucide-icon [img]="ExternalLink" class="w-3 h-3" aria-hidden="true"></lucide-icon>
                 </button>
                 <button
                   (click)="disconnectSystem($event, system)"
                   class="flex items-center gap-1 px-2 py-1 text-xs rounded bg-zinc-700/50 hover:bg-red-900/50 text-zinc-400 hover:text-red-400 transition-colors"
                   title="Disconnect"
+                  aria-label="Disconnect"
                 >
-                  <lucide-icon [img]="Unplug" class="w-3 h-3"></lucide-icon>
+                  <lucide-icon [img]="Unplug" class="w-3 h-3" aria-hidden="true"></lucide-icon>
                 </button>
               </div>
             </div>
@@ -208,11 +211,13 @@
                 [disabled]="reconnecting() === system.id"
                 class="flex items-center gap-1 px-1.5 py-0.5 text-[10px] rounded bg-zinc-700/50 hover:bg-zinc-700 text-zinc-400 hover:text-white transition-colors disabled:opacity-50"
                 title="Reconnect"
+                aria-label="Reconnect"
               >
                 <lucide-icon
                   [img]="RefreshCw"
                   class="w-3 h-3"
                   [class.animate-spin]="reconnecting() === system.id"
+                  aria-hidden="true"
                 ></lucide-icon>
               </button>
             </div>
