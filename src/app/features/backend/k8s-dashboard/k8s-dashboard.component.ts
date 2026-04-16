@@ -8,6 +8,7 @@ import { K8sResourceDetailComponent } from './k8s-resource-detail.component';
 import { K8sTopologyComponent } from './k8s-topology.component';
 import { MonacoEditorComponent } from '../../../shared/components/monaco-editor/monaco-editor.component';
 import { K8sCreateResourceModalComponent } from './k8s-create-resource/k8s-create-resource-modal.component';
+import { K8sResourceHelperService } from './k8s-resource-helper.service';
 
 type K8sTab = 'pods' | 'deployments' | 'services' | 'statefulsets' | 'daemonsets' | 'jobs' | 'cronjobs'
   | 'configmaps' | 'secrets' | 'ingresses' | 'pvcs' | 'nodes'
@@ -339,14 +340,14 @@ export interface ClusterGroup {
                     <tr class="border-b border-zinc-800/50 hover:bg-zinc-800/30 cursor-pointer" (click)="selectResource('nodes', node.metadata?.name, node.metadata?.namespace)">
                       <td class="px-4 py-2 text-zinc-200 font-mono text-xs">{{ node.metadata?.name ?? '-' }}</td>
                       <td class="px-4 py-2">
-                        <span class="text-xs px-1.5 py-0.5 rounded" [class]="getNodeStatusClass(node)">
-                          {{ getNodeStatus(node) }}
+                        <span class="text-xs px-1.5 py-0.5 rounded" [class]="resourceHelper.getNodeStatusClass(node)">
+                          {{ resourceHelper.getNodeStatus(node) }}
                         </span>
                       </td>
-                      <td class="px-4 py-2 text-zinc-400 text-xs">{{ getNodeRoles(node) }}</td>
+                      <td class="px-4 py-2 text-zinc-400 text-xs">{{ resourceHelper.getNodeRoles(node) }}</td>
                       <td class="px-4 py-2 text-zinc-400 text-xs">{{ node.status?.nodeInfo?.kubeletVersion ?? '-' }}</td>
-                      <td class="px-4 py-2 text-zinc-400 text-xs">{{ getNodeCapacity(node) }}</td>
-                      <td class="px-4 py-2 text-zinc-400 text-xs">{{ getNodeTaints(node) }}</td>
+                      <td class="px-4 py-2 text-zinc-400 text-xs">{{ resourceHelper.getNodeCapacity(node) }}</td>
+                      <td class="px-4 py-2 text-zinc-400 text-xs">{{ resourceHelper.getNodeTaints(node) }}</td>
                       <td class="px-4 py-2">
                         <div class="flex items-center gap-1">
                           @if (node.spec?.unschedulable) {
@@ -420,11 +421,11 @@ export interface ClusterGroup {
                       <td class="px-4 py-2 text-zinc-200 font-mono text-xs">{{ res.metadata?.name ?? '-' }}</td>
                       <td class="px-4 py-2 text-zinc-400 text-xs">{{ res.metadata?.namespace ?? '-' }}</td>
                       <td class="px-4 py-2">
-                        <span class="text-xs px-1.5 py-0.5 rounded" [class]="getGenericStatusClass(res)">
-                          {{ getGenericStatus(res) }}
+                        <span class="text-xs px-1.5 py-0.5 rounded" [class]="resourceHelper.getGenericStatusClass(res)">
+                          {{ resourceHelper.getGenericStatus(res) }}
                         </span>
                       </td>
-                      <td class="px-4 py-2 text-zinc-400">{{ getResourceAge(res) }}</td>
+                      <td class="px-4 py-2 text-zinc-400">{{ resourceHelper.getResourceAge(res) }}</td>
                       <td class="px-4 py-2">
                         <div class="flex items-center gap-1">
                           @if (activeTab() === 'statefulsets') {
@@ -649,6 +650,7 @@ export interface ClusterGroup {
 export class K8sDashboardComponent implements OnInit, OnChanges, OnDestroy {
   private backend = inject(BackendService);
   private watchService = inject(K8sWatchService);
+  readonly resourceHelper = inject(K8sResourceHelperService);
 
   @Input() connectionId!: string;
 
@@ -1255,36 +1257,6 @@ export class K8sDashboardComponent implements OnInit, OnChanges, OnDestroy {
     this.detailResource.set(null);
   }
 
-  // ---------- Generic resource helpers ----------
-
-  getGenericStatus(res: any): string {
-    // Try common status patterns across k8s resource types
-    return (res.status?.phase
-      ?? res.status?.conditions?.find((c: any) => c.type === 'Ready')?.status
-      ?? res.status?.conditions?.find((c: any) => c.type === 'Available')?.status
-      ?? (res.status?.active != null ? `Active: ${res.status.active}` : ''))
-      || 'N/A';
-  }
-
-  getGenericStatusClass(res: any): string {
-    const status = this.getGenericStatus(res);
-    if (['Running', 'Active', 'True', 'Bound', 'Ready'].some(s => status.includes(s))) return 'bg-green-500/20 text-green-400';
-    if (['Pending', 'Waiting'].some(s => status.includes(s))) return 'bg-yellow-500/20 text-yellow-400';
-    if (['Failed', 'Error', 'False'].some(s => status.includes(s))) return 'bg-red-500/20 text-red-400';
-    return 'bg-zinc-700 text-zinc-400';
-  }
-
-  getResourceAge(res: any): string {
-    const ts = res.metadata?.creationTimestamp;
-    if (!ts) return 'unknown';
-    const dur = Date.now() - new Date(ts).getTime();
-    if (dur < 0) return '0m';
-    const days = Math.floor(dur / 86400000);
-    if (days > 0) return `${days}d`;
-    const hours = Math.floor(dur / 3600000);
-    if (hours > 0) return `${hours}h`;
-    return `${Math.floor(dur / 60000)}m`;
-  }
 
   async deleteGenericResource(res: any): Promise<void> {
     const cluster = this.selectedCluster();
@@ -1316,49 +1288,6 @@ export class K8sDashboardComponent implements OnInit, OnChanges, OnDestroy {
     }
   }
 
-  // ---------- Node management ----------
-
-  getNodeStatus(node: any): string {
-    const conditions = node.status?.conditions ?? [];
-    const ready = conditions.find((c: any) => c.type === 'Ready');
-    if (node.spec?.unschedulable) return 'Cordoned';
-    if (ready?.status === 'True') return 'Ready';
-    if (ready?.status === 'False') return 'NotReady';
-    return 'Unknown';
-  }
-
-  getNodeStatusClass(node: any): string {
-    const status = this.getNodeStatus(node);
-    if (status === 'Ready') return 'bg-green-500/20 text-green-400';
-    if (status === 'Cordoned') return 'bg-yellow-500/20 text-yellow-400';
-    if (status === 'NotReady') return 'bg-red-500/20 text-red-400';
-    return 'bg-zinc-700 text-zinc-400';
-  }
-
-  getNodeRoles(node: any): string {
-    const labels = node.metadata?.labels ?? {};
-    const roles: string[] = [];
-    for (const [key] of Object.entries(labels)) {
-      if (key.startsWith('node-role.kubernetes.io/')) {
-        roles.push(key.replace('node-role.kubernetes.io/', ''));
-      }
-    }
-    return roles.length > 0 ? roles.join(', ') : '<none>';
-  }
-
-  getNodeCapacity(node: any): string {
-    const alloc = node.status?.allocatable;
-    if (!alloc) return '-';
-    const cpu = alloc.cpu ?? '?';
-    const mem = alloc.memory ?? '?';
-    return `${cpu} / ${mem}`;
-  }
-
-  getNodeTaints(node: any): string {
-    const taints = node.spec?.taints ?? [];
-    if (taints.length === 0) return '<none>';
-    return taints.map((t: any) => `${t.key}=${t.value || ''}:${t.effect}`).join(', ');
-  }
 
   async cordonNode(nodeName: string): Promise<void> {
     const cluster = this.selectedCluster();
@@ -1506,7 +1435,7 @@ export class K8sDashboardComponent implements OnInit, OnChanges, OnDestroy {
           return current.filter(p => p.name !== name);
         }
         // MODIFIED: update or add
-        const pod = this.mapPodFromRaw(event.resource);
+        const pod = this.resourceHelper.mapPodFromRaw(event.resource);
         const idx = current.findIndex(p => p.name === name);
         if (idx >= 0) {
           const updated = [...current];
@@ -1520,7 +1449,7 @@ export class K8sDashboardComponent implements OnInit, OnChanges, OnDestroy {
         if (event.eventType === 'DELETED') {
           return current.filter(d => d.name !== name);
         }
-        const dep = this.mapDeploymentFromRaw(event.resource);
+        const dep = this.resourceHelper.mapDeploymentFromRaw(event.resource);
         const idx = current.findIndex(d => d.name === name);
         if (idx >= 0) {
           const updated = [...current];
@@ -1534,7 +1463,7 @@ export class K8sDashboardComponent implements OnInit, OnChanges, OnDestroy {
         if (event.eventType === 'DELETED') {
           return current.filter(s => s.name !== name);
         }
-        const svc = this.mapServiceFromRaw(event.resource);
+        const svc = this.resourceHelper.mapServiceFromRaw(event.resource);
         const idx = current.findIndex(s => s.name === name);
         if (idx >= 0) {
           const updated = [...current];
@@ -1560,11 +1489,100 @@ export class K8sDashboardComponent implements OnInit, OnChanges, OnDestroy {
     }
   }
 
-  private mapPodFromRaw(raw: any): K8sPod {
+}
+private mapPodFromRaw(raw: any): K8sPod {
     const containers = raw.spec?.containers ?? [];
     const statuses = raw.status?.containerStatuses ?? [];
     const readyCount = statuses.filter((s: any) => s.ready).length;
     const totalRestarts = statuses.reduce((sum: number, s: any) => sum + (s.restartCount ?? 0), 0);
+    return {
+      name: raw.metadata?.name ?? '',
+      namespace: raw.metadata?.namespace ?? '',
+      status: raw.status?.phase ?? 'Unknown',
+      ready: `${readyCount}/${containers.length}`,
+      restarts: totalRestarts,
+      age: this.getResourceAge(raw),
+      node: raw.spec?.nodeName,
+    };
+  }
+
+  private mapDeploymentFromRaw(raw: any): K8sDeployment {
+    const desired = raw.spec?.replicas ?? 0;
+    const ready = raw.status?.readyReplicas ?? 0;
+    const upToDate = raw.status?.updatedReplicas ?? 0;
+    const available = raw.status?.availableReplicas ?? 0;
+    return {
+      name: raw.metadata?.name ?? '',
+      namespace: raw.metadata?.namespace ?? '',
+      ready: `${ready}/${desired}`,
+      upToDate,
+      available,
+      age: this.getResourceAge(raw),
+    };
+  }
+
+  private mapServiceFromRaw(raw: any): K8sSvc {
+    const ports = (raw.spec?.ports ?? []).map((p: any) => `${p.port}/${p.protocol ?? 'TCP'}`);
+    return {
+      name: raw.metadata?.name ?? '',
+      namespace: raw.metadata?.namespace ?? '',
+      serviceType: raw.spec?.type ?? '',
+      clusterIp: raw.spec?.clusterIP,
+      externalIp: raw.status?.loadBalancer?.ingress?.[0]?.ip,
+      ports,
+      age: this.getResourceAge(raw),
+    };
+  }
+}
+talRestarts = statuses.reduce((sum: number, s: any) => sum + (s.restartCount ?? 0), 0);
+    return {
+      name: raw.metadata?.name ?? '',
+      namespace: raw.metadata?.namespace ?? '',
+      status: raw.status?.phase ?? 'Unknown',
+      ready: `${readyCount}/${containers.length}`,
+      restarts: totalRestarts,
+      age: this.getResourceAge(raw),
+      node: raw.spec?.nodeName,
+    };
+  }
+
+  private mapDeploymentFromRaw(raw: any): K8sDeployment {
+    const desired = raw.spec?.replicas ?? 0;
+    const ready = raw.status?.readyReplicas ?? 0;
+    const upToDate = raw.status?.updatedReplicas ?? 0;
+    const available = raw.status?.availableReplicas ?? 0;
+    return {
+      name: raw.metadata?.name ?? '',
+      namespace: raw.metadata?.namespace ?? '',
+      ready: `${ready}/${desired}`,
+      upToDate,
+      available,
+      age: this.getResourceAge(raw),
+    };
+  }
+
+  private mapServiceFromRaw(raw: any): K8sSvc {
+    const ports = (raw.spec?.ports ?? []).map((p: any) => `${p.port}/${p.protocol ?? 'TCP'}`);
+    return {
+      name: raw.metadata?.name ?? '',
+      namespace: raw.metadata?.namespace ?? '',
+      serviceType: raw.spec?.type ?? '',
+      clusterIp: raw.spec?.clusterIP,
+      externalIp: raw.status?.loadBalancer?.ingress?.[0]?.ip,
+      ports,
+      age: this.getResourceAge(raw),
+    };
+  }
+}
+      serviceType: raw.spec?.type ?? '',
+      clusterIp: raw.spec?.clusterIP,
+      externalIp: raw.status?.loadBalancer?.ingress?.[0]?.ip,
+      ports,
+      age: this.getResourceAge(raw),
+    };
+  }
+}
+talRestarts = statuses.reduce((sum: number, s: any) => sum + (s.restartCount ?? 0), 0);
     return {
       name: raw.metadata?.name ?? '',
       namespace: raw.metadata?.namespace ?? '',
