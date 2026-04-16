@@ -294,6 +294,7 @@ mod tests {
             temperature: Some(0.7),
             max_tokens: Some(1024),
             json_mode: true,
+            timeout_secs: None,
         };
 
         let json = serde_json::to_value(&request).unwrap();

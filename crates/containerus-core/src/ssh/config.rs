@@ -442,20 +442,28 @@ fn parse_jump_host_explicit(entry: &str) -> JumpHost {
     }
 }
 
-/// Expand tokens in a ProxyCommand string
-/// %h -> target hostname
-/// %p -> target port
-/// %r -> remote username
+/// Expand tokens in a ProxyCommand string.
+///
+/// - `%h` -> target hostname
+/// - `%p` -> target port
+/// - `%r` -> remote username
+///
+/// The resulting string is executed via `sh -c`, so hostname / username
+/// values are single-quoted to prevent shell metacharacters (e.g. `;`,
+/// `$(...)`, backticks) from injecting additional commands into the proxy
+/// invocation. Port is a `u16` and is always numeric, so it is inserted
+/// unquoted for readability.
 pub fn expand_proxy_command_tokens(
     proxy_command: &str,
     hostname: &str,
     port: u16,
     username: &str,
 ) -> String {
+    let shell_escape = |s: &str| format!("'{}'", s.replace('\'', "'\\''"));
     proxy_command
-        .replace("%h", hostname)
+        .replace("%h", &shell_escape(hostname))
         .replace("%p", &port.to_string())
-        .replace("%r", username)
+        .replace("%r", &shell_escape(username))
 }
 
 // ========================================================================
@@ -597,7 +605,7 @@ Host special
         let expanded = expand_proxy_command_tokens(cmd, "internal.server", 22, "admin");
         assert_eq!(
             expanded,
-            "ssh -W internal.server:22 bastion@jump.example.com"
+            "ssh -W 'internal.server':22 bastion@jump.example.com"
         );
     }
 
@@ -607,8 +615,30 @@ Host special
         let expanded = expand_proxy_command_tokens(cmd, "target.server", 2222, "deploy");
         assert_eq!(
             expanded,
-            "ssh -l deploy -W target.server:2222 jump.example.com"
+            "ssh -l 'deploy' -W 'target.server':2222 jump.example.com"
         );
+    }
+
+    #[test]
+    fn test_expand_proxy_command_escapes_injection_in_hostname() {
+        // A malicious hostname must not be able to break out of the proxy
+        // invocation and run additional shell commands when the expanded
+        // string is handed to `sh -c`.
+        let cmd = "nc %h %p";
+        let expanded = expand_proxy_command_tokens(cmd, "evil.host; rm -rf /", 22, "admin");
+        // The injected hostname is wrapped in single quotes and any embedded
+        // single quote would be escaped; there must be no unquoted `;` here.
+        assert_eq!(expanded, "nc 'evil.host; rm -rf /' 22");
+        assert!(!expanded.contains("; rm -rf /;"));
+    }
+
+    #[test]
+    fn test_expand_proxy_command_escapes_injection_in_username() {
+        let cmd = "ssh -l %r -W %h:%p jump";
+        let expanded = expand_proxy_command_tokens(cmd, "t.server", 22, "admin';touch pwned;#");
+        // Embedded single quote in username must be escaped via '\''
+        assert!(expanded.contains("'admin'\\''"));
+        assert!(!expanded.contains("admin';touch pwned;#"));
     }
 
     #[test]

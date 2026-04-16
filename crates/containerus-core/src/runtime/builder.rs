@@ -39,16 +39,21 @@ impl CommandBuilder {
 
     /// Build container inspect command
     pub fn inspect_container(runtime: ContainerRuntime, container_id: &str) -> String {
+        let id = Self::shell_escape(container_id);
         match runtime {
-            ContainerRuntime::Docker => format!("docker inspect {}", container_id),
-            ContainerRuntime::Podman => format!("podman inspect {}", container_id),
-            ContainerRuntime::Apple => format!("container inspect {}", container_id),
+            ContainerRuntime::Docker => format!("docker inspect {}", id),
+            ContainerRuntime::Podman => format!("podman inspect {}", id),
+            ContainerRuntime::Apple => format!("container inspect {}", id),
         }
     }
 
     /// Build batch inspect command for multiple containers
     pub fn batch_inspect_containers(runtime: ContainerRuntime, container_ids: &[&str]) -> String {
-        let ids = container_ids.join(" ");
+        let ids = container_ids
+            .iter()
+            .map(|id| Self::shell_escape(id))
+            .collect::<Vec<_>>()
+            .join(" ");
         match runtime {
             ContainerRuntime::Docker => format!("docker inspect {}", ids),
             ContainerRuntime::Podman => format!("podman inspect {}", ids),
@@ -62,80 +67,60 @@ impl CommandBuilder {
         action: ContainerAction,
         container_id: &str,
     ) -> String {
+        let id = Self::shell_escape(container_id);
         match (runtime, action) {
             // Docker
-            (ContainerRuntime::Docker, ContainerAction::Start) => {
-                format!("docker start {}", container_id)
-            }
-            (ContainerRuntime::Docker, ContainerAction::Stop) => {
-                format!("docker stop {}", container_id)
-            }
+            (ContainerRuntime::Docker, ContainerAction::Start) => format!("docker start {}", id),
+            (ContainerRuntime::Docker, ContainerAction::Stop) => format!("docker stop {}", id),
             (ContainerRuntime::Docker, ContainerAction::Restart) => {
-                format!("docker restart {}", container_id)
+                format!("docker restart {}", id)
             }
-            (ContainerRuntime::Docker, ContainerAction::Pause) => {
-                format!("docker pause {}", container_id)
-            }
+            (ContainerRuntime::Docker, ContainerAction::Pause) => format!("docker pause {}", id),
             (ContainerRuntime::Docker, ContainerAction::Unpause) => {
-                format!("docker unpause {}", container_id)
+                format!("docker unpause {}", id)
             }
-            (ContainerRuntime::Docker, ContainerAction::Remove) => {
-                format!("docker rm {}", container_id)
-            }
+            (ContainerRuntime::Docker, ContainerAction::Remove) => format!("docker rm {}", id),
 
             // Podman (same as Docker)
-            (ContainerRuntime::Podman, ContainerAction::Start) => {
-                format!("podman start {}", container_id)
-            }
-            (ContainerRuntime::Podman, ContainerAction::Stop) => {
-                format!("podman stop {}", container_id)
-            }
+            (ContainerRuntime::Podman, ContainerAction::Start) => format!("podman start {}", id),
+            (ContainerRuntime::Podman, ContainerAction::Stop) => format!("podman stop {}", id),
             (ContainerRuntime::Podman, ContainerAction::Restart) => {
-                format!("podman restart {}", container_id)
+                format!("podman restart {}", id)
             }
-            (ContainerRuntime::Podman, ContainerAction::Pause) => {
-                format!("podman pause {}", container_id)
-            }
+            (ContainerRuntime::Podman, ContainerAction::Pause) => format!("podman pause {}", id),
             (ContainerRuntime::Podman, ContainerAction::Unpause) => {
-                format!("podman unpause {}", container_id)
+                format!("podman unpause {}", id)
             }
-            (ContainerRuntime::Podman, ContainerAction::Remove) => {
-                format!("podman rm {}", container_id)
-            }
+            (ContainerRuntime::Podman, ContainerAction::Remove) => format!("podman rm {}", id),
 
             // Apple Container (slightly different commands)
-            (ContainerRuntime::Apple, ContainerAction::Start) => {
-                format!("container start {}", container_id)
-            }
-            (ContainerRuntime::Apple, ContainerAction::Stop) => {
-                format!("container stop {}", container_id)
-            }
+            (ContainerRuntime::Apple, ContainerAction::Start) => format!("container start {}", id),
+            (ContainerRuntime::Apple, ContainerAction::Stop) => format!("container stop {}", id),
             (ContainerRuntime::Apple, ContainerAction::Restart) => {
                 // Apple Container doesn't have native restart, so we chain stop && start
                 format!(
                     "container stop {} && sleep 0.5 && container start {}",
-                    container_id, container_id
+                    id, id
                 )
             }
-            (ContainerRuntime::Apple, ContainerAction::Pause) => {
-                format!("container pause {}", container_id)
-            }
+            (ContainerRuntime::Apple, ContainerAction::Pause) => format!("container pause {}", id),
             (ContainerRuntime::Apple, ContainerAction::Unpause) => {
                 // Apple uses "resume" instead of "unpause"
-                format!("container resume {}", container_id)
+                format!("container resume {}", id)
             }
             (ContainerRuntime::Apple, ContainerAction::Remove) => {
-                format!("container remove {}", container_id)
+                format!("container remove {}", id)
             }
         }
     }
 
     /// Build force remove command
     pub fn force_remove_container(runtime: ContainerRuntime, container_id: &str) -> String {
+        let id = Self::shell_escape(container_id);
         match runtime {
-            ContainerRuntime::Docker => format!("docker rm -f {}", container_id),
-            ContainerRuntime::Podman => format!("podman rm -f {}", container_id),
-            ContainerRuntime::Apple => format!("container remove --force {}", container_id),
+            ContainerRuntime::Docker => format!("docker rm -f {}", id),
+            ContainerRuntime::Podman => format!("podman rm -f {}", id),
+            ContainerRuntime::Apple => format!("container remove --force {}", id),
         }
     }
 
@@ -146,29 +131,40 @@ impl CommandBuilder {
         tail: Option<u32>,
         timestamps: bool,
     ) -> String {
+        let id = Self::shell_escape(container_id);
         let tail_arg = tail.map(|n| format!("--tail {}", n)).unwrap_or_default();
         let ts_arg = if timestamps { "--timestamps" } else { "" };
 
         match runtime {
             ContainerRuntime::Docker => {
-                format!("docker logs {} {} {}", tail_arg, ts_arg, container_id).trim().to_string()
+                format!("docker logs {} {} {}", tail_arg, ts_arg, id)
+                    .split_whitespace()
+                    .collect::<Vec<_>>()
+                    .join(" ")
             }
             ContainerRuntime::Podman => {
-                format!("podman logs {} {} {}", tail_arg, ts_arg, container_id).trim().to_string()
+                format!("podman logs {} {} {}", tail_arg, ts_arg, id)
+                    .split_whitespace()
+                    .collect::<Vec<_>>()
+                    .join(" ")
             }
             ContainerRuntime::Apple => {
                 // Apple Container has simpler log options
-                format!("container logs {} {}", tail_arg, container_id).trim().to_string()
+                format!("container logs {} {}", tail_arg, id)
+                    .split_whitespace()
+                    .collect::<Vec<_>>()
+                    .join(" ")
             }
         }
     }
 
     /// Build streaming logs command (follow mode)
     pub fn container_logs_stream(runtime: ContainerRuntime, container_id: &str) -> String {
+        let id = Self::shell_escape(container_id);
         match runtime {
-            ContainerRuntime::Docker => format!("docker logs -f {}", container_id),
-            ContainerRuntime::Podman => format!("podman logs -f {}", container_id),
-            ContainerRuntime::Apple => format!("container logs -f {}", container_id),
+            ContainerRuntime::Docker => format!("docker logs -f {}", id),
+            ContainerRuntime::Podman => format!("podman logs -f {}", id),
+            ContainerRuntime::Apple => format!("container logs -f {}", id),
         }
     }
 
@@ -187,22 +183,24 @@ impl CommandBuilder {
 
     /// Build image pull command
     pub fn pull_image(runtime: ContainerRuntime, image: &str) -> String {
+        let img = Self::shell_escape(image);
         match runtime {
-            ContainerRuntime::Docker => format!("docker pull {}", image),
-            ContainerRuntime::Podman => format!("podman pull {}", image),
-            ContainerRuntime::Apple => format!("container image pull {}", image),
+            ContainerRuntime::Docker => format!("docker pull {}", img),
+            ContainerRuntime::Podman => format!("podman pull {}", img),
+            ContainerRuntime::Apple => format!("container image pull {}", img),
         }
     }
 
     /// Build image remove command
     pub fn remove_image(runtime: ContainerRuntime, image_id: &str, force: bool) -> String {
+        let img = Self::shell_escape(image_id);
         let force_flag = if force { "-f " } else { "" };
         match runtime {
-            ContainerRuntime::Docker => format!("docker rmi {}{}", force_flag, image_id),
-            ContainerRuntime::Podman => format!("podman rmi {}{}", force_flag, image_id),
+            ContainerRuntime::Docker => format!("docker rmi {}{}", force_flag, img),
+            ContainerRuntime::Podman => format!("podman rmi {}{}", force_flag, img),
             ContainerRuntime::Apple => {
                 let force_opt = if force { "--force " } else { "" };
-                format!("container image remove {}{}", force_opt, image_id)
+                format!("container image remove {}{}", force_opt, img)
             }
         }
     }
@@ -239,9 +237,8 @@ impl CommandBuilder {
         }
 
         for (key, value) in build_args {
-            let escaped_key = key.replace('\'', "'\\''");
-            let escaped_val = value.replace('\'', "'\\''");
-            cmd.push_str(&format!(" --build-arg '{}={}'", escaped_key, escaped_val));
+            let pair = format!("{}={}", key, value);
+            cmd.push_str(&format!(" --build-arg {}", Self::shell_escape(&pair)));
         }
 
         if let Some(df) = dockerfile {
@@ -264,19 +261,22 @@ impl CommandBuilder {
 
     /// Build image inspect command
     pub fn inspect_image(runtime: ContainerRuntime, image_id: &str) -> String {
+        let img = Self::shell_escape(image_id);
         match runtime {
-            ContainerRuntime::Docker => format!("docker image inspect {}", image_id),
-            ContainerRuntime::Podman => format!("podman image inspect {}", image_id),
-            ContainerRuntime::Apple => format!("container image inspect {}", image_id),
+            ContainerRuntime::Docker => format!("docker image inspect {}", img),
+            ContainerRuntime::Podman => format!("podman image inspect {}", img),
+            ContainerRuntime::Apple => format!("container image inspect {}", img),
         }
     }
 
     /// Build image tag command
     pub fn tag_image(runtime: ContainerRuntime, source: &str, target: &str) -> String {
+        let src = Self::shell_escape(source);
+        let tgt = Self::shell_escape(target);
         match runtime {
-            ContainerRuntime::Docker => format!("docker tag {} {}", source, target),
-            ContainerRuntime::Podman => format!("podman tag {} {}", source, target),
-            ContainerRuntime::Apple => format!("container image tag {} {}", source, target),
+            ContainerRuntime::Docker => format!("docker tag {} {}", src, tgt),
+            ContainerRuntime::Podman => format!("podman tag {} {}", src, tgt),
+            ContainerRuntime::Apple => format!("container image tag {} {}", src, tgt),
         }
     }
 
@@ -295,32 +295,35 @@ impl CommandBuilder {
 
     /// Build volume create command
     pub fn create_volume(runtime: ContainerRuntime, name: &str) -> String {
+        let n = Self::shell_escape(name);
         match runtime {
-            ContainerRuntime::Docker => format!("docker volume create {}", name),
-            ContainerRuntime::Podman => format!("podman volume create {}", name),
-            ContainerRuntime::Apple => format!("container volume create {}", name),
+            ContainerRuntime::Docker => format!("docker volume create {}", n),
+            ContainerRuntime::Podman => format!("podman volume create {}", n),
+            ContainerRuntime::Apple => format!("container volume create {}", n),
         }
     }
 
     /// Build volume remove command
     pub fn remove_volume(runtime: ContainerRuntime, name: &str, force: bool) -> String {
+        let n = Self::shell_escape(name);
         let force_flag = if force { "-f " } else { "" };
         match runtime {
-            ContainerRuntime::Docker => format!("docker volume rm {}{}", force_flag, name),
-            ContainerRuntime::Podman => format!("podman volume rm {}{}", force_flag, name),
+            ContainerRuntime::Docker => format!("docker volume rm {}{}", force_flag, n),
+            ContainerRuntime::Podman => format!("podman volume rm {}{}", force_flag, n),
             ContainerRuntime::Apple => {
                 let force_opt = if force { "--force " } else { "" };
-                format!("container volume remove {}{}", force_opt, name)
+                format!("container volume remove {}{}", force_opt, n)
             }
         }
     }
 
     /// Build volume inspect command
     pub fn inspect_volume(runtime: ContainerRuntime, name: &str) -> String {
+        let n = Self::shell_escape(name);
         match runtime {
-            ContainerRuntime::Docker => format!("docker volume inspect {}", name),
-            ContainerRuntime::Podman => format!("podman volume inspect {}", name),
-            ContainerRuntime::Apple => format!("container volume inspect {}", name),
+            ContainerRuntime::Docker => format!("docker volume inspect {}", n),
+            ContainerRuntime::Podman => format!("podman volume inspect {}", n),
+            ContainerRuntime::Apple => format!("container volume inspect {}", n),
         }
     }
 
@@ -344,45 +347,48 @@ impl CommandBuilder {
         driver: Option<&str>,
         subnet: Option<&str>,
     ) -> String {
+        let n = Self::shell_escape(name);
         let driver_arg = driver
-            .map(|d| format!("--driver {}", d))
+            .map(|d| format!("--driver {}", Self::shell_escape(d)))
             .unwrap_or_default();
         let subnet_arg = subnet
-            .map(|s| format!("--subnet {}", s))
+            .map(|s| format!("--subnet {}", Self::shell_escape(s)))
             .unwrap_or_default();
 
         match runtime {
             ContainerRuntime::Docker => {
-                format!("docker network create {} {} {}", driver_arg, subnet_arg, name)
+                format!("docker network create {} {} {}", driver_arg, subnet_arg, n)
                     .split_whitespace()
                     .collect::<Vec<_>>()
                     .join(" ")
             }
             ContainerRuntime::Podman => {
-                format!("podman network create {} {} {}", driver_arg, subnet_arg, name)
+                format!("podman network create {} {} {}", driver_arg, subnet_arg, n)
                     .split_whitespace()
                     .collect::<Vec<_>>()
                     .join(" ")
             }
-            ContainerRuntime::Apple => format!("container network create {}", name),
+            ContainerRuntime::Apple => format!("container network create {}", n),
         }
     }
 
     /// Build network remove command
     pub fn remove_network(runtime: ContainerRuntime, name: &str) -> String {
+        let n = Self::shell_escape(name);
         match runtime {
-            ContainerRuntime::Docker => format!("docker network rm {}", name),
-            ContainerRuntime::Podman => format!("podman network rm {}", name),
-            ContainerRuntime::Apple => format!("container network remove {}", name),
+            ContainerRuntime::Docker => format!("docker network rm {}", n),
+            ContainerRuntime::Podman => format!("podman network rm {}", n),
+            ContainerRuntime::Apple => format!("container network remove {}", n),
         }
     }
 
     /// Build network inspect command
     pub fn inspect_network(runtime: ContainerRuntime, name: &str) -> String {
+        let n = Self::shell_escape(name);
         match runtime {
-            ContainerRuntime::Docker => format!("docker network inspect {}", name),
-            ContainerRuntime::Podman => format!("podman network inspect {}", name),
-            ContainerRuntime::Apple => format!("container network inspect {}", name),
+            ContainerRuntime::Docker => format!("docker network inspect {}", n),
+            ContainerRuntime::Podman => format!("podman network inspect {}", n),
+            ContainerRuntime::Apple => format!("container network inspect {}", n),
         }
     }
 
@@ -392,16 +398,12 @@ impl CommandBuilder {
         network: &str,
         container_id: &str,
     ) -> String {
+        let net = Self::shell_escape(network);
+        let id = Self::shell_escape(container_id);
         match runtime {
-            ContainerRuntime::Docker => {
-                format!("docker network connect {} {}", network, container_id)
-            }
-            ContainerRuntime::Podman => {
-                format!("podman network connect {} {}", network, container_id)
-            }
-            ContainerRuntime::Apple => {
-                format!("container network connect {} {}", network, container_id)
-            }
+            ContainerRuntime::Docker => format!("docker network connect {} {}", net, id),
+            ContainerRuntime::Podman => format!("podman network connect {} {}", net, id),
+            ContainerRuntime::Apple => format!("container network connect {} {}", net, id),
         }
     }
 
@@ -411,16 +413,12 @@ impl CommandBuilder {
         network: &str,
         container_id: &str,
     ) -> String {
+        let net = Self::shell_escape(network);
+        let id = Self::shell_escape(container_id);
         match runtime {
-            ContainerRuntime::Docker => {
-                format!("docker network disconnect {} {}", network, container_id)
-            }
-            ContainerRuntime::Podman => {
-                format!("podman network disconnect {} {}", network, container_id)
-            }
-            ContainerRuntime::Apple => {
-                format!("container network disconnect {} {}", network, container_id)
-            }
+            ContainerRuntime::Docker => format!("docker network disconnect {} {}", net, id),
+            ContainerRuntime::Podman => format!("podman network disconnect {} {}", net, id),
+            ContainerRuntime::Apple => format!("container network disconnect {} {}", net, id),
         }
     }
 
@@ -466,36 +464,30 @@ impl CommandBuilder {
 
     /// Build exec command for terminal access
     pub fn exec_terminal(runtime: ContainerRuntime, container_id: &str, shell: &str) -> String {
+        let id = Self::shell_escape(container_id);
+        let sh = Self::shell_escape(shell);
         match runtime {
-            ContainerRuntime::Docker => format!("docker exec -it {} {}", container_id, shell),
-            ContainerRuntime::Podman => format!("podman exec -it {} {}", container_id, shell),
-            ContainerRuntime::Apple => format!("container exec -it {} {}", container_id, shell),
+            ContainerRuntime::Docker => format!("docker exec -it {} {}", id, sh),
+            ContainerRuntime::Podman => format!("podman exec -it {} {}", id, sh),
+            ContainerRuntime::Apple => format!("container exec -it {} {}", id, sh),
         }
     }
 
     /// Build exec command without TTY (for scripting).
-    /// Wraps in `sh -c` so shell operators (||, >, 2>/dev/null, |) work inside the container.
+    /// The inner `command` is passed to `sh -c` inside the container; it is
+    /// intentionally a shell snippet and is single-quoted so the outer shell
+    /// cannot interpret it. `container_id` is always quoted defensively.
     pub fn exec_command(
         runtime: ContainerRuntime,
         container_id: &str,
         command: &str,
     ) -> String {
-        // Escape characters that have special meaning inside double quotes
-        let escaped = command
-            .replace('\\', "\\\\")
-            .replace('"', "\\\"")
-            .replace('$', "\\$")
-            .replace('`', "\\`");
+        let id = Self::shell_escape(container_id);
+        let escaped_cmd = Self::shell_escape(command);
         match runtime {
-            ContainerRuntime::Docker => {
-                format!("docker exec {} sh -c \"{}\"", container_id, escaped)
-            }
-            ContainerRuntime::Podman => {
-                format!("podman exec {} sh -c \"{}\"", container_id, escaped)
-            }
-            ContainerRuntime::Apple => {
-                format!("container exec {} sh -c \"{}\"", container_id, escaped)
-            }
+            ContainerRuntime::Docker => format!("docker exec {} sh -c {}", id, escaped_cmd),
+            ContainerRuntime::Podman => format!("podman exec {} sh -c {}", id, escaped_cmd),
+            ContainerRuntime::Apple => format!("container exec {} sh -c {}", id, escaped_cmd),
         }
     }
 
@@ -614,10 +606,12 @@ echo "===END===""#
     // File Browser Commands
     // ========================================================================
 
-    /// Shell-escape a path for safe use in commands.
-    /// Wraps in single quotes, escaping any embedded single quotes.
-    pub fn shell_escape(path: &str) -> String {
-        format!("'{}'", path.replace('\'', "'\\''"))
+    /// Shell-escape an arbitrary value for safe interpolation into a POSIX
+    /// shell command. Wraps in single quotes, escaping any embedded single
+    /// quotes via the standard `'\''` dance. Safe against injection for any
+    /// byte sequence that does not contain NUL.
+    pub fn shell_escape(value: &str) -> String {
+        format!("'{}'", value.replace('\'', "'\\''"))
     }
 
     /// List directory contents with full metadata.
@@ -646,10 +640,11 @@ echo "===END===""#
 
     /// Write content to a file using base64 transport (safe for special chars).
     pub fn write_file_from_base64(path: &str, base64_content: &str) -> String {
-        let escaped = Self::shell_escape(path);
+        let escaped_path = Self::shell_escape(path);
+        let escaped_b64 = Self::shell_escape(base64_content);
         format!(
-            "printf '%s' '{}' | base64 -d > {}",
-            base64_content, escaped
+            "printf '%s' {} | base64 -d > {}",
+            escaped_b64, escaped_path
         )
     }
 
@@ -684,8 +679,9 @@ echo "===END===""#
 
     /// Write base64-encoded data to a file (for upload).
     pub fn write_file_base64(path: &str, base64_data: &str) -> String {
-        let escaped = Self::shell_escape(path);
-        format!("printf '%s' '{}' | base64 -d > {}", base64_data, escaped)
+        let escaped_path = Self::shell_escape(path);
+        let escaped_b64 = Self::shell_escape(base64_data);
+        format!("printf '%s' {} | base64 -d > {}", escaped_b64, escaped_path)
     }
 }
 
@@ -717,7 +713,7 @@ mod tests {
                 ContainerAction::Start,
                 "abc123"
             ),
-            "docker start abc123"
+            "docker start 'abc123'"
         );
         assert_eq!(
             CommandBuilder::container_action(
@@ -725,19 +721,19 @@ mod tests {
                 ContainerAction::Unpause,
                 "abc123"
             ),
-            "container resume abc123" // Apple uses "resume" instead of "unpause"
+            "container resume 'abc123'" // Apple uses "resume" instead of "unpause"
         );
     }
 
     #[test]
     fn test_all_container_actions_docker() {
         let actions = vec![
-            (ContainerAction::Start, "docker start c1"),
-            (ContainerAction::Stop, "docker stop c1"),
-            (ContainerAction::Restart, "docker restart c1"),
-            (ContainerAction::Pause, "docker pause c1"),
-            (ContainerAction::Unpause, "docker unpause c1"),
-            (ContainerAction::Remove, "docker rm c1"),
+            (ContainerAction::Start, "docker start 'c1'"),
+            (ContainerAction::Stop, "docker stop 'c1'"),
+            (ContainerAction::Restart, "docker restart 'c1'"),
+            (ContainerAction::Pause, "docker pause 'c1'"),
+            (ContainerAction::Unpause, "docker unpause 'c1'"),
+            (ContainerAction::Remove, "docker rm 'c1'"),
         ];
         for (action, expected) in actions {
             assert_eq!(
@@ -751,26 +747,26 @@ mod tests {
     fn test_all_container_actions_podman() {
         assert_eq!(
             CommandBuilder::container_action(ContainerRuntime::Podman, ContainerAction::Start, "c1"),
-            "podman start c1"
+            "podman start 'c1'"
         );
         assert_eq!(
             CommandBuilder::container_action(ContainerRuntime::Podman, ContainerAction::Remove, "c1"),
-            "podman rm c1"
+            "podman rm 'c1'"
         );
     }
 
     #[test]
     fn test_apple_restart_chains_stop_and_start() {
         let cmd = CommandBuilder::container_action(ContainerRuntime::Apple, ContainerAction::Restart, "c1");
-        assert!(cmd.contains("container stop c1"));
-        assert!(cmd.contains("container start c1"));
+        assert!(cmd.contains("container stop 'c1'"));
+        assert!(cmd.contains("container start 'c1'"));
     }
 
     #[test]
     fn test_apple_remove_uses_remove_not_rm() {
         assert_eq!(
             CommandBuilder::container_action(ContainerRuntime::Apple, ContainerAction::Remove, "c1"),
-            "container remove c1"
+            "container remove 'c1'"
         );
     }
 
@@ -785,29 +781,29 @@ mod tests {
     fn test_inspect_container() {
         assert_eq!(
             CommandBuilder::inspect_container(ContainerRuntime::Docker, "abc"),
-            "docker inspect abc"
+            "docker inspect 'abc'"
         );
         assert_eq!(
             CommandBuilder::inspect_container(ContainerRuntime::Apple, "abc"),
-            "container inspect abc"
+            "container inspect 'abc'"
         );
     }
 
     #[test]
     fn test_batch_inspect_containers() {
         let cmd = CommandBuilder::batch_inspect_containers(ContainerRuntime::Docker, &["c1", "c2", "c3"]);
-        assert_eq!(cmd, "docker inspect c1 c2 c3");
+        assert_eq!(cmd, "docker inspect 'c1' 'c2' 'c3'");
     }
 
     #[test]
     fn test_force_remove_container() {
         assert_eq!(
             CommandBuilder::force_remove_container(ContainerRuntime::Docker, "c1"),
-            "docker rm -f c1"
+            "docker rm -f 'c1'"
         );
         assert_eq!(
             CommandBuilder::force_remove_container(ContainerRuntime::Apple, "c1"),
-            "container remove --force c1"
+            "container remove --force 'c1'"
         );
     }
 
@@ -816,7 +812,7 @@ mod tests {
         let cmd = CommandBuilder::container_logs(ContainerRuntime::Docker, "c1", Some(100), true);
         assert!(cmd.contains("--tail 100"));
         assert!(cmd.contains("--timestamps"));
-        assert!(cmd.contains("c1"));
+        assert!(cmd.contains("'c1'"));
     }
 
     #[test]
@@ -825,7 +821,7 @@ mod tests {
         assert!(!cmd.contains("--tail"));
         assert!(!cmd.contains("--timestamps"));
         assert!(cmd.contains("docker logs"));
-        assert!(cmd.contains("c1"));
+        assert!(cmd.contains("'c1'"));
     }
 
     #[test]
@@ -841,11 +837,11 @@ mod tests {
     fn test_container_logs_stream() {
         assert_eq!(
             CommandBuilder::container_logs_stream(ContainerRuntime::Docker, "c1"),
-            "docker logs -f c1"
+            "docker logs -f 'c1'"
         );
         assert_eq!(
             CommandBuilder::container_logs_stream(ContainerRuntime::Apple, "c1"),
-            "container logs -f c1"
+            "container logs -f 'c1'"
         );
     }
 
@@ -865,11 +861,11 @@ mod tests {
     fn test_pull_image() {
         assert_eq!(
             CommandBuilder::pull_image(ContainerRuntime::Docker, "nginx:latest"),
-            "docker pull nginx:latest"
+            "docker pull 'nginx:latest'"
         );
         assert_eq!(
             CommandBuilder::pull_image(ContainerRuntime::Apple, "nginx:latest"),
-            "container image pull nginx:latest"
+            "container image pull 'nginx:latest'"
         );
     }
 
@@ -877,15 +873,15 @@ mod tests {
     fn test_remove_image_with_force() {
         assert_eq!(
             CommandBuilder::remove_image(ContainerRuntime::Docker, "img1", true),
-            "docker rmi -f img1"
+            "docker rmi -f 'img1'"
         );
         assert_eq!(
             CommandBuilder::remove_image(ContainerRuntime::Docker, "img1", false),
-            "docker rmi img1"
+            "docker rmi 'img1'"
         );
         assert_eq!(
             CommandBuilder::remove_image(ContainerRuntime::Apple, "img1", true),
-            "container image remove --force img1"
+            "container image remove --force 'img1'"
         );
     }
 
@@ -893,7 +889,7 @@ mod tests {
     fn test_inspect_image() {
         assert_eq!(
             CommandBuilder::inspect_image(ContainerRuntime::Docker, "img1"),
-            "docker image inspect img1"
+            "docker image inspect 'img1'"
         );
     }
 
@@ -901,11 +897,11 @@ mod tests {
     fn test_tag_image() {
         assert_eq!(
             CommandBuilder::tag_image(ContainerRuntime::Docker, "src:v1", "dst:v2"),
-            "docker tag src:v1 dst:v2"
+            "docker tag 'src:v1' 'dst:v2'"
         );
         assert_eq!(
             CommandBuilder::tag_image(ContainerRuntime::Apple, "src:v1", "dst:v2"),
-            "container image tag src:v1 dst:v2"
+            "container image tag 'src:v1' 'dst:v2'"
         );
     }
 
@@ -921,7 +917,7 @@ mod tests {
     fn test_create_volume() {
         assert_eq!(
             CommandBuilder::create_volume(ContainerRuntime::Docker, "myvol"),
-            "docker volume create myvol"
+            "docker volume create 'myvol'"
         );
     }
 
@@ -929,11 +925,11 @@ mod tests {
     fn test_remove_volume_with_force() {
         assert_eq!(
             CommandBuilder::remove_volume(ContainerRuntime::Docker, "myvol", true),
-            "docker volume rm -f myvol"
+            "docker volume rm -f 'myvol'"
         );
         assert_eq!(
             CommandBuilder::remove_volume(ContainerRuntime::Apple, "myvol", true),
-            "container volume remove --force myvol"
+            "container volume remove --force 'myvol'"
         );
     }
 
@@ -941,7 +937,7 @@ mod tests {
     fn test_inspect_volume() {
         assert_eq!(
             CommandBuilder::inspect_volume(ContainerRuntime::Podman, "vol1"),
-            "podman volume inspect vol1"
+            "podman volume inspect 'vol1'"
         );
     }
 
@@ -962,15 +958,15 @@ mod tests {
             Some("10.0.0.0/24"),
         );
         assert!(cmd.contains("docker network create"));
-        assert!(cmd.contains("--driver bridge"));
-        assert!(cmd.contains("--subnet 10.0.0.0/24"));
-        assert!(cmd.contains("mynet"));
+        assert!(cmd.contains("--driver 'bridge'"));
+        assert!(cmd.contains("--subnet '10.0.0.0/24'"));
+        assert!(cmd.contains("'mynet'"));
     }
 
     #[test]
     fn test_create_network_no_options() {
         let cmd = CommandBuilder::create_network(ContainerRuntime::Docker, "mynet", None, None);
-        assert_eq!(cmd, "docker network create mynet");
+        assert_eq!(cmd, "docker network create 'mynet'");
     }
 
     #[test]
@@ -981,18 +977,18 @@ mod tests {
             Some("bridge"),
             Some("10.0.0.0/24"),
         );
-        assert_eq!(cmd, "container network create mynet");
+        assert_eq!(cmd, "container network create 'mynet'");
     }
 
     #[test]
     fn test_remove_network() {
         assert_eq!(
             CommandBuilder::remove_network(ContainerRuntime::Docker, "mynet"),
-            "docker network rm mynet"
+            "docker network rm 'mynet'"
         );
         assert_eq!(
             CommandBuilder::remove_network(ContainerRuntime::Apple, "mynet"),
-            "container network remove mynet"
+            "container network remove 'mynet'"
         );
     }
 
@@ -1000,7 +996,7 @@ mod tests {
     fn test_inspect_network() {
         assert_eq!(
             CommandBuilder::inspect_network(ContainerRuntime::Docker, "mynet"),
-            "docker network inspect mynet"
+            "docker network inspect 'mynet'"
         );
     }
 
@@ -1008,7 +1004,7 @@ mod tests {
     fn test_connect_to_network() {
         assert_eq!(
             CommandBuilder::connect_to_network(ContainerRuntime::Docker, "mynet", "c1"),
-            "docker network connect mynet c1"
+            "docker network connect 'mynet' 'c1'"
         );
     }
 
@@ -1016,7 +1012,7 @@ mod tests {
     fn test_disconnect_from_network() {
         assert_eq!(
             CommandBuilder::disconnect_from_network(ContainerRuntime::Podman, "mynet", "c1"),
-            "podman network disconnect mynet c1"
+            "podman network disconnect 'mynet' 'c1'"
         );
     }
 
@@ -1059,20 +1055,32 @@ mod tests {
     fn test_exec_terminal() {
         assert_eq!(
             CommandBuilder::exec_terminal(ContainerRuntime::Docker, "c1", "/bin/bash"),
-            "docker exec -it c1 /bin/bash"
+            "docker exec -it 'c1' '/bin/bash'"
         );
     }
 
     #[test]
-    fn test_exec_command_escapes_special_chars() {
+    fn test_exec_command_single_quotes_payload() {
         let cmd = CommandBuilder::exec_command(
             ContainerRuntime::Docker,
             "c1",
             "echo $HOME && ls \"dir\"",
         );
-        assert!(cmd.contains("docker exec c1 sh -c"));
-        assert!(cmd.contains("\\$HOME"));
-        assert!(cmd.contains("\\\"dir\\\""));
+        assert_eq!(
+            cmd,
+            "docker exec 'c1' sh -c 'echo $HOME && ls \"dir\"'"
+        );
+    }
+
+    #[test]
+    fn test_exec_command_escapes_embedded_single_quote() {
+        let cmd = CommandBuilder::exec_command(
+            ContainerRuntime::Docker,
+            "c1",
+            "echo 'hi'",
+        );
+        // Single quote inside single-quoted string is escaped via '\''
+        assert_eq!(cmd, "docker exec 'c1' sh -c 'echo '\\''hi'\\'''");
     }
 
     #[test]
@@ -1106,7 +1114,7 @@ mod tests {
         let cmd = CommandBuilder::write_file_from_base64("/tmp/file.txt", "SGVsbG8=");
         assert!(cmd.contains("base64 -d"));
         assert!(cmd.contains("'/tmp/file.txt'"));
-        assert!(cmd.contains("SGVsbG8="));
+        assert!(cmd.contains("'SGVsbG8='"));
     }
 
     #[test]
