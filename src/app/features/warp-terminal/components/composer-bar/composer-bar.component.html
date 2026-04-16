@@ -8,6 +8,7 @@
         <input
           type="text"
           placeholder="Search history..."
+          aria-label="Search command history"
           [value]="historyFilter()"
           (input)="onHistoryFilterInput($event)"
           (keydown)="onKeyDown($event)"

@@ -8,6 +8,7 @@
         [value]="query"
         (input)="updateQuery($any($event.target).value)"
         placeholder="Search commands and output..."
+        aria-label="Search commands and output"
       />
       <button (click)="close.emit()" aria-label="Close search">
         <lucide-icon [img]="X" class="w-4 h-4" aria-hidden="true"></lucide-icon>

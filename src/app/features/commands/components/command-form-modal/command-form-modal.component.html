@@ -25,8 +25,9 @@
     <div class="flex-1 overflow-y-auto p-4 space-y-4">
       <!-- Name -->
       <div>
-        <label class="block text-sm text-zinc-400 mb-1">Name *</label>
+        <label for="cmd-name" class="block text-sm text-zinc-400 mb-1">Name *</label>
         <input
+          id="cmd-name"
           type="text"
           [(ngModel)]="form.name"
           placeholder="e.g., Shell into Container"
@@ -36,8 +37,9 @@
 
       <!-- Description -->
       <div>
-        <label class="block text-sm text-zinc-400 mb-1">Description *</label>
+        <label for="cmd-description" class="block text-sm text-zinc-400 mb-1">Description *</label>
         <textarea
+          id="cmd-description"
           [(ngModel)]="form.description"
           placeholder="Brief description of what this command does"
           rows="2"
@@ -47,8 +49,9 @@
 
       <!-- Command -->
       <div>
-        <label class="block text-sm text-zinc-400 mb-1">Command *</label>
+        <label for="cmd-command" class="block text-sm text-zinc-400 mb-1">Command *</label>
         <textarea
+          id="cmd-command"
           [(ngModel)]="form.command"
           (ngModelChange)="detectVariables()"
           placeholder="e.g., docker exec -it ${CONTAINER_NAME} /bin/bash"
@@ -76,6 +79,7 @@
                     type="text"
                     [(ngModel)]="form.variables[i].description"
                     placeholder="Description"
+                    [attr.aria-label]="'Description for ' + varName"
                     class="w-full px-2 py-1 bg-zinc-800 border border-zinc-700 rounded text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
                   />
                   <div class="flex items-center gap-3">
@@ -83,6 +87,7 @@
                       type="text"
                       [(ngModel)]="form.variables[i].defaultValue"
                       placeholder="Default value (optional)"
+                      [attr.aria-label]="'Default value for ' + varName"
                       class="flex-1 px-2 py-1 bg-zinc-800 border border-zinc-700 rounded text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
                     />
                     <label class="flex items-center gap-1.5 text-xs text-zinc-400">
@@ -103,8 +108,9 @@
 
       <!-- Category -->
       <div>
-        <label class="block text-sm text-zinc-400 mb-1">Category</label>
+        <label for="cmd-category" class="block text-sm text-zinc-400 mb-1">Category</label>
         <select
+          id="cmd-category"
           [(ngModel)]="form.category"
           class="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
         >
@@ -121,8 +127,9 @@
 
       <!-- Tags -->
       <div>
-        <label class="block text-sm text-zinc-400 mb-1">Tags</label>
+        <label for="cmd-tags" class="block text-sm text-zinc-400 mb-1">Tags</label>
         <input
+          id="cmd-tags"
           type="text"
           [(ngModel)]="form.tags"
           placeholder="Comma-separated tags (e.g., docker, shell, debug)"
