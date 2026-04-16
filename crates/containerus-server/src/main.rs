@@ -9,7 +9,7 @@ mod rate_limit;
 mod vault;
 mod ws;
 
-use auth::middleware::PermissionCache;
+use auth::middleware::{PermissionCache, TokenRevocationCache};
 use sqlx::PgPool;
 use axum::http::header::{AUTHORIZATION, CONTENT_TYPE};
 use axum::http::Method;
@@ -36,6 +36,7 @@ pub struct AppState {
     pub connections: ConnectionManager,
     pub k8s: ClusterManager,
     pub permission_cache: PermissionCache,
+    pub revocation_cache: TokenRevocationCache,
 }
 
 #[tokio::main]
@@ -81,6 +82,8 @@ async fn main() {
         .await
         .expect("Failed to load permission cache");
 
+    let revocation_cache = TokenRevocationCache::new();
+
     let state = AppState {
         db,
         config,
@@ -88,6 +91,7 @@ async fn main() {
         connections,
         k8s,
         permission_cache,
+        revocation_cache,
     };
 
     // Start background task to clean up idle SSH connections (every 60s, 5min idle threshold)

@@ -22,6 +22,8 @@ pub struct AccessClaims {
     pub iss: String,
     /// Audience
     pub aud: String,
+    /// JWT ID — unique per token, used for revocation
+    pub jti: Uuid,
     /// User's email
     pub email: String,
     /// All project memberships for this user
@@ -48,6 +50,7 @@ impl std::fmt::Debug for AccessClaims {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("AccessClaims")
             .field("sub", &self.sub)
+            .field("jti", &self.jti)
             .field("email", &"[redacted]")
             .field("memberships", &self.memberships.len())
             .field("is_company_admin", &self.is_company_admin)
@@ -72,7 +75,7 @@ pub struct RefreshClaims {
     pub exp: i64,
 }
 
-/// Create an access token.
+/// Create an access token. Returns (token_string, jti) so callers can track the token ID.
 pub fn create_access_token(
     user_id: Uuid,
     email: &str,
@@ -80,12 +83,14 @@ pub fn create_access_token(
     is_company_admin: bool,
     secret: &str,
     expiry_secs: i64,
-) -> Result<String, jsonwebtoken::errors::Error> {
+) -> Result<(String, Uuid), jsonwebtoken::errors::Error> {
     let now = Utc::now();
+    let jti = Uuid::new_v4();
     let claims = AccessClaims {
         sub: user_id,
         iss: JWT_ISSUER.to_string(),
         aud: JWT_AUDIENCE.to_string(),
+        jti,
         email: email.to_string(),
         memberships,
         is_company_admin,
@@ -93,11 +98,13 @@ pub fn create_access_token(
         exp: (now + Duration::seconds(expiry_secs)).timestamp(),
     };
 
-    encode(
+    let token = encode(
         &Header::default(),
         &claims,
         &EncodingKey::from_secret(secret.as_bytes()),
-    )
+    )?;
+
+    Ok((token, jti))
 }
 
 /// Create a refresh token (returns token string + token ID for storage).
@@ -170,7 +177,7 @@ mod tests {
         let project_id = Uuid::new_v4();
         let role_id = Uuid::new_v4();
         let memberships = vec![ProjectMembership { project_id, role_id }];
-        let token = create_access_token(
+        let (token, jti) = create_access_token(
             user_id,
             "test@example.com",
             memberships,
@@ -182,6 +189,7 @@ mod tests {
 
         let claims = decode_access_token(&token, TEST_SECRET).unwrap();
         assert_eq!(claims.sub, user_id);
+        assert_eq!(claims.jti, jti);
         assert_eq!(claims.email, "test@example.com");
         assert_eq!(claims.memberships.len(), 1);
         assert_eq!(claims.memberships[0].project_id, project_id);
@@ -192,7 +200,7 @@ mod tests {
     #[test]
     fn test_access_token_company_admin() {
         let user_id = Uuid::new_v4();
-        let token = create_access_token(
+        let (token, _jti) = create_access_token(
             user_id,
             "admin@example.com",
             vec![],
@@ -222,7 +230,7 @@ mod tests {
     #[test]
     fn test_expired_token_rejected() {
         let user_id = Uuid::new_v4();
-        let token = create_access_token(
+        let (token, _jti) = create_access_token(
             user_id,
             "test@example.com",
             vec![],
@@ -238,7 +246,7 @@ mod tests {
     #[test]
     fn test_wrong_secret_rejected() {
         let user_id = Uuid::new_v4();
-        let token = create_access_token(
+        let (token, _jti) = create_access_token(
             user_id,
             "test@example.com",
             vec![],
@@ -249,5 +257,21 @@ mod tests {
         .unwrap();
 
         assert!(decode_access_token(&token, "wrong-secret").is_err());
+    }
+
+    #[test]
+    fn test_access_token_has_unique_jti() {
+        let user_id = Uuid::new_v4();
+        let (_, jti1) = create_access_token(user_id, "a@b.com", vec![], false, TEST_SECRET, 3600).unwrap();
+        let (_, jti2) = create_access_token(user_id, "a@b.com", vec![], false, TEST_SECRET, 3600).unwrap();
+        assert_ne!(jti1, jti2, "every access token must have a unique jti");
+    }
+
+    #[test]
+    fn test_access_token_jti_roundtrips_in_claims() {
+        let user_id = Uuid::new_v4();
+        let (token, jti) = create_access_token(user_id, "a@b.com", vec![], false, TEST_SECRET, 3600).unwrap();
+        let claims = decode_access_token(&token, TEST_SECRET).unwrap();
+        assert_eq!(claims.jti, jti);
     }
 }

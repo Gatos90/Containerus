@@ -3,6 +3,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use uuid::Uuid;
 
+use validator::ValidateEmail;
+
 use crate::auth::{jwt, password};
 use crate::auth::jwt::ProjectMembership;
 use crate::auth::middleware::AuthUser;
@@ -13,6 +15,7 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/register", post(register))
         .route("/login", post(login))
+        .route("/logout", post(logout))
         .route("/refresh", post(refresh))
         .route("/me", axum::routing::get(me))
 }
@@ -71,7 +74,7 @@ async fn register(
 ) -> Result<(StatusCode, Json<AuthResponse>), (StatusCode, Json<Value>)> {
     // Validate input
     let email = req.email.trim().to_lowercase();
-    if email.is_empty() || !email.contains('@') {
+    if email.is_empty() || !email.validate_email() {
         return Err((StatusCode::BAD_REQUEST, Json(json!({ "error": "Invalid email address" }))));
     }
     if req.password.len() < 8 {
@@ -157,7 +160,7 @@ async fn register(
     }
 
     // Generate tokens (no project memberships yet — user creates projects explicitly)
-    let access_token = jwt::create_access_token(
+    let (access_token, _access_jti) = jwt::create_access_token(
         user_id,
         &email,
         vec![],
@@ -299,7 +302,7 @@ async fn login(
         .collect();
 
     // Generate tokens
-    let access_token = jwt::create_access_token(
+    let (access_token, _access_jti) = jwt::create_access_token(
         row.id,
         &row.email,
         memberships,
@@ -431,7 +434,7 @@ async fn refresh(
         .collect();
 
     // Issue new tokens
-    let access_token = jwt::create_access_token(
+    let (access_token, _access_jti) = jwt::create_access_token(
         row.id,
         &row.email,
         memberships,
@@ -482,6 +485,27 @@ async fn refresh(
     }))
 }
 
+/// Revoke the current access token so it is rejected immediately on subsequent requests.
+/// Also deletes all stored refresh tokens for the user (forces full re-login on all devices).
+async fn logout(
+    State(state): State<AppState>,
+    auth: AuthUser,
+) -> Result<StatusCode, (StatusCode, Json<Value>)> {
+    state.revocation_cache.revoke(auth.claims.jti, auth.claims.exp);
+
+    sqlx::query("DELETE FROM refresh_tokens WHERE user_id = $1")
+        .bind(auth.claims.sub)
+        .execute(&state.db)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to delete refresh tokens on logout: {e}");
+            (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": "Internal server error" })))
+        })?;
+
+    tracing::info!("User {} logged out, access token jti={} revoked", auth.claims.sub, auth.claims.jti);
+    Ok(StatusCode::NO_CONTENT)
+}
+
 /// Get the current authenticated user's info, including permissions across all project memberships.
 async fn me(
     State(state): State<AppState>,
@@ -524,4 +548,32 @@ fn hash_token_jti(id: Uuid) -> String {
     use sha2::{Sha256, Digest};
     let digest = Sha256::digest(id.as_bytes());
     format!("{:x}", digest)
+}
+
+#[cfg(test)]
+mod tests {
+    use validator::ValidateEmail;
+
+    #[test]
+    fn test_valid_emails_accepted() {
+        let valid = ["user@example.com", "a+b@sub.domain.org", "foo.bar@baz.io"];
+        for email in &valid {
+            assert!(email.validate_email(), "{email} should be valid");
+        }
+    }
+
+    #[test]
+    fn test_invalid_emails_rejected() {
+        let invalid = [
+            "notanemail",
+            "@nodomain",
+            "missing-at-sign",
+            "double@@at.com",
+            "",
+            "space @domain.com",
+        ];
+        for email in &invalid {
+            assert!(!email.validate_email(), "{email} should be invalid");
+        }
+    }
 }

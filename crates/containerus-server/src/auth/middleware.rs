@@ -17,6 +17,41 @@ use crate::db::models::EffectivePermissions;
 use crate::AppState;
 
 // ============================================================================
+// TokenRevocationCache — in-memory revocation list for access tokens
+// ============================================================================
+
+/// In-memory revocation list mapping jti -> expiry Unix timestamp.
+/// On logout the token's jti is inserted here; the middleware rejects revoked tokens.
+/// Expired entries are pruned on each insertion to prevent unbounded growth.
+#[derive(Clone)]
+pub struct TokenRevocationCache {
+    revoked: Arc<DashMap<Uuid, i64>>,
+}
+
+impl TokenRevocationCache {
+    pub fn new() -> Self {
+        Self { revoked: Arc::new(DashMap::new()) }
+    }
+
+    /// Mark a token as revoked until `exp` (Unix timestamp).
+    pub fn revoke(&self, jti: Uuid, exp: i64) {
+        self.prune_expired();
+        self.revoked.insert(jti, exp);
+    }
+
+    /// Returns true if the given jti has been explicitly revoked.
+    pub fn is_revoked(&self, jti: &Uuid) -> bool {
+        self.revoked.contains_key(jti)
+    }
+
+    /// Remove entries whose expiry has already passed (they can no longer be used anyway).
+    fn prune_expired(&self) {
+        let now = chrono::Utc::now().timestamp();
+        self.revoked.retain(|_, &mut exp| exp > now);
+    }
+}
+
+// ============================================================================
 // Permission Cache (in-memory, loaded at startup, invalidated on role changes)
 // ============================================================================
 
@@ -138,6 +173,10 @@ where
 
         let claims = decode_access_token(token, &app_state.config.jwt_secret)
             .map_err(|_| AuthError::InvalidToken)?;
+
+        if app_state.revocation_cache.is_revoked(&claims.jti) {
+            return Err(AuthError::InvalidToken);
+        }
 
         Ok(AuthUser { claims })
     }
@@ -361,5 +400,52 @@ impl IntoResponse for AuthError {
         };
 
         (status, Json(json!({ "error": message }))).into_response()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_revocation_cache_revoke_and_check() {
+        let cache = TokenRevocationCache::new();
+        let jti = Uuid::new_v4();
+        let future_exp = chrono::Utc::now().timestamp() + 3600;
+
+        assert!(!cache.is_revoked(&jti));
+        cache.revoke(jti, future_exp);
+        assert!(cache.is_revoked(&jti));
+    }
+
+    #[test]
+    fn test_revocation_cache_does_not_affect_other_tokens() {
+        let cache = TokenRevocationCache::new();
+        let jti_a = Uuid::new_v4();
+        let jti_b = Uuid::new_v4();
+        let future_exp = chrono::Utc::now().timestamp() + 3600;
+
+        cache.revoke(jti_a, future_exp);
+        assert!(cache.is_revoked(&jti_a));
+        assert!(!cache.is_revoked(&jti_b));
+    }
+
+    #[test]
+    fn test_revocation_cache_prunes_expired_on_insert() {
+        let cache = TokenRevocationCache::new();
+        let old_jti = Uuid::new_v4();
+        let new_jti = Uuid::new_v4();
+
+        // Insert with already-expired timestamp so it gets pruned on the next insert
+        let past_exp = chrono::Utc::now().timestamp() - 10;
+        cache.revoked.insert(old_jti, past_exp);
+        assert_eq!(cache.revoked.len(), 1);
+
+        // Inserting a new entry triggers prune
+        cache.revoke(new_jti, chrono::Utc::now().timestamp() + 3600);
+
+        // Expired entry must be gone; new entry must remain
+        assert!(!cache.revoked.contains_key(&old_jti));
+        assert!(cache.revoked.contains_key(&new_jti));
     }
 }

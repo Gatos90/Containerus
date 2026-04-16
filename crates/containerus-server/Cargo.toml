@@ -55,3 +55,4 @@ dotenvy = "0.15"
 dashmap = "6"
 futures-util = "0.3"
 serde_yaml = "0.9"
+validator = { version = "0.18", features = ["derive"] }

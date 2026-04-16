@@ -27,6 +27,8 @@ fn host_port(hostname: &str, port: u16) -> String {
 pub enum HostKeyRejection {
     Mismatch { expected: String, actual: String },
     Revoked,
+    /// Host key is not in known_hosts. Fingerprint is provided for user approval.
+    Unknown { key_type: String, fingerprint: String },
 }
 
 /// Handle to observe host key rejections after the SSH handshake.
@@ -52,6 +54,16 @@ impl HostKeyWatcher {
                 hostname: hostname.to_string(),
                 reason: "Host key has been revoked".to_string(),
             },
+            HostKeyRejection::Unknown { key_type, fingerprint } => {
+                ContainerError::HostKeyVerificationFailed {
+                    hostname: hostname.to_string(),
+                    reason: format!(
+                        "Unknown host key for port {}.\nKey type: {}\nFingerprint: {}\n\
+                         To connect, explicitly trust this host key via the UI.",
+                        port, key_type, fingerprint
+                    ),
+                }
+            }
         })
     }
 }
@@ -86,14 +98,15 @@ impl client::Handler for SshHandler {
                 Ok(true)
             }
             Ok(HostKeyCheckResult::Unknown { key_type, fingerprint }) => {
-                tracing::info!(
-                    "Unknown host key for {}:{} ({} {}), auto-accepting",
+                tracing::warn!(
+                    "Unknown host key for {}:{} ({} {}) — rejecting; user must approve fingerprint first",
                     self.hostname, self.port, key_type, fingerprint
                 );
-                if let Err(e) = known_hosts::add_host_key(&self.hostname, self.port, server_public_key) {
-                    tracing::warn!("Failed to save host key to known_hosts: {}", e);
-                }
-                Ok(true)
+                *self.rejection.lock().unwrap() = Some(HostKeyRejection::Unknown {
+                    key_type,
+                    fingerprint,
+                });
+                Ok(false)
             }
             Ok(HostKeyCheckResult::Mismatch { expected_fingerprint, actual_fingerprint }) => {
                 tracing::error!(
@@ -839,6 +852,66 @@ impl SshClient {
         }
 
         Ok(channel)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_host_key_watcher_unknown_key_returns_error() {
+        let (_, watcher) = SshHandler::new("myhost".to_string(), 22);
+
+        // Simulate the handler recording an Unknown rejection
+        {
+            let handler_rejection = Arc::new(Mutex::new(Some(HostKeyRejection::Unknown {
+                key_type: "ssh-ed25519".to_string(),
+                fingerprint: "SHA256:abc123".to_string(),
+            })));
+            let watcher_inner = HostKeyWatcher(handler_rejection);
+            let err = watcher_inner.check("myhost", 22).expect("should produce an error");
+            match err {
+                ContainerError::HostKeyVerificationFailed { hostname, reason } => {
+                    assert_eq!(hostname, "myhost");
+                    assert!(reason.contains("Unknown host key"), "reason should mention unknown: {reason}");
+                    assert!(reason.contains("SHA256:abc123"), "reason should include fingerprint: {reason}");
+                }
+                other => panic!("unexpected error: {:?}", other),
+            }
+        }
+
+        // Watcher with no rejection recorded should return None
+        assert!(watcher.check("myhost", 22).is_none());
+    }
+
+    #[test]
+    fn test_host_key_watcher_mismatch_returns_error() {
+        let rejection = Arc::new(Mutex::new(Some(HostKeyRejection::Mismatch {
+            expected: "SHA256:expected".to_string(),
+            actual: "SHA256:actual".to_string(),
+        })));
+        let watcher = HostKeyWatcher(rejection);
+        let err = watcher.check("host", 22).unwrap();
+        match err {
+            ContainerError::HostKeyVerificationFailed { reason, .. } => {
+                assert!(reason.contains("changed"), "mismatch error should mention key changed: {reason}");
+            }
+            other => panic!("unexpected: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_host_key_watcher_revoked_returns_error() {
+        let rejection = Arc::new(Mutex::new(Some(HostKeyRejection::Revoked)));
+        let watcher = HostKeyWatcher(rejection);
+        let err = watcher.check("host", 22).unwrap();
+        match err {
+            ContainerError::HostKeyVerificationFailed { reason, .. } => {
+                assert!(reason.contains("revoked"), "revoked error should mention revoked: {reason}");
+            }
+            other => panic!("unexpected: {:?}", other),
+        }
     }
 }
 
