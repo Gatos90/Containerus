@@ -1,8 +1,8 @@
 <!-- Backdrop -->
-<div class="fixed inset-0 bg-black/75 z-50 flex items-end sm:items-center justify-center sm:p-4" (click)="onCancel()">
+<div class="fixed inset-0 bg-black/75 z-50 flex items-end sm:items-center justify-center sm:p-4 cx-modal-backdrop" (click)="onCancel()">
   <!-- Modal — full screen on mobile, constrained on desktop -->
   <div
-    class="bg-zinc-900 w-full h-[100dvh] sm:h-auto sm:rounded-2xl sm:max-w-lg sm:max-h-[92vh] flex flex-col overflow-hidden shadow-2xl border border-zinc-700/50"
+    class="bg-zinc-900 w-full h-[100dvh] sm:h-auto sm:rounded-2xl sm:max-w-lg sm:max-h-[92vh] flex flex-col overflow-hidden shadow-2xl border border-zinc-700/50 cx-sheet-panel sm:[animation-name:cx-scale-in]"
     (click)="$event.stopPropagation()"
   >
     <!-- Header -->

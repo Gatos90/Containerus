@@ -203,3 +203,149 @@
 @utility safe-top {
   padding-top: env(safe-area-inset-top);
 }
+
+/* ---------------------------------------------------------------------------
+   Motion system (CON-36)
+   Keyframes + utilities for tasteful entrance/exit animations.
+   All motion is gated on prefers-reduced-motion at the bottom of this file.
+   --------------------------------------------------------------------------- */
+
+@keyframes cx-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes cx-fade-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@keyframes cx-scale-in {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes cx-slide-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes cx-slide-in-right {
+  from { opacity: 0; transform: translateX(100%); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes cx-slide-in-bottom {
+  from { opacity: 0; transform: translateY(100%); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes cx-status-pulse {
+  0%   { box-shadow: 0 0 0 0 currentColor; }
+  70%  { box-shadow: 0 0 0 6px transparent; }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+
+@keyframes cx-shimmer {
+  from { background-position: -200% 0; }
+  to   { background-position: 200% 0; }
+}
+
+@utility cx-animate-fade-in {
+  animation: cx-fade-in 160ms ease-out both;
+}
+
+@utility cx-animate-scale-in {
+  animation: cx-scale-in 180ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+@utility cx-animate-slide-up {
+  animation: cx-slide-up 180ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+@utility cx-animate-slide-in-right {
+  animation: cx-slide-in-right 200ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+@utility cx-animate-slide-in-bottom {
+  animation: cx-slide-in-bottom 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+@utility cx-animate-status-pulse {
+  animation: cx-status-pulse 1.2s ease-out;
+}
+
+/* Shimmering skeleton background. Apply with cx-skeleton + a sized element. */
+@utility cx-skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--muted) 0%,
+    color-mix(in oklch, var(--muted) 70%, var(--foreground) 8%) 50%,
+    var(--muted) 100%
+  );
+  background-size: 200% 100%;
+  animation: cx-shimmer 1.4s linear infinite;
+  border-radius: var(--radius-sm);
+}
+
+/* Smooth enter for list items. Angular @for keyed tracks create new nodes,
+   so applying this class animates them on first paint. */
+@utility cx-list-enter {
+  animation: cx-slide-up 200ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+/* Modal/drawer primitives. Apply to backdrop and inner panel respectively. */
+@utility cx-modal-backdrop {
+  animation: cx-fade-in 140ms ease-out both;
+}
+
+@utility cx-modal-panel {
+  animation: cx-scale-in 200ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+@utility cx-sheet-panel {
+  animation: cx-slide-in-bottom 240ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+/* Elevation micro-interaction for interactive tiles/cards. */
+@utility cx-hover-lift {
+  transition: transform 160ms ease-out, box-shadow 160ms ease-out;
+}
+.cx-hover-lift:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px -8px oklch(0 0 0 / 0.25);
+}
+
+/* Stagger helpers: cx-list-enter with 0..7 delay steps, ~25ms apart. */
+.cx-stagger > *:nth-child(1)  { animation-delay:   0ms; }
+.cx-stagger > *:nth-child(2)  { animation-delay:  25ms; }
+.cx-stagger > *:nth-child(3)  { animation-delay:  50ms; }
+.cx-stagger > *:nth-child(4)  { animation-delay:  75ms; }
+.cx-stagger > *:nth-child(5)  { animation-delay: 100ms; }
+.cx-stagger > *:nth-child(6)  { animation-delay: 125ms; }
+.cx-stagger > *:nth-child(7)  { animation-delay: 150ms; }
+.cx-stagger > *:nth-child(8)  { animation-delay: 175ms; }
+
+/* Modern view-transition support for route navigation (progressive enhancement). */
+@supports (view-transition-name: none) {
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation-duration: 180ms;
+    animation-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+  ::view-transition-old(root) { animation-name: cx-fade-out; }
+  ::view-transition-new(root) { animation-name: cx-fade-in; }
+}
+
+/* Respect user motion preferences. This MUST stay at the end so it overrides
+   every utility defined above. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}

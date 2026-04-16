@@ -147,6 +147,7 @@
     @for (system of systemState.connectedSystems(); track system.id) {
       @if ((filteredImagesBySystem()[system.id]?.length ?? 0) > 0 || imageState.usageFilter() === 'all') {
         <app-system-image-section
+          class="cx-list-enter block"
           [system]="system"
           [images]="filteredImagesBySystem()[system.id] || []"
           (imageDeleted)="onImageDeleted($event)"

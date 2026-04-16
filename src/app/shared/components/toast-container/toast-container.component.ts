@@ -22,7 +22,7 @@ import { ToastState, Toast, ToastType } from '../../../state/toast.state';
           [attr.role]="toast.type === 'error' ? 'alert' : 'status'"
           [attr.aria-live]="toast.type === 'error' ? 'assertive' : 'polite'"
           aria-atomic="true"
-          class="pointer-events-auto flex items-center gap-2.5 px-4 py-3 rounded-lg shadow-lg border backdrop-blur-sm animate-slide-in"
+          class="pointer-events-auto flex items-center gap-2.5 px-4 py-3 rounded-lg shadow-lg border backdrop-blur-sm cx-animate-slide-in-right"
           [class]="getToastClasses(toast.type)"
         >
           <lucide-icon [img]="getIcon(toast.type)" class="w-4 h-4 flex-shrink-0" aria-hidden="true"></lucide-icon>
@@ -38,21 +38,6 @@ import { ToastState, Toast, ToastType } from '../../../state/toast.state';
       }
     </div>
   `,
-  styles: [`
-    @keyframes slide-in {
-      from {
-        opacity: 0;
-        transform: translateX(100%);
-      }
-      to {
-        opacity: 1;
-        transform: translateX(0);
-      }
-    }
-    .animate-slide-in {
-      animation: slide-in 0.2s ease-out;
-    }
-  `],
 })
 export class ToastContainerComponent {
   readonly toastState = inject(ToastState);
