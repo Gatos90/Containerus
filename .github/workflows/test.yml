@@ -236,19 +236,75 @@ jobs:
           path: test-results/
           retention-days: 14
 
+  e2e-real-docker:
+    name: E2E Real Docker (Playwright + docker CLI)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify docker is available
+        run: |
+          docker version
+          docker info
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 9
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright browsers
+        run: pnpm exec playwright install chromium --with-deps
+
+      - name: Warm base images
+        run: |
+          docker pull nginx:alpine
+          docker pull alpine:3.19
+
+      - name: Run real-Docker E2E tests
+        run: pnpm test:e2e:real-docker
+        env:
+          CI: true
+          REAL_DOCKER: '1'
+
+      - name: Upload Playwright report (real-docker)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-real-docker
+          path: playwright-report-real-docker/
+          retention-days: 14
+
+      - name: Upload test results (real-docker)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-real-docker
+          path: test-results/
+          retention-days: 14
+
   test-results:
     name: All Tests Pass
-    needs: [frontend-tests, rust-tests, e2e-tests]
+    needs: [frontend-tests, rust-tests, e2e-tests, e2e-real-docker]
     runs-on: ubuntu-latest
     if: always()
     steps:
       - name: Check test results
         run: |
-          if [ "${{ needs.frontend-tests.result }}" != "success" ] || [ "${{ needs.rust-tests.result }}" != "success" ] || [ "${{ needs.e2e-tests.result }}" != "success" ]; then
+          if [ "${{ needs.frontend-tests.result }}" != "success" ] || [ "${{ needs.rust-tests.result }}" != "success" ] || [ "${{ needs.e2e-tests.result }}" != "success" ] || [ "${{ needs.e2e-real-docker.result }}" != "success" ]; then
             echo "::error::One or more test jobs failed"
             echo "Frontend: ${{ needs.frontend-tests.result }}"
             echo "Rust: ${{ needs.rust-tests.result }}"
             echo "E2E: ${{ needs.e2e-tests.result }}"
+            echo "E2E Real Docker: ${{ needs.e2e-real-docker.result }}"
             exit 1
           fi
           echo "All tests passed!"

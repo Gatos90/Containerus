@@ -12,7 +12,8 @@
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
-    "test:e2e:report": "playwright show-report"
+    "test:e2e:report": "playwright show-report",
+    "test:e2e:real-docker": "REAL_DOCKER=1 playwright test --config playwright.real-docker.config.ts"
   },
   "private": true,
   "dependencies": {

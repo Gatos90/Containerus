@@ -59,6 +59,7 @@ src-tauri/gen/
 
 # Playwright E2E test artifacts
 /playwright-report/
+/playwright-report-real-docker/
 /test-results/
 
 # Environment files with secrets
