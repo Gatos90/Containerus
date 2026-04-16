@@ -38,7 +38,7 @@ export class ContainerState {
     return id ? this._containers().find((c) => c.id === id) ?? null : null;
   });
 
-  readonly filteredContainers = computed(() => {
+  private readonly _filteredOnly = computed(() => {
     let result = this._containers();
 
     const statusFilter = this._statusFilter();
@@ -71,9 +71,13 @@ export class ContainerState {
       );
     }
 
-    // Apply sorting
+    return result;
+  });
+
+  readonly filteredContainers = computed(() => {
+    const result = this._filteredOnly();
     const sortOption = this._sortOption();
-    result = [...result].sort((a, b) => {
+    return [...result].sort((a, b) => {
       switch (sortOption) {
         case 'name':
           return a.name.localeCompare(b.name);
@@ -85,8 +89,6 @@ export class ContainerState {
           return 0;
       }
     });
-
-    return result;
   });
 
   readonly stats = computed(() => {

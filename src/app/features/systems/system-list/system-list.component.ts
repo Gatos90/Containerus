@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component, inject, OnInit, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, inject, OnInit, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import {
   LucideAngularModule,
@@ -55,6 +55,7 @@ import { ToastState } from '../../../state/toast.state';
   standalone: true,
   imports: [CommonModule, FormsModule, LucideAngularModule, EmptyStateComponent, SetupWizardComponent, FirstSuccessComponent, HelpTooltipComponent],
   templateUrl: './system-list.component.html',
+  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class SystemListComponent implements OnInit {
   readonly systemState = inject(SystemState);

@@ -1,4 +1,5 @@
-import { Injectable, computed, signal } from '@angular/core';
+import { Injectable, OnDestroy, computed, signal } from '@angular/core';
+import { Subscription } from 'rxjs';
 import { TerminalEventBus } from './warp-terminal.bus';
 import type { OutputSectionType, TerminalEvent } from '../models/terminal-events';
 import {
@@ -35,7 +36,7 @@ interface AiState {
 }
 
 @Injectable({ providedIn: 'root' })
-export class WarpTerminalStore {
+export class WarpTerminalStore implements OnDestroy {
   readonly blocksMap = signal<Map<BlockId, CommandBlock>>(new Map());
   readonly blockOrder = signal<BlockId[]>([]);
   readonly selectionState = signal<SelectionState>({ kind: 'none' });
@@ -99,8 +100,14 @@ export class WarpTerminalStore {
     return results.slice(0, 200);
   });
 
+  private readonly busSubscription: Subscription;
+
   constructor(private readonly eventBus: TerminalEventBus) {
-    this.eventBus.events$.subscribe((event) => this.reduce(event));
+    this.busSubscription = this.eventBus.events$.subscribe((event) => this.reduce(event));
+  }
+
+  ngOnDestroy(): void {
+    this.busSubscription.unsubscribe();
   }
 
   dispatch(event: TerminalEvent): void {

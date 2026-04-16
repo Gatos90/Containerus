@@ -1,5 +1,5 @@
 import { CommonModule, DecimalPipe } from '@angular/common';
-import { Component, inject, signal, computed } from '@angular/core';
+import { ChangeDetectionStrategy, Component, inject, signal, computed } from '@angular/core';
 import { Router, RouterLink, RouterLinkActive } from '@angular/router';
 import { LucideAngularModule, LucideIconData, Box, Image, HardDrive, Network, Server, Settings, MoreHorizontal, Command, ChevronDown, ChevronUp, Terminal, Unplug, ExternalLink, Crown, ShieldCheck, Activity, Cpu, MemoryStick, FolderOpen, RefreshCw, Cloud, Users, ScrollText, Globe, LogIn, LogOut, Link, X, Loader2, Plus, Layers } from 'lucide-angular';
 import { SystemState } from '../../state/system.state';
@@ -30,6 +30,7 @@ interface NavItem {
   selector: 'app-sidebar',
   imports: [CommonModule, RouterLink, RouterLinkActive, LucideAngularModule, DecimalPipe],
   templateUrl: './sidebar.component.html',
+  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class SidebarComponent {
   private router = inject(Router);

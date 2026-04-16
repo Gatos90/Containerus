@@ -92,6 +92,7 @@ export type Workload =
   host: {
     '(document:keydown.escape)': 'onEscape()',
   },
+  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class ContainerListComponent implements OnInit {
   readonly containerState = inject(ContainerState);

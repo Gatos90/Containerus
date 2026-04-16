@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component, EventEmitter, Input, Output } from '@angular/core';
+import { ChangeDetectionStrategy, Component, EventEmitter, Input, Output } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { LucideAngularModule, X, Search } from 'lucide-angular';
 import type { SearchResult } from '../../models/terminal-block.model';
@@ -13,6 +13,7 @@ import type { SearchResult } from '../../models/terminal-block.model';
   host: {
     '(document:keydown.escape)': 'onClose()',
   },
+  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class SearchOverlayComponent {
   @Input() open = false;

@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component, HostListener, ViewChild, computed, effect, inject, input, OnInit, OnDestroy } from '@angular/core';
+import { ChangeDetectionStrategy, Component, HostListener, ViewChild, computed, effect, inject, input, OnInit, OnDestroy } from '@angular/core';
 import { LucideAngularModule, ArrowDownToLine, Search, Sparkles, Terminal, Trash2 } from 'lucide-angular';
 import { WarpTerminalStore } from '../state/warp-terminal-store.service';
 import { WarpTerminalStateManager } from '../state/warp-terminal-state-manager.service';
@@ -22,6 +22,7 @@ import { SearchOverlayComponent } from '../components/search-overlay/search-over
   ],
   templateUrl: './warp-terminal-view.component.html',
   styleUrl: './warp-terminal-view.component.css',
+  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class WarpTerminalViewComponent implements OnInit, OnDestroy {
   readonly store = inject(WarpTerminalStore);

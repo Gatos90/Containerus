@@ -1,5 +1,6 @@
 import { CommonModule } from '@angular/common';
 import {
+  ChangeDetectionStrategy,
   Component,
   DestroyRef,
   ElementRef,
@@ -27,6 +28,7 @@ import { WarpTerminalStore } from '../../state/warp-terminal-store.service';
   host: {
     '(document:keydown.escape)': 'onDocumentEscape()',
   },
+  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class ComposerBarComponent {
   @Output() submit = new EventEmitter<{ text: string; mode: 'command' | 'ai' }>();

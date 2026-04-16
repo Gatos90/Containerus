@@ -1,5 +1,6 @@
 import { CommonModule } from '@angular/common';
-import { Component, computed, inject, OnDestroy, OnInit, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, OnDestroy, OnInit, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router, RouterOutlet } from '@angular/router';
 import { filter } from 'rxjs';
 import { SidebarComponent } from '../sidebar/sidebar.component';
@@ -15,6 +16,7 @@ import { WhatsNewModalComponent } from '../../shared/components/whats-new-modal/
   selector: 'app-main-layout',
   imports: [CommonModule, RouterOutlet, SidebarComponent, TerminalWorkspaceComponent, WhatsNewModalComponent],
   templateUrl: './main-layout.component.html',
+  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class MainLayoutComponent implements OnInit, OnDestroy {
   readonly appState = inject(AppState);
@@ -40,7 +42,10 @@ export class MainLayoutComponent implements OnInit, OnDestroy {
 
   constructor() {
     this.router.events
-      .pipe(filter((event): event is NavigationEnd => event instanceof NavigationEnd))
+      .pipe(
+        filter((event): event is NavigationEnd => event instanceof NavigationEnd),
+        takeUntilDestroyed(),
+      )
       .subscribe((event) => {
         this.currentUrl.set(event.urlAfterRedirects);
       });

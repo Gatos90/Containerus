@@ -1,6 +1,7 @@
 import { CommonModule } from '@angular/common';
 import {
   AfterViewInit,
+  ChangeDetectionStrategy,
   Component,
   ElementRef,
   HostBinding,
@@ -35,6 +36,7 @@ import { TerminalEventBus } from '../../warp-terminal/state/warp-terminal.bus';
   imports: [CommonModule, FormsModule, LucideAngularModule, CommandPaletteComponent, VariableInputModalComponent, WarpTerminalViewComponent],
   templateUrl: './terminal-view.component.html',
   styleUrl: './terminal-view.component.css',
+  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class TerminalViewComponent implements OnInit, AfterViewInit, OnDestroy {
   @ViewChild('terminalContainer') terminalContainer!: ElementRef<HTMLDivElement>;

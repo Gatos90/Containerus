@@ -1,4 +1,4 @@
-import { Component, effect, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, effect, inject, signal } from '@angular/core';
 import { MainLayoutComponent } from './layout/main-layout/main-layout.component';
 import { CommandPaletteComponent } from './shared/components/command-palette/command-palette.component';
 import { ToastContainerComponent } from './shared/components/toast-container/toast-container.component';
@@ -23,6 +23,7 @@ import { ToastState } from './state/toast.state';
   host: {
     '(document:keydown)': 'onKeyDown($event)',
   },
+  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class AppComponent {
   private readonly systemState = inject(SystemState);
