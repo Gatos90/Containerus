@@ -13,6 +13,7 @@ import { LucideAngularModule, X, FileText, Terminal, ScrollText, Activity, Eye, 
 import { Terminal as XTerm } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { MonacoEditorComponent } from '../../../shared/components/monaco-editor/monaco-editor.component';
+import { objectToYaml } from './k8s-create-resource/k8s-form-to-yaml';
 
 type DetailTab = 'overview' | 'logs' | 'events' | 'yaml' | 'exec';
 
@@ -822,50 +823,7 @@ export class K8sResourceDetailComponent implements OnChanges, OnDestroy, AfterVi
   }
 
   private jsonToYaml(obj: any, indent: number): string {
-    if (obj === null || obj === undefined) return 'null';
-    if (typeof obj === 'string') {
-      if (obj.includes('\n') || obj.includes(': ') || obj.includes('#')) {
-        return `"${obj.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n')}"`;
-      }
-      return obj;
-    }
-    if (typeof obj === 'number' || typeof obj === 'boolean') return String(obj);
-
-    const prefix = '  '.repeat(indent);
-    const childPrefix = '  '.repeat(indent + 1);
-
-    if (Array.isArray(obj)) {
-      if (obj.length === 0) return '[]';
-      return obj.map(item => {
-        if (typeof item === 'object' && item !== null) {
-          const inner = this.jsonToYaml(item, indent + 1);
-          const firstLine = inner.split('\n')[0];
-          const rest = inner.split('\n').slice(1).join('\n');
-          return `${prefix}- ${firstLine}${rest ? '\n' + rest : ''}`;
-        }
-        return `${prefix}- ${this.jsonToYaml(item, 0)}`;
-      }).join('\n');
-    }
-
-    if (typeof obj === 'object') {
-      const entries = Object.entries(obj);
-      if (entries.length === 0) return '{}';
-      return entries.map(([key, value]) => {
-        if (typeof value === 'object' && value !== null) {
-          const inner = this.jsonToYaml(value, indent + 1);
-          if (Array.isArray(value) && value.length > 0) {
-            return `${prefix}${key}:\n${inner}`;
-          }
-          if (typeof value === 'object' && Object.keys(value).length > 0) {
-            return `${prefix}${key}:\n${inner}`;
-          }
-          return `${prefix}${key}: ${inner}`;
-        }
-        return `${prefix}${key}: ${this.jsonToYaml(value, 0)}`;
-      }).join('\n');
-    }
-
-    return String(obj);
+    return objectToYaml(obj, indent);
   }
 
   async applyYaml(): Promise<void> {

@@ -7,7 +7,7 @@ import { LucideAngularModule, Cloud, Plus, Trash2, Loader2, RefreshCw, ChevronDo
 import { K8sResourceDetailComponent } from './k8s-resource-detail.component';
 import { K8sTopologyComponent } from './k8s-topology.component';
 import { MonacoEditorComponent } from '../../../shared/components/monaco-editor/monaco-editor.component';
-import { getResourceTemplate } from './k8s-resource-templates';
+import { K8sCreateResourceModalComponent } from './k8s-create-resource/k8s-create-resource-modal.component';
 
 type K8sTab = 'pods' | 'deployments' | 'services' | 'statefulsets' | 'daemonsets' | 'jobs' | 'cronjobs'
   | 'configmaps' | 'secrets' | 'ingresses' | 'pvcs' | 'nodes'
@@ -25,7 +25,7 @@ export interface ClusterGroup {
 
 @Component({
   selector: 'app-k8s-dashboard',
-  imports: [FormsModule, LucideAngularModule, K8sResourceDetailComponent, K8sTopologyComponent, MonacoEditorComponent],
+  imports: [FormsModule, LucideAngularModule, K8sResourceDetailComponent, K8sTopologyComponent, MonacoEditorComponent, K8sCreateResourceModalComponent],
   template: `
     <div class="p-4 space-y-6">
       <!-- ================================================================ -->
@@ -631,47 +631,17 @@ export interface ClusterGroup {
         </div>
       }
       <!-- Create Resource Modal -->
-      @if (showCreateResource()) {
-        <div class="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4" role="dialog" aria-modal="true" aria-labelledby="create-resource-title" (click)="showCreateResource.set(false)" (keydown.escape)="showCreateResource.set(false)">
-          <div class="bg-zinc-900 rounded-xl border border-zinc-800 p-6 w-full max-w-2xl space-y-4" (click)="$event.stopPropagation()">
-            <h3 id="create-resource-title" class="text-lg font-medium text-zinc-100">
-              Create {{ getCreateResourceLabel() }}
-            </h3>
-            <p class="text-xs text-zinc-500">Edit the YAML template below and click Apply to create the resource.</p>
-
-            <div class="h-[350px] rounded-lg border border-zinc-700 overflow-hidden">
-              <app-monaco-editor
-                [content]="createResourceYaml"
-                language="yaml"
-                (contentChange)="createResourceYaml = $event"
-                class="h-full"
-              />
-            </div>
-
-            @if (createResourceError()) {
-              <div class="text-red-400 text-sm">{{ createResourceError() }}</div>
-            }
-            @if (createResourceSuccess()) {
-              <div class="text-green-400 text-sm">Resource created successfully</div>
-            }
-
-            <div class="flex gap-2 justify-end">
-              <button (click)="showCreateResource.set(false)" class="px-4 py-2 text-zinc-400 hover:text-zinc-300 text-sm">
-                Cancel
-              </button>
-              <button
-                (click)="applyCreateResource()"
-                [disabled]="creatingResource() || !createResourceYaml.trim()"
-                class="bg-blue-600 hover:bg-blue-500 disabled:bg-zinc-700 text-white text-sm rounded-lg px-4 py-2 flex items-center gap-1.5"
-              >
-                @if (creatingResource()) {
-                  <lucide-icon [img]="Loader2" [size]="14" class="animate-spin" />
-                }
-                Apply
-              </button>
-            </div>
-          </div>
-        </div>
+      @if (showCreateResource() && selectedCluster()) {
+        <app-k8s-create-resource-modal
+          [resourceType]="activeTab()"
+          [namespace]="selectedNs()"
+          [namespaces]="namespaces()"
+          [connectionId]="connectionId"
+          [clusterId]="selectedCluster()!.id"
+          [activeCrd]="activeCrd()"
+          (close)="showCreateResource.set(false)"
+          (created)="onResourceCreated()"
+        />
       }
     </div>
   `,
@@ -736,10 +706,6 @@ export class K8sDashboardComponent implements OnInit, OnChanges, OnDestroy {
 
   // Create resource modal
   showCreateResource = signal(false);
-  createResourceYaml = '';
-  creatingResource = signal(false);
-  createResourceError = signal<string | null>(null);
-  createResourceSuccess = signal(false);
 
   // Search & watch
   searchFilter = signal('');
@@ -1479,55 +1445,15 @@ export class K8sDashboardComponent implements OnInit, OnChanges, OnDestroy {
   // ---------- Create resource ----------
 
   openCreateResourceModal(): void {
-    this.createResourceYaml = getResourceTemplate(this.activeTab(), this.selectedNs());
-    this.createResourceError.set(null);
-    this.createResourceSuccess.set(false);
     this.showCreateResource.set(true);
   }
 
-  getCreateResourceLabel(): string {
+  onResourceCreated(): void {
     const crd = this.activeCrd();
-    if (crd) return crd.kind;
-    const cat = this.k8sCategories.find(c => c.key === this.activeCategory());
-    const tab = cat?.tabs.find(t => t.key === this.activeTab());
-    return tab?.label ?? this.activeTab();
-  }
-
-  async applyCreateResource(): Promise<void> {
-    const cluster = this.selectedCluster();
-    if (!cluster) return;
-    this.creatingResource.set(true);
-    this.createResourceError.set(null);
-    this.createResourceSuccess.set(false);
-    try {
-      const crd = this.activeCrd();
-      if (crd) {
-        await this.backend.applyCustomResourceFor(
-          this.connectionId, cluster.id, crd.group, crd.version, crd.plural,
-          this.createResourceYaml,
-          crd.scope === 'Namespaced' ? this.selectedNs() : undefined
-        );
-      } else {
-        const clusterScoped = this.clusterScopedTabs.has(this.activeTab());
-        await this.backend.applyYamlFor(
-          this.connectionId, cluster.id, this.createResourceYaml,
-          clusterScoped ? undefined : this.selectedNs()
-        );
-      }
-      this.createResourceSuccess.set(true);
-      // Refresh data after a brief pause for success feedback
-      setTimeout(() => {
-        this.showCreateResource.set(false);
-        if (this.activeCrd()) {
-          this.onCrdTabChange(this.activeCrd()!);
-        } else {
-          this.onTabChange(this.activeTab());
-        }
-      }, 800);
-    } catch (e: unknown) {
-      this.createResourceError.set(e instanceof Error ? e.message : 'Failed to create resource');
-    } finally {
-      this.creatingResource.set(false);
+    if (crd) {
+      this.onCrdTabChange(crd);
+    } else {
+      this.onTabChange(this.activeTab());
     }
   }
 
