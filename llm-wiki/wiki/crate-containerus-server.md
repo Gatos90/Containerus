@@ -6,6 +6,10 @@
 
 **Last updated**: 2026-04-16
 
+**Parent**: [[architecture]]
+**Siblings**: [[crate-src-tauri]], [[crate-containerus-core]]
+**Children**: [[auth-and-rbac]], [[server-vault-internals]], [[server-websockets]], [[ssh-connection-pooling]], [[kubernetes]], [[audit-logging]], [[database-schema]]
+
 ---
 
 ## Startup — `main.rs`

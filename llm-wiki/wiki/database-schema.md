@@ -6,6 +6,9 @@
 
 **Last updated**: 2026-04-16
 
+**Parent**: [[architecture]]
+**See also**: [[pattern-three-database-pattern]], [[credentials-and-vault]], [[server-vault-internals]], [[auth-and-rbac]], [[audit-logging]], [[crate-src-tauri]], [[crate-containerus-server]]
+
 ---
 
 ## SQLite — desktop

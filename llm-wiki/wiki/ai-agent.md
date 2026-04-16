@@ -6,6 +6,10 @@
 
 **Last updated**: 2026-04-16
 
+**Parent**: [[architecture]]
+**Children**: [[agent-session-context]], [[agent-events]], [[agent-tools]], [[agent-safety]], [[flow-agent-query]]
+**See also**: [[ai-providers]], [[terminal-subsystem]], [[feature-warp-terminal]], [[concept-block]]
+
 ---
 
 ## Pieces

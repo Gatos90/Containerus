@@ -6,6 +6,9 @@
 
 **Last updated**: 2026-04-16
 
+**Parent**: [[containerus]]
+**Siblings**: [[tech-stack]], [[testing]]
+
 ---
 
 ## Frontend (Angular)

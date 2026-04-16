@@ -6,6 +6,10 @@
 
 **Last updated**: 2026-04-16
 
+**Parent**: [[frontend-overview]]
+**Siblings**: [[angular-state]], [[dual-path-routing]], [[frontend-features]]
+**See also**: [[concept-connection-id]], [[dual-mode-operation]], [[auth-and-rbac]]
+
 ---
 
 ## Data model

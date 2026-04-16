@@ -484,8 +484,8 @@ export interface ClusterGroup {
 
       <!-- Add Cluster Modal -->
       @if (showAddCluster()) {
-        <div class="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4" role="dialog" aria-modal="true" aria-labelledby="add-cluster-title" (click)="showAddCluster.set(false)" (keydown.escape)="showAddCluster.set(false)">
-          <div class="bg-zinc-900 rounded-xl border border-zinc-800 p-6 w-full max-w-lg space-y-4" (click)="$event.stopPropagation()">
+        <div class="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4 cx-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="add-cluster-title" (click)="showAddCluster.set(false)" (keydown.escape)="showAddCluster.set(false)">
+          <div class="bg-zinc-900 rounded-xl border border-zinc-800 p-6 w-full max-w-lg space-y-4 cx-modal-panel" (click)="$event.stopPropagation()">
             <h3 id="add-cluster-title" class="text-lg font-medium text-zinc-100">Add Kubernetes Cluster</h3>
 
             <div>
@@ -572,8 +572,8 @@ export interface ClusterGroup {
 
       <!-- Edit Cluster Modal -->
       @if (showEditCluster()) {
-        <div class="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4" role="dialog" aria-modal="true" aria-labelledby="edit-cluster-title" (click)="showEditCluster.set(false)" (keydown.escape)="showEditCluster.set(false)">
-          <div class="bg-zinc-900 rounded-xl border border-zinc-800 p-6 w-full max-w-lg space-y-4" (click)="$event.stopPropagation()">
+        <div class="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4 cx-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="edit-cluster-title" (click)="showEditCluster.set(false)" (keydown.escape)="showEditCluster.set(false)">
+          <div class="bg-zinc-900 rounded-xl border border-zinc-800 p-6 w-full max-w-lg space-y-4 cx-modal-panel" (click)="$event.stopPropagation()">
             <h3 id="edit-cluster-title" class="text-lg font-medium text-zinc-100">Edit Cluster</h3>
 
             <div>

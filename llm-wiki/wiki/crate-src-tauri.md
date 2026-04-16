@@ -6,6 +6,10 @@
 
 **Last updated**: 2026-04-16
 
+**Parent**: [[architecture]]
+**Siblings**: [[crate-containerus-core]], [[crate-containerus-server]]
+**Children**: [[database-schema]], [[credentials-and-vault]], [[ai-agent]], [[monitoring]], [[command-templates]]
+
 ---
 
 ## Startup — `lib.rs`

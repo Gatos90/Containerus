@@ -6,6 +6,9 @@
 
 **Last updated**: 2026-04-16
 
+**Parent**: [[frontend-features]]
+**See also**: [[dual-path-routing]], [[ssh-subsystem]], [[kubernetes]], [[feature-containers]]
+
 ---
 
 ## Models

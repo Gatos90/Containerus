@@ -6,6 +6,10 @@
 
 **Last updated**: 2026-04-16
 
+**Parent**: [[frontend-overview]]
+**Siblings**: [[angular-state]], [[backend-service]], [[dual-path-routing]]
+**Children**: [[feature-containers]], [[feature-systems]], [[feature-warp-terminal]], [[feature-backend]], [[command-templates]], [[compose-projects]], [[settings-and-preferences]], [[file-browser]]
+
 ---
 
 ## `backend/`

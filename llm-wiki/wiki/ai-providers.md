@@ -6,6 +6,10 @@
 
 **Last updated**: 2026-04-16
 
+**Parent**: [[crate-containerus-core]]
+**Children**: [[provider-openai]], [[provider-anthropic]], [[provider-ollama]], [[provider-azure]], [[provider-gemini]], [[provider-openai-compat]]
+**See also**: [[ai-agent]], [[credentials-and-vault]], [[settings-and-preferences]]
+
 ---
 
 ## Providers

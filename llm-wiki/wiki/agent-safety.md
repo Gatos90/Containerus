@@ -6,6 +6,10 @@
 
 **Last updated**: 2026-04-16
 
+**Parent**: [[ai-agent]]
+**Siblings**: [[agent-session-context]], [[agent-events]], [[agent-tools]]
+**See also**: [[flow-agent-query]], [[settings-and-preferences]]
+
 ---
 
 ## Levels

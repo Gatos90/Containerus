@@ -4,41 +4,17 @@
     "type": "split",
     "children": [
       {
-        "id": "5a1c5c56507c9f5b",
+        "id": "c57adf3712209478",
         "type": "tabs",
         "children": [
           {
-            "id": "676e58f5367aff3f",
+            "id": "7cdd3bde905e28b3",
             "type": "leaf",
             "state": {
-              "type": "markdown",
-              "state": {
-                "file": "CLAUDE.md",
-                "mode": "source",
-                "source": false
-              },
-              "icon": "lucide-file",
-              "title": "CLAUDE"
-            }
-          }
-        ]
-      },
-      {
-        "id": "d4e727276d9ccd26",
-        "type": "tabs",
-        "children": [
-          {
-            "id": "6ea682731723a8ce",
-            "type": "leaf",
-            "state": {
-              "type": "markdown",
-              "state": {
-                "file": "wiki/port-forwarding.md",
-                "mode": "source",
-                "source": false
-              },
-              "icon": "lucide-file",
-              "title": "port-forwarding"
+              "type": "graph",
+              "state": {},
+              "icon": "lucide-git-fork",
+              "title": "Graph-Ansicht"
             }
           }
         ]
@@ -114,7 +90,6 @@
             "state": {
               "type": "backlink",
               "state": {
-                "file": "wiki/port-forwarding.md",
                 "collapseAll": false,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -124,7 +99,7 @@
                 "unlinkedCollapsed": true
               },
               "icon": "links-coming-in",
-              "title": "Rückverweise auf port-forwarding"
+              "title": "Rückverweise"
             }
           },
           {
@@ -133,12 +108,11 @@
             "state": {
               "type": "outgoing-link",
               "state": {
-                "file": "wiki/port-forwarding.md",
                 "linksCollapsed": false,
                 "unlinkedCollapsed": true
               },
               "icon": "links-going-out",
-              "title": "Ausgehende Links von port-forwarding öffnen"
+              "title": "Ausgehende Links"
             }
           },
           {
@@ -176,13 +150,12 @@
             "state": {
               "type": "outline",
               "state": {
-                "file": "wiki/port-forwarding.md",
                 "followCursor": false,
                 "showSearch": false,
                 "searchQuery": ""
               },
               "icon": "lucide-list",
-              "title": "Gliederung von port-forwarding"
+              "title": "Gliederung"
             }
           }
         ]
@@ -203,34 +176,34 @@
       "bases:Neue Base erstellen": false
     }
   },
-  "active": "6ea682731723a8ce",
+  "active": "7cdd3bde905e28b3",
   "lastOpenFiles": [
-    "wiki/flow-port-forward.md",
-    "wiki/flow-agent-query.md",
-    "wiki/flow-connect-system.md",
-    "wiki/testing.md",
-    "wiki/build-and-dev.md",
-    "wiki/error-model.md",
-    "wiki/domain-models.md",
-    "wiki/file-browser.md",
-    "wiki/database-schema.md",
-    "wiki/monitoring.md",
-    "wiki/kubernetes.md",
-    "wiki/auth-and-rbac.md",
-    "wiki/credentials-and-vault.md",
-    "wiki/dual-path-routing.md",
-    "wiki/backend-service.md",
-    "wiki/agent-safety.md",
-    "wiki/ai-agent.md",
-    "wiki/ai-providers.md",
+    "wiki/pattern-three-database-pattern.md",
+    "wiki/pattern-dual-path.md",
+    "wiki/pattern-signals-and-state.md",
+    "wiki/glossary.md",
+    "wiki/concept-event-streams.md",
+    "wiki/executor-abstraction.md",
+    "wiki/server-websockets.md",
+    "wiki/server-vault-internals.md",
+    "wiki/settings-and-preferences.md",
+    "wiki/compose-projects.md",
+    "wiki/command-templates.md",
+    "wiki/audit-logging.md",
+    "wiki/concept-connection-id.md",
+    "wiki/concept-session.md",
+    "CLAUDE.md",
+    "wiki/crate-src-tauri.md",
+    "wiki/feature-backend.md",
+    "wiki/containerus.md",
+    "wiki/concept-system-id.md",
     "wiki/port-forwarding.md",
-    "wiki/terminal-subsystem.md",
-    "wiki/container-runtimes.md",
-    "wiki/ssh-connection-pooling.md",
-    "wiki/ssh-subsystem.md",
-    "wiki/tech-stack.md",
-    "wiki/frontend-features.md",
-    "wiki/angular-state.md",
+    "wiki/concept-block.md",
+    "wiki/feature-systems.md",
+    "wiki/feature-containers.md",
+    "wiki/feature-warp-terminal.md",
+    "wiki/agent-tools.md",
+    "wiki/agent-events.md",
     "wiki",
     "templates",
     "raw"

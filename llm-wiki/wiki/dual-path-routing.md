@@ -6,6 +6,10 @@
 
 **Last updated**: 2026-04-16
 
+**Parent**: [[frontend-overview]]
+**Siblings**: [[angular-state]], [[backend-service]], [[frontend-features]]
+**See also**: [[pattern-dual-path]], [[dual-mode-operation]], [[concept-system-id]]
+
 ---
 
 ## The idiom

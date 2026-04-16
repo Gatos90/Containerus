@@ -6,6 +6,10 @@
 
 **Last updated**: 2026-04-16
 
+**Parent**: [[crate-containerus-server]]
+**Siblings**: [[auth-and-rbac]], [[server-vault-internals]], [[server-websockets]], [[audit-logging]]
+**See also**: [[file-browser]], [[feature-backend]]
+
 ---
 
 ## ClusterManager

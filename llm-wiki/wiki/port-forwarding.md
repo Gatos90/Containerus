@@ -6,6 +6,10 @@
 
 **Last updated**: 2026-04-16
 
+**Parent**: [[architecture]]
+**Children**: [[flow-port-forward]]
+**See also**: [[ssh-subsystem]], [[ssh-connection-pooling]], [[server-websockets]], [[feature-containers]]
+
 ---
 
 ## Model

@@ -6,6 +6,9 @@
 
 **Last updated**: 2026-04-16
 
+**Parent**: [[containerus]]
+**Children**: [[dual-mode-operation]], [[tech-stack]], [[crate-src-tauri]], [[crate-containerus-core]], [[crate-containerus-server]], [[pattern-three-database-pattern]], [[concept-event-streams]], [[flow-connect-system]], [[flow-agent-query]], [[flow-port-forward]]
+
 ---
 
 ## The two Cargo crates plus the shell

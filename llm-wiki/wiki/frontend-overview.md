@@ -6,6 +6,9 @@
 
 **Last updated**: 2026-04-16
 
+**Parent**: [[architecture]]
+**Children**: [[angular-state]], [[backend-service]], [[dual-path-routing]], [[frontend-features]], [[pattern-signals-and-state]], [[pattern-dual-path]], [[concept-block]], [[concept-system-id]], [[concept-session]], [[concept-connection-id]]
+
 ---
 
 ## Layout

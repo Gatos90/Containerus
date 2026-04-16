@@ -6,6 +6,10 @@
 
 **Last updated**: 2026-04-16
 
+**Parent**: [[architecture]]
+**Siblings**: [[tech-stack]], [[crate-src-tauri]], [[crate-containerus-core]], [[crate-containerus-server]]
+**See also**: [[dual-path-routing]], [[pattern-dual-path]], [[backend-service]]
+
 ---
 
 ## The two modes

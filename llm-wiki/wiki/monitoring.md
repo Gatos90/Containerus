@@ -6,6 +6,9 @@
 
 **Last updated**: 2026-04-16
 
+**Parent**: [[crate-src-tauri]]
+**See also**: [[container-runtimes]], [[ssh-subsystem]], [[angular-state]], [[dual-path-routing]], [[feature-systems]]
+
 ---
 
 ## What gets measured — `LiveSystemMetrics`

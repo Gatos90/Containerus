@@ -6,6 +6,10 @@
 
 **Last updated**: 2026-04-16
 
+**Parent**: [[architecture]]
+**Children**: [[server-vault-internals]]
+**See also**: [[auth-and-rbac]], [[pattern-three-database-pattern]], [[crate-src-tauri]], [[crate-containerus-server]]
+
 ---
 
 ## Shared models — `models/credentials.rs`

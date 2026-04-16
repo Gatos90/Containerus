@@ -6,6 +6,10 @@
 
 **Last updated**: 2026-04-16
 
+**Parent**: [[crate-containerus-server]]
+**Siblings**: [[server-vault-internals]], [[server-websockets]], [[ssh-connection-pooling]], [[kubernetes]], [[audit-logging]], [[database-schema]]
+**See also**: [[backend-service]], [[credentials-and-vault]]
+
 ---
 
 ## Tokens — `auth/jwt.rs`

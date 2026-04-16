@@ -6,6 +6,9 @@
 
 **Last updated**: 2026-04-16
 
+**Parent**: [[architecture]]
+**See also**: [[ai-agent]], [[feature-warp-terminal]], [[concept-session]], [[concept-block]], [[ssh-subsystem]], [[server-websockets]]
+
 ---
 
 ## Local-mode path

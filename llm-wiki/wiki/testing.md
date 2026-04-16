@@ -6,6 +6,9 @@
 
 **Last updated**: 2026-04-16
 
+**Parent**: [[build-and-dev]]
+**Siblings**: [[tech-stack]]
+
 ---
 
 ## Frontend unit tests — Vitest

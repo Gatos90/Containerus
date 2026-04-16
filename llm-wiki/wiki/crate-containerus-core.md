@@ -6,6 +6,10 @@
 
 **Last updated**: 2026-04-16
 
+**Parent**: [[architecture]]
+**Siblings**: [[crate-src-tauri]], [[crate-containerus-server]]
+**Children**: [[domain-models]], [[ssh-subsystem]], [[ssh-connection-pooling]], [[container-runtimes]], [[ai-providers]], [[executor-abstraction]], [[error-model]]
+
 ---
 
 ## Public surface — `lib.rs`

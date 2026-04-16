@@ -6,6 +6,9 @@
 
 **Last updated**: 2026-04-16
 
+**Parent**: [[index]]
+**Children**: [[architecture]], [[dual-mode-operation]], [[tech-stack]], [[build-and-dev]], [[glossary]]
+
 ---
 
 ## What it is

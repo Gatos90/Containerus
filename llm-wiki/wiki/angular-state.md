@@ -6,6 +6,10 @@
 
 **Last updated**: 2026-04-16
 
+**Parent**: [[frontend-overview]]
+**Siblings**: [[backend-service]], [[dual-path-routing]], [[frontend-features]]
+**See also**: [[pattern-signals-and-state]], [[concept-block]]
+
 ---
 
 ## Orchestrator
