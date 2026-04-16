@@ -1,0 +1,69 @@
+<div class="p-4 sm:p-6 space-y-6">
+  <!-- Header -->
+  <div>
+    <h1 class="text-xl sm:text-2xl font-bold">Audit Log</h1>
+    <p class="text-sm text-zinc-400 mt-1">Kubernetes API server audit events</p>
+  </div>
+
+  <!-- Filters -->
+  <div class="flex flex-col sm:flex-row gap-3">
+    <div class="relative flex-1 sm:max-w-xs">
+      <input
+        type="text"
+        placeholder="Search user, resource, name..."
+        [ngModel]="searchQuery()"
+        (ngModelChange)="searchQuery.set($event)"
+        class="w-full h-9 px-4 bg-zinc-800 border border-zinc-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+      />
+    </div>
+    <select
+      [ngModel]="verbFilter()"
+      (ngModelChange)="verbFilter.set($event)"
+      class="h-9 px-3 bg-zinc-800 border border-zinc-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+    >
+      <option value="">All Verbs</option>
+      <option value="create">create</option>
+      <option value="update">update</option>
+      <option value="delete">delete</option>
+      <option value="get">get</option>
+      <option value="list">list</option>
+      <option value="watch">watch</option>
+    </select>
+  </div>
+
+  <!-- Audit Log Table -->
+  <div class="overflow-x-auto rounded-lg border border-zinc-700">
+    <table class="w-full text-sm">
+      <thead class="bg-zinc-800">
+        <tr>
+          <th scope="col" class="px-4 py-3 text-left font-medium text-zinc-300">Timestamp</th>
+          <th scope="col" class="px-4 py-3 text-left font-medium text-zinc-300">User</th>
+          <th scope="col" class="px-4 py-3 text-left font-medium text-zinc-300">Verb</th>
+          <th scope="col" class="px-4 py-3 text-left font-medium text-zinc-300">Resource</th>
+          <th scope="col" class="px-4 py-3 text-left font-medium text-zinc-300">Namespace</th>
+          <th scope="col" class="px-4 py-3 text-left font-medium text-zinc-300">Name</th>
+          <th scope="col" class="px-4 py-3 text-right font-medium text-zinc-300">Status</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-zinc-800">
+        @for (entry of filteredEntries(); track entry.id) {
+          <tr class="hover:bg-zinc-800/50 transition-colors">
+            <td class="px-4 py-3 font-mono text-xs text-zinc-500 whitespace-nowrap">{{ entry.timestamp }}</td>
+            <td class="px-4 py-3 text-zinc-300">{{ entry.user }}</td>
+            <td class="px-4 py-3">
+              <span class="px-2 py-0.5 rounded text-xs font-medium" [class]="verbBadgeClass(entry.verb)">{{ entry.verb }}</span>
+            </td>
+            <td class="px-4 py-3 text-zinc-400">{{ entry.resource }}</td>
+            <td class="px-4 py-3 text-zinc-500">{{ entry.namespace || '—' }}</td>
+            <td class="px-4 py-3 font-mono text-xs text-zinc-400">{{ entry.name || '—' }}</td>
+            <td class="px-4 py-3 text-right font-medium" [class]="statusBadgeClass(entry.statusCode)">{{ entry.statusCode }}</td>
+          </tr>
+        } @empty {
+          <tr>
+            <td colspan="7" class="px-4 py-8 text-center text-zinc-500">No audit entries match your filters.</td>
+          </tr>
+        }
+      </tbody>
+    </table>
+  </div>
+</div>

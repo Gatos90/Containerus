@@ -100,4 +100,25 @@ export const routes: Routes = [
         (m) => m.SettingsPageComponent
       ),
   },
+  {
+    path: 'k8s',
+    loadComponent: () =>
+      import('./features/backend/k8s-dashboard/k8s-dashboard.component').then(
+        (m) => m.K8sDashboardComponent
+      ),
+  },
+  {
+    path: 'audit-log',
+    loadComponent: () =>
+      import('./features/backend/audit-log/audit-log.component').then(
+        (m) => m.AuditLogComponent
+      ),
+  },
+  {
+    path: 'audit/project',
+    loadComponent: () =>
+      import('./features/backend/project-audit/project-audit.component').then(
+        (m) => m.ProjectAuditComponent
+      ),
+  },
 ];
