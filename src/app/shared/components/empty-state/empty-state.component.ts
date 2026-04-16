@@ -5,7 +5,7 @@ import {
   output,
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { LucideAngularModule } from 'lucide-angular';
+import { LucideAngularModule, LucideIconData } from 'lucide-angular';
 
 export interface EmptyStateCta {
   label: string;
@@ -21,7 +21,7 @@ export interface EmptyStateCta {
 })
 export class EmptyStateComponent {
   /** Lucide icon object */
-  readonly icon = input.required<unknown>();
+  readonly icon = input.required<LucideIconData>();
   readonly headline = input.required<string>();
   readonly description = input<string>('');
   readonly primaryCta = input<EmptyStateCta | null>(null);

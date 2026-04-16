@@ -25,9 +25,9 @@ import {
   Lock,
   Wifi,
 } from 'lucide-angular';
+import { LucideIconData } from 'lucide-angular';
 import { SystemService } from '../../../core/services/system.service';
 import { NewSystemRequest, SshAuthMethod } from '../../../core/models/system.model';
-import { ContainerRuntime } from '../../../core/models/container.model';
 
 export type WizardConnectionType = 'local' | 'remote-ssh' | 'backend';
 
@@ -35,7 +35,7 @@ interface ConnectionOption {
   id: WizardConnectionType;
   label: string;
   subtitle: string;
-  icon: unknown;
+  icon: LucideIconData;
   badge?: string;
 }
 
@@ -201,8 +201,8 @@ export class SetupWizardComponent {
         name: this.systemName.trim(),
         hostname: 'localhost',
         connectionType: 'local',
-        primaryRuntime: ContainerRuntime.Docker,
-        availableRuntimes: [ContainerRuntime.Docker],
+        primaryRuntime: 'docker',
+        availableRuntimes: ['docker'],
         autoConnect: true,
       };
     }
@@ -211,8 +211,8 @@ export class SetupWizardComponent {
         name: this.systemName.trim(),
         hostname: this.hostname.trim(),
         connectionType: 'remote',
-        primaryRuntime: ContainerRuntime.Docker,
-        availableRuntimes: [ContainerRuntime.Docker],
+        primaryRuntime: 'docker',
+        availableRuntimes: ['docker'],
         autoConnect: true,
         sshConfig: {
           username: this.username.trim(),
@@ -228,8 +228,8 @@ export class SetupWizardComponent {
       name: this.systemName.trim(),
       hostname: this.backendUrl.trim(),
       connectionType: 'remote',
-      primaryRuntime: ContainerRuntime.Docker,
-      availableRuntimes: [ContainerRuntime.Docker],
+      primaryRuntime: 'docker',
+      availableRuntimes: ['docker'],
       autoConnect: true,
     };
   }
