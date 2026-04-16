@@ -85,6 +85,29 @@ export class ImageListComponent implements OnInit {
     buildArgs: [] as { key: string; value: string }[],
   };
 
+  pullNameError = signal<string | null>(null);
+  buildNameError = signal<string | null>(null);
+
+  private readonly IMAGE_NAME_PATTERN = /^[a-z0-9][a-z0-9._\-\/]*$/;
+
+  private validateImageName(value: string): string | null {
+    if (!value) return 'Image name is required.';
+    if (value !== value.toLowerCase()) return 'Image name must be lowercase.';
+    if (!this.IMAGE_NAME_PATTERN.test(value))
+      return 'Only lowercase letters, digits, dashes, dots, underscores, and slashes allowed.';
+    return null;
+  }
+
+  onPullNameChange(value: string): void {
+    this.pullForm.name = value;
+    this.pullNameError.set(this.validateImageName(value));
+  }
+
+  onBuildNameChange(value: string): void {
+    this.buildForm.imageName = value;
+    this.buildNameError.set(this.validateImageName(value));
+  }
+
   building = false;
   buildLog = '';
   buildError = '';
@@ -133,7 +156,9 @@ export class ImageListComponent implements OnInit {
   }
 
   async pullImage(): Promise<void> {
-    if (!this.pullForm.name || !this.pullForm.systemId) return;
+    const nameErr = this.validateImageName(this.pullForm.name);
+    if (nameErr) { this.pullNameError.set(nameErr); return; }
+    if (!this.pullForm.systemId) return;
 
     await this.imageState.pullImage(
       this.pullForm.systemId,
@@ -143,6 +168,7 @@ export class ImageListComponent implements OnInit {
     );
 
     this.showPullDialog = false;
+    this.pullNameError.set(null);
     this.pullForm = {
       name: '',
       tag: 'latest',
@@ -177,7 +203,9 @@ export class ImageListComponent implements OnInit {
   }
 
   async buildImage(): Promise<void> {
-    if (!this.buildForm.imageName || !this.buildForm.systemId || !this.buildForm.contextPath) return;
+    const nameErr = this.validateImageName(this.buildForm.imageName);
+    if (nameErr) { this.buildNameError.set(nameErr); return; }
+    if (!this.buildForm.systemId || !this.buildForm.contextPath) return;
 
     this.building = true;
     this.buildLog = '';
@@ -209,6 +237,7 @@ export class ImageListComponent implements OnInit {
     this.showBuildDialog = false;
     this.buildLog = '';
     this.buildError = '';
+    this.buildNameError.set(null);
     this.showBuildOutput = false;
     this.buildForm = {
       contextPath: '.',

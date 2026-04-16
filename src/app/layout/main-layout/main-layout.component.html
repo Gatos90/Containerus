@@ -40,7 +40,37 @@
       </div>
     }
 
-    @if (showTerminalWorkspace()) {
+    @if (appState.isInitializing()) {
+      <div class="flex-1 flex flex-col p-4 md:p-6 gap-4 animate-pulse" aria-busy="true" aria-label="Loading application">
+        <!-- Top bar skeleton -->
+        <div class="flex items-center justify-between">
+          <div class="h-7 w-48 bg-zinc-800 rounded-lg"></div>
+          <div class="flex gap-2">
+            <div class="h-8 w-24 bg-zinc-800 rounded-lg"></div>
+            <div class="h-8 w-8 bg-zinc-800 rounded-lg"></div>
+          </div>
+        </div>
+        <!-- Filter bar skeleton -->
+        <div class="flex gap-3">
+          <div class="h-9 flex-1 max-w-xs bg-zinc-800 rounded-lg"></div>
+          <div class="h-9 w-32 bg-zinc-800 rounded-lg"></div>
+          <div class="h-9 w-32 bg-zinc-800 rounded-lg"></div>
+        </div>
+        <!-- Card grid skeleton -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+          @for (i of [1,2,3,4,5,6,7,8]; track i) {
+            <div class="bg-zinc-800/60 rounded-xl p-4 space-y-3">
+              <div class="flex items-center gap-3">
+                <div class="h-4 w-4 rounded-full bg-zinc-700"></div>
+                <div class="h-4 flex-1 bg-zinc-700 rounded"></div>
+              </div>
+              <div class="h-3 w-3/4 bg-zinc-700 rounded"></div>
+              <div class="h-3 w-1/2 bg-zinc-700 rounded"></div>
+            </div>
+          }
+        </div>
+      </div>
+    } @else if (showTerminalWorkspace()) {
       @if (terminalState.isDockFullscreen() && showDockGrid()) {
         <!-- Fullscreen: workspace takes all content area -->
         <app-terminal-workspace class="flex-1"></app-terminal-workspace>

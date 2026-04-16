@@ -348,7 +348,7 @@ export class ContainerListComponent implements OnInit {
   });
 
   // Component state
-  private refreshing = false;
+  private readonly _refreshing = signal(false);
   viewMode = signal<'grid' | 'list'>('grid');
   expandedContainerId = signal<string | null>(null);
   modalContainer = signal<Container | null>(null);
@@ -364,9 +364,7 @@ export class ContainerListComponent implements OnInit {
     await this.refresh();
   }
 
-  isRefreshing(): boolean {
-    return this.refreshing;
-  }
+  readonly isRefreshing = this._refreshing.asReadonly();
 
   goToSystems(): void {
     this.router.navigate(['/systems']);
@@ -377,7 +375,8 @@ export class ContainerListComponent implements OnInit {
   }
 
   async refresh(): Promise<void> {
-    this.refreshing = true;
+    if (this._refreshing()) return;
+    this._refreshing.set(true);
     try {
       const systemIds = this.systemState.connectedSystems().map((s) => s.id);
       await Promise.all([
@@ -385,7 +384,7 @@ export class ContainerListComponent implements OnInit {
         this.loadBackendPods(),
       ]);
     } finally {
-      this.refreshing = false;
+      this._refreshing.set(false);
     }
   }
 

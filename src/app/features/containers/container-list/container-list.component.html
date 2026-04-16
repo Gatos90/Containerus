@@ -33,7 +33,7 @@
       <!-- Refresh -->
       <button
         (click)="refresh()"
-        class="flex items-center p-2.5 sm:px-3 sm:py-1.5 rounded-lg border border-zinc-700 text-sm hover:bg-zinc-800 transition-colors"
+        class="flex items-center p-2.5 sm:px-3 sm:py-1.5 rounded-lg border border-zinc-700 text-sm hover:bg-zinc-800 disabled:opacity-50 transition-colors"
         [disabled]="isRefreshing()"
         title="Refresh"
         aria-label="Refresh containers"

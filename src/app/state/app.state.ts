@@ -1,4 +1,4 @@
-import { computed, Injectable } from '@angular/core';
+import { computed, Injectable, signal } from '@angular/core';
 import { BackendService } from '../core/services/backend.service';
 import { ContainerState } from './container.state';
 import { ImageState } from './image.state';
@@ -16,6 +16,9 @@ export class AppState {
     public readonly network: NetworkState,
     private readonly backend: BackendService,
   ) {}
+
+  private readonly _initializing = signal(false);
+  readonly isInitializing = this._initializing.asReadonly();
 
   readonly isInitialized = computed(() => this.system.systems().length > 0);
 
@@ -46,6 +49,8 @@ export class AppState {
   }));
 
   async initialize(): Promise<void> {
+    this._initializing.set(true);
+    try {
     // Wait for backend auto-reconnect before loading systems
     await this.backend.waitForReady();
     await this.system.loadSystems();
@@ -77,6 +82,9 @@ export class AppState {
           }
         })
       );
+    }
+    } finally {
+      this._initializing.set(false);
     }
   }
 
