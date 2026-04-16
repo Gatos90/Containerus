@@ -1,0 +1,32 @@
+[advisories]
+# Known exceptions tracked under CON-44 follow-ups. Each entry must have a
+# follow-up issue or reason recorded here.
+
+ignore = [
+    # Marvin attack on RSA PKCS#1 v1.5 — no fix available upstream (crate
+    # author has declined to implement constant-time variants). russh/ssh-key
+    # tree still depends on `rsa` for SSH key parsing. Revisit when rsa crate
+    # ships a patched release or when we migrate off russh's RSA dependency.
+    "RUSTSEC-2023-0071",
+
+    # idna 0.5 IDN punycode conversion — transitive through
+    # validator 0.18. Fix requires coordinated bump of validator in
+    # containerus-server; tracked as follow-up to CON-44.
+    "RUSTSEC-2024-0421",
+
+    # libcrux-sha3 timing side-channel — pulled in by russh 0.57 via ML-KEM
+    # post-quantum KEX. russh has not yet published an update that bumps
+    # libcrux. Revisit after russh releases a new patch.
+    "RUSTSEC-2026-0074",
+
+    # rustls-webpki verification issues — transitive through sqlx 0.8.0
+    # (rustls 0.21). Upgrading sqlx to 0.8.1+ conflicts with rusqlite 0.31
+    # over libsqlite3-sys `links = "sqlite3"`. Requires coordinated rusqlite
+    # bump; tracked as follow-up to CON-44.
+    "RUSTSEC-2026-0098",
+    "RUSTSEC-2026-0099",
+
+    # sqlx 0.8.0 binary-protocol cast truncation — same rusqlite coordination
+    # issue as RUSTSEC-2026-0098/0099. Tracked as follow-up to CON-44.
+    "RUSTSEC-2024-0363",
+]

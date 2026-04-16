@@ -11,7 +11,8 @@ use crate::AppState;
 
 /// Load AI settings from DB and hydrate the API key from the in-memory cache on desktop.
 pub(crate) fn load_ai_settings_with_key(db: &rusqlite::Connection, app_state: &crate::AppState) -> Result<AiSettings, String> {
-    let mut settings = get_ai_settings(db).map_err(|e| format!("Database error: {}", e))?;
+    let mut settings = get_ai_settings(db, app_state.local_vault.as_deref())
+        .map_err(|e| format!("Database error: {}", e))?;
 
     #[cfg(not(target_os = "android"))]
     if settings.api_key.as_ref().map_or(true, |k| k.is_empty()) {
@@ -20,9 +21,6 @@ pub(crate) fn load_ai_settings_with_key(db: &rusqlite::Connection, app_state: &c
             settings.api_key = Some(key);
         }
     }
-
-    #[cfg(target_os = "android")]
-    let _ = app_state; // suppress unused warning
 
     Ok(settings)
 }
@@ -152,8 +150,13 @@ pub async fn update_ai_settings_cmd(
         }
     }
 
+    // Android: no keyring vault — the api_key (if any) falls through to
+    // `upsert_ai_settings`, which encrypts it with AES-GCM via `local_vault`.
+    // If no keystore backend is wired up, the upsert refuses rather than
+    // persisting plaintext (CON-42 H2 fix).
     let db = state.db.lock().map_err(|e| e.to_string())?;
-    upsert_ai_settings(&db, &settings).map_err(|e| format!("Database error: {}", e))?;
+    upsert_ai_settings(&db, state.local_vault.as_deref(), &settings)
+        .map_err(|e| format!("Database error: {}", e))?;
 
     Ok(())
 }

@@ -1,12 +1,13 @@
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use dashmap::DashMap;
 use rusqlite::Connection;
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
+use crate::crypto::LocalVault;
 use crate::database;
 use crate::keyring_store::SshCredentials;
 use crate::models::command_template::{CommandTemplate, CreateCommandTemplateRequest, UpdateCommandTemplateRequest};
@@ -17,6 +18,12 @@ use crate::models::system::{ConnectionState, ContainerSystem, SystemId};
 
 pub struct AppState {
     pub db: Mutex<Connection>,
+    /// AES-256-GCM vault for credentials persisted in SQLite (CON-42).
+    /// `None` on Android — where no OS keystore backend is wired up — and
+    /// on desktop if the keyring is inaccessible at startup. Callers that
+    /// need to persist credentials locally MUST refuse when this is `None`
+    /// rather than fall back to plaintext or the legacy XOR path.
+    pub local_vault: Option<Arc<LocalVault>>,
     systems: RwLock<Vec<ContainerSystem>>,
     connection_states: DashMap<String, ConnectionState>,
     ssh_credential_cache: DashMap<String, SshCredentials>,
@@ -47,14 +54,44 @@ impl AppState {
             connection_states.insert(system.id.0.clone(), ConnectionState::Disconnected);
         }
 
+        let local_vault = Self::init_local_vault();
+
         Self {
             db: Mutex::new(conn),
+            local_vault,
             systems: RwLock::new(systems),
             connection_states,
             ssh_credential_cache: DashMap::new(),
             ai_key_cache: DashMap::new(),
             backend_token_cache: DashMap::new(),
         }
+    }
+
+    /// Acquire the AES-GCM master key from the OS keyring (desktop). On
+    /// Android the keyring crate isn't compiled in, so we return `None` —
+    /// callers must refuse to persist credentials locally on that platform.
+    #[cfg(not(target_os = "android"))]
+    fn init_local_vault() -> Option<Arc<LocalVault>> {
+        match LocalVault::from_os_keyring() {
+            Ok(v) => Some(Arc::new(v)),
+            Err(e) => {
+                tracing::error!(
+                    "Failed to load credential master key from OS keyring: {}. \
+                     Local credential writes will be refused until this is resolved.",
+                    e
+                );
+                None
+            }
+        }
+    }
+
+    #[cfg(target_os = "android")]
+    fn init_local_vault() -> Option<Arc<LocalVault>> {
+        tracing::warn!(
+            "No OS keystore backend wired up for Android — local credential \
+             writes will be refused; use backend mode to store credentials."
+        );
+        None
     }
 }
 
@@ -350,14 +387,29 @@ impl AppState {
         passphrase: Option<&str>,
         private_key: Option<&str>,
     ) -> Result<(), ContainerError> {
+        let has_secret = password.is_some() || passphrase.is_some() || private_key.is_some();
+        if has_secret && self.local_vault.is_none() {
+            return Err(ContainerError::CredentialError(
+                "local keystore unavailable — configure a keystore or use backend mode"
+                    .to_string(),
+            ));
+        }
+
         let db = self.db.lock().map_err(|_| ContainerError::DatabaseError {
             message: "Failed to acquire database lock".to_string(),
         })?;
 
-        database::store_ssh_credentials(&db, system_id, password, passphrase, private_key)
-            .map_err(|e| ContainerError::DatabaseError {
-                message: e.to_string(),
-            })
+        database::store_ssh_credentials(
+            &db,
+            self.local_vault.as_deref(),
+            system_id,
+            password,
+            passphrase,
+            private_key,
+        )
+        .map_err(|e| ContainerError::DatabaseError {
+            message: e.to_string(),
+        })
     }
 
     pub fn get_ssh_credentials(&self, system_id: &str) -> Result<database::SshCredentials, ContainerError> {
@@ -365,7 +417,7 @@ impl AppState {
             message: "Failed to acquire database lock".to_string(),
         })?;
 
-        database::get_ssh_credentials(&db, system_id)
+        database::get_ssh_credentials(&db, self.local_vault.as_deref(), system_id)
             .map_err(|e| ContainerError::DatabaseError {
                 message: e.to_string(),
             })
