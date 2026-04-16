@@ -357,6 +357,7 @@ export class OrgManagementComponent implements OnInit, OnChanges {
   inviteRoleId = '';
   inviteLoading = signal(false);
   inviteError = signal<string | null>(null);
+  rolesError = signal<string | null>(null);
 
   newProjectName = '';
   loadError = signal<string | null>(null);
@@ -413,16 +414,21 @@ export class OrgManagementComponent implements OnInit, OnChanges {
     const project = this.activeProject();
     if (!project) return;
 
+    const currentConnectionId = this.connectionId;
     this.environmentsLoading.set(true);
     this.envError.set(null);
     try {
       const envs = await this.backend.listEnvironmentsFor(this.connectionId, project.id);
+      if (this.connectionId !== currentConnectionId) return;
       this.environments.set(envs);
     } catch (e: any) {
+      if (this.connectionId !== currentConnectionId) return;
       this.envError.set(e.message ?? 'Failed to load environments');
       console.error('Failed to load environments:', e);
     } finally {
-      this.environmentsLoading.set(false);
+      if (this.connectionId === currentConnectionId) {
+        this.environmentsLoading.set(false);
+      }
     }
   }
 
@@ -517,16 +523,21 @@ export class OrgManagementComponent implements OnInit, OnChanges {
     const project = this.activeProject();
     if (!project) return;
 
+    const currentConnectionId = this.connectionId;
     this.loadError.set(null);
     this.loading.set(true);
     try {
       const members = await this.backend.getProjectMembersFor(this.connectionId, project.id);
+      if (this.connectionId !== currentConnectionId) return;
       this.members.set(members);
     } catch (e: any) {
+      if (this.connectionId !== currentConnectionId) return;
       this.loadError.set(e.message ?? 'Failed to load members');
       console.error('Failed to load members:', e);
     } finally {
-      this.loading.set(false);
+      if (this.connectionId === currentConnectionId) {
+        this.loading.set(false);
+      }
     }
   }
 
@@ -553,14 +564,17 @@ export class OrgManagementComponent implements OnInit, OnChanges {
   }
 
   async loadRoles(): Promise<void> {
+    const currentConnectionId = this.connectionId;
     try {
       const roles = await this.backend.listRolesFor(this.connectionId);
+      if (this.connectionId !== currentConnectionId) return;
       this.roles.set(roles);
       if (roles.length > 0 && !this.inviteRoleId) {
         this.inviteRoleId = roles[0].id;
       }
     } catch (e: any) {
-      this.inviteError.set('Failed to load roles. Please try again.');
+      if (this.connectionId !== currentConnectionId) return;
+      this.rolesError.set('Failed to load roles. Please try again.');
       console.error('Failed to load roles:', e);
     }
   }

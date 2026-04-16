@@ -345,6 +345,7 @@ export class SystemState {
       const runtimes = await this.systemService.detectRuntimes(systemId);
       let systemToUpdate: ContainerSystem | undefined;
       let originalRuntime: ContainerRuntime | undefined;
+      let originalAvailableRuntimes: ContainerRuntime[] | undefined;
       this._systems.update((systems) =>
         systems.map((s) => {
           if (s.id !== systemId) return s;
@@ -352,6 +353,7 @@ export class SystemState {
           // If primary runtime isn't among detected runtimes, switch to first detected
           if (runtimes.length > 0 && !runtimes.includes(s.primaryRuntime)) {
             originalRuntime = s.primaryRuntime;
+            originalAvailableRuntimes = s.availableRuntimes;
             updated.primaryRuntime = runtimes[0];
             systemToUpdate = updated;
           }
@@ -359,7 +361,9 @@ export class SystemState {
         })
       );
       if (systemToUpdate) {
-        await this.updateSystem({
+        // Call the service directly instead of this.updateSystem() to avoid
+        // setting global _loading/_error signals for this internal auto-update.
+        await this.systemService.updateSystem({
           id: systemToUpdate.id,
           name: systemToUpdate.name,
           hostname: systemToUpdate.hostname,
@@ -373,7 +377,7 @@ export class SystemState {
           // Revert local state if the update fails
           if (originalRuntime !== undefined) {
             this._systems.update((systems) =>
-              systems.map((s) => s.id === systemId ? { ...s, primaryRuntime: originalRuntime! } : s)
+              systems.map((s) => s.id === systemId ? { ...s, primaryRuntime: originalRuntime!, availableRuntimes: originalAvailableRuntimes ?? s.availableRuntimes } : s)
             );
           }
         });

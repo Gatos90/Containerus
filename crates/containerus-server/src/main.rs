@@ -95,6 +95,102 @@ async fn main() {
         });
     }
 
+    // Auto-connect all active SSH systems in the background
+    {
+        let state = state.clone();
+        tokio::spawn(async move {
+            let systems = match sqlx::query_as::<_, crate::db::models::SystemRow>(
+                "SELECT * FROM systems WHERE is_active = true",
+            )
+            .fetch_all(&state.db)
+            .await
+            {
+                Ok(rows) => rows,
+                Err(e) => {
+                    tracing::error!("Failed to load systems for auto-connect: {e}");
+                    return;
+                }
+            };
+
+            if systems.is_empty() {
+                return;
+            }
+
+            tracing::info!("Auto-connecting {} SSH system(s)...", systems.len());
+            for system in &systems {
+                match state.connections.connect_shared(&state.db, system).await {
+                    Ok(()) => {
+                        tracing::info!(
+                            "Auto-connected to system: {} ({})",
+                            system.name,
+                            system.id
+                        );
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            "Failed to auto-connect to system {} ({}): {e}",
+                            system.name,
+                            system.id
+                        );
+                    }
+                }
+            }
+            tracing::info!(
+                "SSH auto-connect complete ({} active connection(s))",
+                state.connections.total_connections()
+            );
+        });
+    }
+
+    // Pre-warm K8s cluster clients in the background
+    {
+        let state = state.clone();
+        tokio::spawn(async move {
+            let clusters = match sqlx::query_as::<_, crate::db::models::ClusterRow>(
+                "SELECT * FROM clusters WHERE is_active = true",
+            )
+            .fetch_all(&state.db)
+            .await
+            {
+                Ok(rows) => rows,
+                Err(e) => {
+                    tracing::error!("Failed to load clusters for auto-connect: {e}");
+                    return;
+                }
+            };
+
+            if clusters.is_empty() {
+                return;
+            }
+
+            tracing::info!("Auto-connecting {} K8s cluster(s)...", clusters.len());
+            for cluster in &clusters {
+                match state.k8s.test_connection(cluster).await {
+                    Ok(version) => {
+                        tracing::info!(
+                            "Auto-connected to cluster: {} ({}) - {version}",
+                            cluster.name,
+                            cluster.id
+                        );
+                        let _ = sqlx::query(
+                            "UPDATE clusters SET last_connected_at = now() WHERE id = $1",
+                        )
+                        .bind(cluster.id)
+                        .execute(&state.db)
+                        .await;
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            "Failed to auto-connect to cluster {} ({}): {e}",
+                            cluster.name,
+                            cluster.id
+                        );
+                    }
+                }
+            }
+        });
+    }
+
     // Build CORS layer from configured origins (defaults to localhost dev server)
     let cors = {
         let cors_origins = &state.config.cors_origins;

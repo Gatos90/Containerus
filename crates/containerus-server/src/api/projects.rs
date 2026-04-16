@@ -587,7 +587,7 @@ async fn invite_member(
         )
     })?;
 
-    log_action(&state.db, Some(project_id), Some(scoped.claims.sub), "member.invite", "member", Some(&target_user_id.to_string()), Some(serde_json::json!({"email": &req.email, "role_id": req.role_id.to_string()})), None, None).await;
+    log_action(&state.db, Some(project_id), Some(scoped.claims.sub), "member.invite", "member", Some(&target_user_id.to_string()), Some(serde_json::json!({"role_id": req.role_id.to_string()})), None, None).await;
 
     Ok((
         StatusCode::CREATED,
@@ -619,10 +619,19 @@ async fn update_member_role(
         ));
     }
 
+    // Wrap role check and update in a transaction for atomicity
+    let mut tx = state.db.begin().await.map_err(|e| {
+        tracing::error!("Failed to start transaction: {e}");
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": "Internal server error" })),
+        )
+    })?;
+
     // Verify the new role_id exists
     let role_exists = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM roles WHERE id = $1")
         .bind(req.role_id)
-        .fetch_one(&state.db)
+        .fetch_one(&mut *tx)
         .await
         .map_err(|e| {
             tracing::error!("Database error: {e}");
@@ -646,7 +655,7 @@ async fn update_member_role(
     .bind(req.role_id)
     .bind(project_id)
     .bind(target_user_id)
-    .execute(&state.db)
+    .execute(&mut *tx)
     .await
     .map_err(|e| {
         tracing::error!("Database error: {e}");
@@ -662,6 +671,14 @@ async fn update_member_role(
             Json(json!({ "error": "Member not found in this project" })),
         ));
     }
+
+    tx.commit().await.map_err(|e| {
+        tracing::error!("Failed to commit transaction: {e}");
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": "Internal server error" })),
+        )
+    })?;
 
     log_action(&state.db, Some(project_id), Some(scoped.claims.sub), "member.role_update", "member", Some(&target_user_id.to_string()), Some(serde_json::json!({"role_id": req.role_id.to_string()})), None, None).await;
 
@@ -689,6 +706,46 @@ async fn remove_member(
             StatusCode::BAD_REQUEST,
             Json(json!({ "error": "Cannot remove yourself from a project" })),
         ));
+    }
+
+    // Prevent removing the last project admin
+    let target_role_id: Option<Uuid> = sqlx::query_scalar(
+        "SELECT role_id FROM project_members WHERE project_id = $1 AND user_id = $2",
+    )
+    .bind(project_id)
+    .bind(target_user_id)
+    .fetch_optional(&state.db)
+    .await
+    .map_err(|e| {
+        tracing::error!("Database error: {e}");
+        (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": "Internal server error" })))
+    })?;
+
+    if let Some(role_id) = target_role_id {
+        let is_admin_role: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM roles WHERE id = $1 AND slug = 'project-admin')",
+        )
+        .bind(role_id)
+        .fetch_one(&state.db)
+        .await
+        .unwrap_or(false);
+
+        if is_admin_role {
+            let admin_count: i64 = sqlx::query_scalar(
+                "SELECT COUNT(*) FROM project_members pm JOIN roles r ON pm.role_id = r.id WHERE pm.project_id = $1 AND r.slug = 'project-admin'",
+            )
+            .bind(project_id)
+            .fetch_one(&state.db)
+            .await
+            .unwrap_or(0);
+
+            if admin_count <= 1 {
+                return Err((
+                    StatusCode::BAD_REQUEST,
+                    Json(json!({ "error": "Cannot remove the last project admin" })),
+                ));
+            }
+        }
     }
 
     let result = sqlx::query(
@@ -724,6 +781,28 @@ async fn get_my_permissions(
     auth: AuthUser,
     Path(project_id): Path<Uuid>,
 ) -> Result<Json<MyPermissionsResponse>, (StatusCode, Json<Value>)> {
+    // Verify project exists
+    let project_exists = sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(SELECT 1 FROM projects WHERE id = $1)",
+    )
+    .bind(project_id)
+    .fetch_one(&state.db)
+    .await
+    .map_err(|e| {
+        tracing::error!("Database error: {e}");
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": "Internal server error" })),
+        )
+    })?;
+
+    if !project_exists {
+        return Err((
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Project not found" })),
+        ));
+    }
+
     // Check if the user is a company admin
     let is_company_admin = auth.claims.is_company_admin;
 
@@ -766,37 +845,3 @@ async fn get_my_permissions(
     }))
 }
 
-// ============================================================================
-// Helpers
-// ============================================================================
-
-/// Verify that a user is a member of a project.
-async fn verify_membership(
-    state: &AppState,
-    user_id: Uuid,
-    project_id: Uuid,
-) -> Result<(), (StatusCode, Json<Value>)> {
-    let count = sqlx::query_scalar::<_, i64>(
-        "SELECT COUNT(*) FROM project_members WHERE project_id = $1 AND user_id = $2",
-    )
-    .bind(project_id)
-    .bind(user_id)
-    .fetch_one(&state.db)
-    .await
-    .map_err(|e| {
-        tracing::error!("Database error: {e}");
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({ "error": "Internal server error" })),
-        )
-    })?;
-
-    if count == 0 {
-        return Err((
-            StatusCode::FORBIDDEN,
-            Json(json!({ "error": "Not a member of this project" })),
-        ));
-    }
-
-    Ok(())
-}

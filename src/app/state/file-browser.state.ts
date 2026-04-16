@@ -9,6 +9,7 @@ import {
   SortDirection,
 } from '../core/models/file-browser.model';
 import { FileBrowserService } from '../core/services/file-browser.service';
+import { PodContext } from './terminal.state';
 
 @Injectable({ providedIn: 'root' })
 export class FileBrowserState {
@@ -38,6 +39,7 @@ export class FileBrowserState {
   private _systemId = signal<string | null>(null);
   private _containerId = signal<string | null>(null);
   private _runtime = signal<ContainerRuntime | null>(null);
+  private _podContext = signal<PodContext | null>(null);
 
   // Public readonly
   readonly listing = this._listing.asReadonly();
@@ -55,6 +57,7 @@ export class FileBrowserState {
   readonly systemId = this._systemId.asReadonly();
   readonly containerId = this._containerId.asReadonly();
   readonly runtime = this._runtime.asReadonly();
+  readonly podContext = this._podContext.asReadonly();
 
   // Computed: breadcrumbs
   readonly breadcrumbs = computed<Breadcrumb[]>(() => {
@@ -142,6 +145,20 @@ export class FileBrowserState {
     this._systemId.set(systemId);
     this._containerId.set(containerId ?? null);
     this._runtime.set(runtime ?? null);
+    this._podContext.set(null);
+    this._resetState();
+  }
+
+  /** Set the target K8s pod */
+  setPodContext(podContext: PodContext): void {
+    this._podContext.set(podContext);
+    this._systemId.set(null);
+    this._containerId.set(null);
+    this._runtime.set(null);
+    this._resetState();
+  }
+
+  private _resetState(): void {
     this._history.set([]);
     this._historyIndex.set(-1);
     this._listing.set(null);
@@ -160,10 +177,11 @@ export class FileBrowserState {
 
     try {
       const listing = await this.service.listDirectory(
-        this._systemId()!,
+        this._systemId() ?? '',
         path,
         this._containerId(),
         this._runtime(),
+        this._podContext(),
       );
       this._listing.set(listing);
       this._currentPath.set(path);
@@ -210,10 +228,11 @@ export class FileBrowserState {
 
     try {
       const content = await this.service.readFile(
-        this._systemId()!,
+        this._systemId() ?? '',
         entry.path,
         this._containerId(),
         this._runtime(),
+        this._podContext(),
       );
       this._editorContent.set(content);
       this._editorDirty.set(false);
@@ -232,11 +251,12 @@ export class FileBrowserState {
     this._editorLoading.set(true);
     try {
       await this.service.writeFile(
-        this._systemId()!,
+        this._systemId() ?? '',
         file.path,
         content,
         this._containerId(),
         this._runtime(),
+        this._podContext(),
       );
       this._editorContent.update(f => f ? { ...f, content } : null);
       this._editorDirty.set(false);
@@ -261,7 +281,8 @@ export class FileBrowserState {
 
     try {
       await this.service.createDirectory(
-        this._systemId()!, newPath, this._containerId(), this._runtime(),
+        this._systemId() ?? '', newPath, this._containerId(), this._runtime(),
+        this._podContext(),
       );
       await this.refresh();
       return true;
@@ -275,8 +296,9 @@ export class FileBrowserState {
   async deletePath(entry: FileEntry): Promise<boolean> {
     try {
       await this.service.deletePath(
-        this._systemId()!, entry.path, entry.fileType === 'directory',
+        this._systemId() ?? '', entry.path, entry.fileType === 'directory',
         this._containerId(), this._runtime(),
+        this._podContext(),
       );
       await this.refresh();
       return true;
@@ -293,8 +315,9 @@ export class FileBrowserState {
 
     try {
       await this.service.renamePath(
-        this._systemId()!, entry.path, newPath,
+        this._systemId() ?? '', entry.path, newPath,
         this._containerId(), this._runtime(),
+        this._podContext(),
       );
       await this.refresh();
       return true;
@@ -308,8 +331,9 @@ export class FileBrowserState {
   async downloadFile(entry: FileEntry, localPath: string): Promise<boolean> {
     try {
       await this.service.downloadFile(
-        this._systemId()!, entry.path, localPath,
+        this._systemId() ?? '', entry.path, localPath,
         this._containerId(), this._runtime(),
+        this._podContext(),
       );
       return true;
     } catch (err: any) {
@@ -377,7 +401,8 @@ export class FileBrowserState {
     this._error.set(null);
     try {
       const listing = await this.service.listDirectory(
-        this._systemId()!, path, this._containerId(), this._runtime(),
+        this._systemId() ?? '', path, this._containerId(), this._runtime(),
+        this._podContext(),
       );
       this._listing.set(listing);
       this._currentPath.set(path);

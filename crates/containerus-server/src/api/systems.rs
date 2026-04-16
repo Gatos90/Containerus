@@ -137,6 +137,13 @@ async fn create_system(
     user.require("systems.create").map_err(|_| (StatusCode::FORBIDDEN, Json(json!({"error": "Insufficient permissions"}))))?;
     let user_id = user.claims.sub;
 
+    if req.name.trim().is_empty() || req.name.trim().len() > 255 {
+        return Ok((StatusCode::BAD_REQUEST, Json(json!({"error": "System name must be 1-255 characters"}))).into_response());
+    }
+    if req.hostname.trim().is_empty() || req.hostname.trim().len() > 255 {
+        return Ok((StatusCode::BAD_REQUEST, Json(json!({"error": "Hostname must be 1-255 characters"}))).into_response());
+    }
+
     let port = req.port.unwrap_or(22);
     if !(1..=65535).contains(&port) {
         return Ok((
@@ -418,7 +425,9 @@ async fn delete_system(
     match result {
         Ok(r) if r.rows_affected() > 0 => {
             // Delete credentials from vault after DB delete succeeds (CASCADE handles credential table rows)
-            let _ = state.vault.delete_system_credentials(&state.db, id).await;
+            if let Err(e) = state.vault.delete_system_credentials(&state.db, id).await {
+                tracing::warn!("Failed to delete vault credentials for deleted system {id}: {e}");
+            }
             log_system_action(
                 &state.db,
                 project_id,

@@ -53,7 +53,7 @@ pub fn save_backend_connection(
         .map_err(|e| e.to_string())?;
     drop(db);
 
-    // Store tokens in vault cache if provided
+    // Store tokens in vault cache if provided, merging with existing tokens
     match (access_token, refresh_token) {
         (Some(at), Some(rt)) => {
             state.cache_backend_tokens(
@@ -64,7 +64,29 @@ pub fn save_backend_connection(
                 },
             );
         }
-        _ => {
+        (Some(at), None) => {
+            if let Some(existing) = state.get_cached_backend_tokens(&id) {
+                state.cache_backend_tokens(
+                    &id,
+                    BackendTokens {
+                        access_token: at,
+                        refresh_token: existing.refresh_token,
+                    },
+                );
+            }
+        }
+        (None, Some(rt)) => {
+            if let Some(existing) = state.get_cached_backend_tokens(&id) {
+                state.cache_backend_tokens(
+                    &id,
+                    BackendTokens {
+                        access_token: existing.access_token,
+                        refresh_token: rt,
+                    },
+                );
+            }
+        }
+        (None, None) => {
             // No tokens → remove any stale cached tokens
             state.remove_cached_backend_tokens(&id);
         }

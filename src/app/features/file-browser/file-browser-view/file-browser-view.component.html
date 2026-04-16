@@ -1,5 +1,5 @@
-<!-- No system selected: show system picker -->
-@if (!systemId) {
+<!-- No system or pod selected: show system picker -->
+@if (!systemId && !state.podContext()) {
   <div class="p-3 sm:p-4 md:p-6 space-y-3 sm:space-y-4 md:space-y-6">
     <!-- Header (matches other views) -->
     <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
@@ -95,12 +95,18 @@
           <h1 class="text-xl sm:text-2xl font-bold">File Browser</h1>
           <div class="flex items-center gap-2 mt-1">
             <span class="w-2 h-2 rounded-full bg-green-500 flex-shrink-0"></span>
-            <span class="text-xs sm:text-sm text-zinc-400">{{ getSystemName() }}</span>
-            @if (getContainerName()) {
+            @if (state.podContext(); as podCtx) {
+              <span class="text-xs sm:text-sm text-zinc-400">{{ podCtx.clusterName }}</span>
               <span class="text-xs text-zinc-600">/</span>
-              <span class="text-xs sm:text-sm text-blue-400">{{ getContainerName() }}</span>
+              <span class="text-xs sm:text-sm text-purple-400">{{ podCtx.podName }}</span>
             } @else {
-              <span class="text-xs text-zinc-600">(host filesystem)</span>
+              <span class="text-xs sm:text-sm text-zinc-400">{{ getSystemName() }}</span>
+              @if (getContainerName()) {
+                <span class="text-xs text-zinc-600">/</span>
+                <span class="text-xs sm:text-sm text-blue-400">{{ getContainerName() }}</span>
+              } @else {
+                <span class="text-xs text-zinc-600">(host filesystem)</span>
+              }
             }
           </div>
         </div>

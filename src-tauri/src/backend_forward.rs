@@ -61,8 +61,11 @@ impl BackendPortForwardManager {
         // Bind local TCP port
         let listener = if let Some(port) = local_port {
             let mut bound = None;
-            for offset in 0..20u16 {
-                let try_port = port.saturating_add(offset);
+            let max_attempts = ((u16::MAX - port).saturating_add(1) as usize).min(20);
+            let mut last_port = port;
+            for offset in 0..max_attempts {
+                let try_port = port.saturating_add(offset as u16);
+                last_port = try_port;
                 match TcpListener::bind(format!("127.0.0.1:{}", try_port)).await {
                     Ok(l) => {
                         if offset > 0 {
@@ -74,11 +77,11 @@ impl BackendPortForwardManager {
                         bound = Some(l);
                         break;
                     }
-                    Err(_) if offset < 19 => continue,
+                    Err(_) if offset < max_attempts - 1 => continue,
                     Err(e) => {
                         return Err(ContainerError::Internal(format!(
                             "Failed to bind to ports {}-{}: {}",
-                            port, try_port, e
+                            port, last_port, e
                         )));
                     }
                 }
@@ -155,7 +158,7 @@ impl BackendPortForwardManager {
         tracing::info!(
             "Backend port forward {} listening on {}",
             forward_id,
-            listener.local_addr().unwrap()
+            listener.local_addr().map(|a| a.to_string()).unwrap_or_else(|_| "unknown".into())
         );
 
         loop {

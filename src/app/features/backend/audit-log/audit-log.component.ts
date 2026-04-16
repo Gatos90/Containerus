@@ -244,6 +244,7 @@ export class AuditLogComponent implements OnInit, OnChanges {
 
   formatTime(iso: string): string {
     const d = new Date(iso);
+    if (isNaN(d.getTime())) return iso;
     return d.toLocaleString();
   }
 

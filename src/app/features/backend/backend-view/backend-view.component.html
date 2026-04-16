@@ -41,13 +41,19 @@
         <div
           class="bg-zinc-900 rounded-xl border border-zinc-800 p-4 hover:border-zinc-700 transition-colors group"
           [class.cursor-pointer]="conn.status === 'connected'"
+          [attr.role]="conn.status === 'connected' ? 'button' : null"
+          [attr.tabindex]="conn.status === 'connected' ? '0' : null"
           (click)="conn.status === 'connected' ? selectBackend(conn.id) : null"
+          (keydown.enter)="conn.status === 'connected' ? selectBackend(conn.id) : null"
+          (keydown.space)="conn.status === 'connected' ? selectBackend(conn.id) : null"
           [class.opacity-60]="conn.status === 'disconnected'"
         >
           <div class="flex items-center gap-3">
             <span
               class="w-2.5 h-2.5 rounded-full flex-shrink-0"
               [class]="getStatusColor(conn.status)"
+              [attr.aria-label]="'Status: ' + conn.status"
+              role="img"
             ></span>
 
             <div class="flex-1 min-w-0">

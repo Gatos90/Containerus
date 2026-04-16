@@ -15,6 +15,7 @@ import {
   K8sNamespace,
   K8sPod,
   K8sService,
+  K8sTopology,
   LoginRequest,
   PermissionDef,
   Project,
@@ -27,6 +28,11 @@ import {
   SavedBackendConnection,
   UserProfile,
   AuditLogEntry,
+  K8sApiResource,
+  mapPod,
+  mapDeployment,
+  mapService,
+  mapNamespace,
 } from '../models/backend.model';
 import { Container } from '../models/container.model';
 import { ContainerImage } from '../models/image.model';
@@ -50,6 +56,12 @@ export class BackendService {
   /** Resolves when all auto-reconnect attempts are complete */
   private _readyPromise: Promise<void> = Promise.resolve();
 
+  /** Connection IDs where the user explicitly logged out (skip auto-reconnect) */
+  private _userLoggedOut = new Set<string>();
+
+  /** Periodic reconnect timer handle */
+  private _reconnectInterval: ReturnType<typeof setInterval> | null = null;
+
   readonly connections = this._connections.asReadonly();
   readonly isBackendMode = computed(() => this._connections().some(c => c.status === 'connected'));
   readonly hasConnections = computed(() => this._connections().length > 0);
@@ -63,11 +75,58 @@ export class BackendService {
 
   constructor() {
     this._readyPromise = this.loadPersistedConnections();
+    this.startReconnectLoop();
   }
 
   /** Wait for all auto-reconnect attempts to complete. */
   waitForReady(): Promise<void> {
     return this._readyPromise;
+  }
+
+  private startReconnectLoop(): void {
+    this._reconnectInterval = setInterval(() => this.monitorConnections(), 30_000);
+  }
+
+  private async monitorConnections(): Promise<void> {
+    // Phase 1: Health-check connected backends — detect server going down
+    const connected = this._connections().filter(c => c.status === 'connected');
+
+    for (const conn of connected) {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000);
+        try {
+          const resp = await fetch(`${conn.serverUrl}/api/health`, { signal: controller.signal });
+          clearTimeout(timeoutId);
+          if (!resp.ok) throw new Error('unhealthy');
+        } catch {
+          clearTimeout(timeoutId);
+          throw new Error('unreachable');
+        }
+      } catch {
+        console.warn(`Backend ${conn.label} is unreachable, marking disconnected`);
+        this.updateConnection(conn.id, { status: 'disconnected' });
+      }
+    }
+
+    // Phase 2: Reconnect disconnected backends
+    const disconnected = this._connections()
+      .filter(c => c.status === 'disconnected' && !this._userLoggedOut.has(c.id) && c.tokens?.refreshToken);
+
+    for (const conn of disconnected) {
+      if (this._refreshPromises.has(conn.id)) continue;
+
+      this.updateConnection(conn.id, { status: 'connecting' });
+      try {
+        await this.refreshTokenFor(conn.id);
+        const user = await this.requestFor<UserProfile>(conn.id, 'GET', '/api/auth/me');
+        this.updateConnection(conn.id, { user, status: 'connected' });
+        await this.loadProjectsFor(conn.id);
+        console.info(`Auto-reconnected to backend: ${conn.label}`);
+      } catch {
+        this.updateConnection(conn.id, { status: 'disconnected' });
+      }
+    }
   }
 
   // ==========================================================================
@@ -98,7 +157,7 @@ export class BackendService {
     const conn: BackendConnection = {
       id,
       serverUrl: url,
-      label: label || new URL(url).hostname,
+      label: label || (() => { try { return new URL(url).hostname; } catch { return url.replace(/^https?:\/\//, '').split('/')[0]; } })(),
       tokens: null,
       user: null,
       projects: [],
@@ -113,6 +172,7 @@ export class BackendService {
 
   /** Remove a backend connection entirely. */
   removeBackend(connectionId: string): void {
+    this._userLoggedOut.delete(connectionId);
     // Clean up system ownership
     for (const [sysId, connId] of this._systemOwnership) {
       if (connId === connectionId) this._systemOwnership.delete(sysId);
@@ -139,6 +199,7 @@ export class BackendService {
   // ==========================================================================
 
   async loginToBackend(connectionId: string, req: LoginRequest): Promise<void> {
+    this._userLoggedOut.delete(connectionId);
     this.updateConnection(connectionId, { status: 'connecting' });
     try {
       const data = await this.requestFor<AuthTokens & { user: UserProfile }>(
@@ -158,6 +219,7 @@ export class BackendService {
   }
 
   async registerOnBackend(connectionId: string, req: RegisterRequest): Promise<void> {
+    this._userLoggedOut.delete(connectionId);
     this.updateConnection(connectionId, { status: 'connecting' });
     try {
       const data = await this.requestFor<AuthTokens & { user: UserProfile }>(
@@ -177,6 +239,7 @@ export class BackendService {
   }
 
   logoutFrom(connectionId: string): void {
+    this._userLoggedOut.add(connectionId);
     for (const [sysId, connId] of this._systemOwnership) {
       if (connId === connectionId) this._systemOwnership.delete(sysId);
     }
@@ -424,6 +487,10 @@ export class BackendService {
     await this.requestFor(connectionId, 'POST', `/api/systems/${id}/disconnect`);
   }
 
+  async updateSystemFor(connectionId: string, systemId: string, data: Record<string, unknown>): Promise<BackendSystem> {
+    return this.requestFor<BackendSystem>(connectionId, 'PUT', `/api/systems/${systemId}`, data);
+  }
+
   async trustHostKeyFor(connectionId: string, id: string): Promise<void> {
     await this.requestFor(connectionId, 'POST', `/api/systems/${id}/trust-host-key`);
   }
@@ -519,11 +586,18 @@ export class BackendService {
     const conn = this.getConnection(connectionId);
     if (!conn?.tokens?.accessToken) return null;
 
-    const serverUrl = conn.serverUrl;
-    const wsProtocol = serverUrl.startsWith('https') ? 'wss' : 'ws';
-    const host = serverUrl.replace(/^https?:\/\//, '');
-    const url = `${wsProtocol}://${host}/api/ws/tunnel/${systemId}`;
-    return { url, token: conn.tokens.accessToken };
+    try {
+      const parsed = new URL(conn.serverUrl);
+      const wsProtocol = parsed.protocol === 'https:' ? 'wss:' : 'ws:';
+      const url = `${wsProtocol}//${parsed.host}/api/ws/tunnel/${systemId}`;
+      return { url, token: conn.tokens.accessToken };
+    } catch {
+      const serverUrl = conn.serverUrl;
+      const wsProtocol = serverUrl.startsWith('https') ? 'wss' : 'ws';
+      const host = serverUrl.replace(/^https?:\/\//, '');
+      const url = `${wsProtocol}://${host}/api/ws/tunnel/${systemId}`;
+      return { url, token: conn.tokens.accessToken };
+    }
   }
 
   // ==========================================================================
@@ -569,6 +643,52 @@ export class BackendService {
 
   async uploadFileFor(connectionId: string, systemId: string, remotePath: string, content: string, containerId?: string, runtime?: string): Promise<void> {
     await this.requestFor(connectionId, 'POST', `/api/systems/${systemId}/files/upload`, { remotePath, content, containerId, runtime });
+  }
+
+  // ==========================================================================
+  // K8s Pod File Operations
+  // ==========================================================================
+
+  private podFilePath(clusterId: string, ns: string, pod: string, op: string): string {
+    return `/api/clusters/${clusterId}/namespaces/${ns}/pods/${pod}/files/${op}`;
+  }
+
+  async listPodDirectoryFor(connectionId: string, clusterId: string, ns: string, pod: string, path: string, container?: string): Promise<DirectoryListing> {
+    const params = new URLSearchParams({ path });
+    if (container) params.set('container', container);
+    return this.requestFor<DirectoryListing>(connectionId, 'GET', `${this.podFilePath(clusterId, ns, pod, 'list')}?${params}`);
+  }
+
+  async readPodFileFor(connectionId: string, clusterId: string, ns: string, pod: string, path: string, container?: string): Promise<FileContent> {
+    const params = new URLSearchParams({ path });
+    if (container) params.set('container', container);
+    return this.requestFor<FileContent>(connectionId, 'GET', `${this.podFilePath(clusterId, ns, pod, 'read')}?${params}`);
+  }
+
+  async writePodFileFor(connectionId: string, clusterId: string, ns: string, pod: string, path: string, content: string, container?: string): Promise<void> {
+    await this.requestFor(connectionId, 'POST', this.podFilePath(clusterId, ns, pod, 'write'), { path, content, container });
+  }
+
+  async createPodDirectoryFor(connectionId: string, clusterId: string, ns: string, pod: string, path: string, container?: string): Promise<void> {
+    await this.requestFor(connectionId, 'POST', this.podFilePath(clusterId, ns, pod, 'mkdir'), { path, container });
+  }
+
+  async deletePodPathFor(connectionId: string, clusterId: string, ns: string, pod: string, path: string, isDirectory: boolean, container?: string): Promise<void> {
+    await this.requestFor(connectionId, 'DELETE', this.podFilePath(clusterId, ns, pod, 'delete'), { path, isDirectory, container });
+  }
+
+  async renamePodPathFor(connectionId: string, clusterId: string, ns: string, pod: string, oldPath: string, newPath: string, container?: string): Promise<void> {
+    await this.requestFor(connectionId, 'POST', this.podFilePath(clusterId, ns, pod, 'rename'), { oldPath, newPath, container });
+  }
+
+  async downloadPodFileFor(connectionId: string, clusterId: string, ns: string, pod: string, path: string, container?: string): Promise<{ path: string; content: string }> {
+    const params = new URLSearchParams({ path });
+    if (container) params.set('container', container);
+    return this.requestFor(connectionId, 'GET', `${this.podFilePath(clusterId, ns, pod, 'download')}?${params}`);
+  }
+
+  async uploadPodFileFor(connectionId: string, clusterId: string, ns: string, pod: string, remotePath: string, content: string, container?: string): Promise<void> {
+    await this.requestFor(connectionId, 'POST', this.podFilePath(clusterId, ns, pod, 'upload'), { remotePath, content, container });
   }
 
   // ==========================================================================
@@ -630,24 +750,198 @@ export class BackendService {
     return this.requestFor(connectionId, 'POST', `/api/clusters/${id}/test`);
   }
 
+  async updateClusterFor(connectionId: string, clusterId: string, data: { name?: string; kubeconfig?: string; contextName?: string }): Promise<K8sCluster> {
+    return this.requestFor<K8sCluster>(connectionId, 'PUT', `/api/clusters/${clusterId}`, data);
+  }
+
+  // ---------- Generic K8s resource methods ----------
+
+  /** List any K8s resource kind. Returns raw k8s-openapi JSON arrays. */
+  async listK8sResourcesFor(connectionId: string, clusterId: string, kind: string, namespace?: string): Promise<any[]> {
+    const params = namespace ? `?namespace=${encodeURIComponent(namespace)}` : '';
+    return this.requestFor<any[]>(connectionId, 'GET', `/api/clusters/${clusterId}/resources/${kind}${params}`);
+  }
+
+  /** Get a single K8s resource by name. Returns raw k8s-openapi JSON. */
+  async getK8sResourceFor(connectionId: string, clusterId: string, kind: string, name: string, namespace?: string): Promise<any> {
+    const params = namespace ? `?namespace=${encodeURIComponent(namespace)}` : '';
+    return this.requestFor<any>(connectionId, 'GET', `/api/clusters/${clusterId}/resources/${kind}/${name}${params}`);
+  }
+
+  /** Delete a K8s resource by name. */
+  async deleteK8sResourceFor(connectionId: string, clusterId: string, kind: string, name: string, namespace?: string): Promise<void> {
+    const params = namespace ? `?namespace=${encodeURIComponent(namespace)}` : '';
+    await this.requestFor(connectionId, 'DELETE', `/api/clusters/${clusterId}/resources/${kind}/${name}${params}`);
+  }
+
+  // ---------- Typed K8s resource methods (mapped from generic) ----------
+
   async listNamespacesFor(connectionId: string, clusterId: string): Promise<K8sNamespace[]> {
-    return this.requestFor<K8sNamespace[]>(connectionId, 'GET', `/api/clusters/${clusterId}/namespaces`);
+    const raw = await this.listK8sResourcesFor(connectionId, clusterId, 'namespaces');
+    return raw.map(mapNamespace);
   }
 
   async listPodsFor(connectionId: string, clusterId: string, namespace: string): Promise<K8sPod[]> {
-    return this.requestFor<K8sPod[]>(connectionId, 'GET', `/api/clusters/${clusterId}/namespaces/${namespace}/pods`);
+    const raw = await this.listK8sResourcesFor(connectionId, clusterId, 'pods', namespace);
+    return raw.map(mapPod);
   }
 
   async listDeploymentsFor(connectionId: string, clusterId: string, namespace: string): Promise<K8sDeployment[]> {
-    return this.requestFor<K8sDeployment[]>(connectionId, 'GET', `/api/clusters/${clusterId}/namespaces/${namespace}/deployments`);
+    const raw = await this.listK8sResourcesFor(connectionId, clusterId, 'deployments', namespace);
+    return raw.map(mapDeployment);
+  }
+
+  async listServicesFor(connectionId: string, clusterId: string, namespace: string): Promise<K8sService[]> {
+    const raw = await this.listK8sResourcesFor(connectionId, clusterId, 'services', namespace);
+    return raw.map(mapService);
   }
 
   async scaleDeploymentFor(connectionId: string, clusterId: string, namespace: string, name: string, replicas: number): Promise<void> {
     await this.requestFor(connectionId, 'POST', `/api/clusters/${clusterId}/namespaces/${namespace}/deployments/${name}/scale`, { replicas });
   }
 
-  async listServicesFor(connectionId: string, clusterId: string, namespace: string): Promise<K8sService[]> {
-    return this.requestFor<K8sService[]>(connectionId, 'GET', `/api/clusters/${clusterId}/namespaces/${namespace}/services`);
+  async restartDeploymentFor(connectionId: string, clusterId: string, namespace: string, name: string): Promise<void> {
+    await this.requestFor(connectionId, 'POST', `/api/clusters/${clusterId}/namespaces/${namespace}/deployments/${name}/restart`);
+  }
+
+  // ---------- StatefulSet operations ----------
+
+  async scaleStatefulSetFor(connectionId: string, clusterId: string, namespace: string, name: string, replicas: number): Promise<void> {
+    await this.requestFor(connectionId, 'POST', `/api/clusters/${clusterId}/namespaces/${namespace}/statefulsets/${name}/scale`, { replicas });
+  }
+
+  async restartStatefulSetFor(connectionId: string, clusterId: string, namespace: string, name: string): Promise<void> {
+    await this.requestFor(connectionId, 'POST', `/api/clusters/${clusterId}/namespaces/${namespace}/statefulsets/${name}/restart`);
+  }
+
+  // ---------- DaemonSet operations ----------
+
+  async restartDaemonSetFor(connectionId: string, clusterId: string, namespace: string, name: string): Promise<void> {
+    await this.requestFor(connectionId, 'POST', `/api/clusters/${clusterId}/namespaces/${namespace}/daemonsets/${name}/restart`);
+  }
+
+  // ---------- Pod logs ----------
+
+  async getPodLogsFor(
+    connectionId: string, clusterId: string, namespace: string, pod: string,
+    opts?: { container?: string; tailLines?: number; sinceSeconds?: number; previous?: boolean; timestamps?: boolean }
+  ): Promise<{ logs: string; container?: string }> {
+    const params = new URLSearchParams();
+    if (opts?.container) params.set('container', opts.container);
+    if (opts?.tailLines != null) params.set('tailLines', String(opts.tailLines));
+    if (opts?.sinceSeconds != null) params.set('sinceSeconds', String(opts.sinceSeconds));
+    if (opts?.previous) params.set('previous', 'true');
+    if (opts?.timestamps) params.set('timestamps', 'true');
+    const qs = params.toString();
+    return this.requestFor(connectionId, 'GET',
+      `/api/clusters/${clusterId}/namespaces/${namespace}/pods/${pod}/logs${qs ? `?${qs}` : ''}`
+    );
+  }
+
+  /** Returns the full SSE URL and auth token for streaming pod logs via fetch+ReadableStream */
+  getLogStreamInfo(
+    connectionId: string, clusterId: string, namespace: string, pod: string,
+    opts?: { container?: string; tailLines?: number; previous?: boolean; timestamps?: boolean }
+  ): { url: string; token: string } | null {
+    const conn = this.getConnection(connectionId);
+    if (!conn?.tokens?.accessToken) return null;
+    const params = new URLSearchParams();
+    if (opts?.container) params.set('container', opts.container);
+    if (opts?.tailLines != null) params.set('tailLines', String(opts.tailLines));
+    if (opts?.previous) params.set('previous', 'true');
+    if (opts?.timestamps) params.set('timestamps', 'true');
+    const qs = params.toString();
+    return {
+      url: `${conn.serverUrl}/api/clusters/${clusterId}/namespaces/${namespace}/pods/${pod}/logs/stream${qs ? `?${qs}` : ''}`,
+      token: conn.tokens.accessToken,
+    };
+  }
+
+  // ---------- Resource events ----------
+
+  async getResourceEventsFor(connectionId: string, clusterId: string, namespace: string, kind: string, name: string): Promise<any[]> {
+    const fieldSelector = `involvedObject.name=${name},involvedObject.kind=${kind}`;
+    const params = `?namespace=${encodeURIComponent(namespace)}&fieldSelector=${encodeURIComponent(fieldSelector)}`;
+    return this.requestFor<any[]>(connectionId, 'GET', `/api/clusters/${clusterId}/resources/events${params}`);
+  }
+
+  // ---------- Topology ----------
+
+  async getNamespaceTopologyFor(connectionId: string, clusterId: string, namespace: string): Promise<import('../models/backend.model').K8sTopology> {
+    return this.requestFor(connectionId, 'GET', `/api/clusters/${clusterId}/namespaces/${namespace}/topology`);
+  }
+
+  // ---------- Node management ----------
+
+  async cordonNodeFor(connectionId: string, clusterId: string, node: string): Promise<void> {
+    await this.requestFor(connectionId, 'POST', `/api/clusters/${clusterId}/nodes/${node}/cordon`);
+  }
+
+  async uncordonNodeFor(connectionId: string, clusterId: string, node: string): Promise<void> {
+    await this.requestFor(connectionId, 'POST', `/api/clusters/${clusterId}/nodes/${node}/uncordon`);
+  }
+
+  async drainNodeFor(connectionId: string, clusterId: string, node: string, force?: boolean): Promise<{ status: string; evicted: number; errors?: string[] }> {
+    return this.requestFor(connectionId, 'POST', `/api/clusters/${clusterId}/nodes/${node}/drain`, force ? { force: true } : undefined);
+  }
+
+  // ---------- YAML apply ----------
+
+  async applyYamlFor(connectionId: string, clusterId: string, yaml: string, namespace?: string): Promise<any> {
+    return this.requestFor(connectionId, 'POST', `/api/clusters/${clusterId}/apply`, { namespace, yaml });
+  }
+
+  // ---------- CRD Discovery ----------
+
+  async discoverApiResourcesFor(connectionId: string, clusterId: string): Promise<K8sApiResource[]> {
+    return this.requestFor(connectionId, 'GET', `/api/clusters/${clusterId}/discovery`);
+  }
+
+  async listCustomResourcesFor(connectionId: string, clusterId: string, group: string, version: string, plural: string, namespace?: string): Promise<any[]> {
+    const params = namespace ? `?namespace=${encodeURIComponent(namespace)}` : '';
+    return this.requestFor(connectionId, 'GET', `/api/clusters/${clusterId}/custom/${group}/${version}/${plural}${params}`);
+  }
+
+  async getCustomResourceFor(connectionId: string, clusterId: string, group: string, version: string, plural: string, name: string, namespace?: string): Promise<any> {
+    const params = namespace ? `?namespace=${encodeURIComponent(namespace)}` : '';
+    return this.requestFor(connectionId, 'GET', `/api/clusters/${clusterId}/custom/${group}/${version}/${plural}/${name}${params}`);
+  }
+
+  async deleteCustomResourceFor(connectionId: string, clusterId: string, group: string, version: string, plural: string, name: string, namespace?: string): Promise<void> {
+    const params = namespace ? `?namespace=${encodeURIComponent(namespace)}` : '';
+    await this.requestFor(connectionId, 'DELETE', `/api/clusters/${clusterId}/custom/${group}/${version}/${plural}/${name}${params}`);
+  }
+
+  async applyCustomResourceFor(connectionId: string, clusterId: string, group: string, version: string, plural: string, yaml: string, namespace?: string): Promise<any> {
+    return this.requestFor(connectionId, 'POST', `/api/clusters/${clusterId}/custom/${group}/${version}/${plural}/apply`, { namespace, yaml });
+  }
+
+  // ---------- K8s exec WebSocket ----------
+
+  getK8sExecWsUrl(connectionId: string, clusterId: string): { url: string; token: string } | null {
+    const conn = this.getConnection(connectionId);
+    if (!conn?.tokens?.accessToken) return null;
+    const serverUrl = conn.serverUrl;
+    const wsProtocol = serverUrl.startsWith('https') ? 'wss' : 'ws';
+    const host = serverUrl.replace(/^https?:\/\//, '');
+    return {
+      url: `${wsProtocol}://${host}/api/ws/k8s-exec/${clusterId}`,
+      token: conn.tokens.accessToken,
+    };
+  }
+
+  // ---------- K8s watch WebSocket ----------
+
+  getK8sWatchWsUrl(connectionId: string, clusterId: string): { url: string; token: string } | null {
+    const conn = this.getConnection(connectionId);
+    if (!conn?.tokens?.accessToken) return null;
+    const serverUrl = conn.serverUrl;
+    const wsProtocol = serverUrl.startsWith('https') ? 'wss' : 'ws';
+    const host = serverUrl.replace(/^https?:\/\//, '');
+    return {
+      url: `${wsProtocol}://${host}/api/ws/k8s-watch/${clusterId}`,
+      token: conn.tokens.accessToken,
+    };
   }
 
   // ==========================================================================
@@ -781,6 +1075,12 @@ export class BackendService {
     return this.listServicesFor(conn.id, clusterId, namespace);
   }
 
+  async restartDeployment(clusterId: string, namespace: string, name: string): Promise<void> {
+    const conn = this.connectedBackends()[0];
+    if (!conn) throw new Error('No backend connection');
+    await this.restartDeploymentFor(conn.id, clusterId, namespace, name);
+  }
+
   async getAuditLogs(projectId: string, params?: { limit?: number; offset?: number; action?: string }): Promise<AuditLogEntry[]> {
     const conn = this.connectedBackends()[0];
     if (!conn) return [];
@@ -814,6 +1114,10 @@ export class BackendService {
       });
     } catch (e) {
       clearTimeout(timeoutId);
+      // Server unreachable — mark disconnected so reconnect loop picks it up
+      if (conn.status === 'connected') {
+        this.updateConnection(connectionId, { status: 'disconnected' });
+      }
       if (e instanceof Error && e.name === 'AbortError') {
         throw new Error(`Request to ${path} timed out`);
       }
@@ -836,9 +1140,17 @@ export class BackendService {
         await refreshPromise;
       } catch (refreshError) {
         console.warn('Token refresh failed:', refreshError);
-        this.updateConnection(connectionId, { tokens: null, user: null, projectPermissions: {}, status: 'disconnected' });
+        // Keep refresh token so the reconnect loop can retry later
+        const currentConn = this.getConnection(connectionId);
+        const refreshToken = currentConn?.tokens?.refreshToken ?? null;
+        this.updateConnection(connectionId, {
+          tokens: refreshToken ? { accessToken: '', refreshToken } : null,
+          user: null,
+          projectPermissions: {},
+          status: 'disconnected',
+        });
         this.persistConnections();
-        throw new Error('Session expired. Please login again.');
+        throw new Error('Session expired. Reconnecting automatically...');
       }
 
       // Step 2: Retry with the new token — failures here are normal errors, NOT session expiry
@@ -898,6 +1210,12 @@ export class BackendService {
         signal: controller.signal,
       });
 
+      if (resp.status === 401) {
+        // Refresh token itself is expired/revoked — clear everything
+        this.updateConnection(connectionId, { tokens: null, user: null, projectPermissions: {}, status: 'disconnected' });
+        this.persistConnections();
+        throw new Error('Refresh token expired');
+      }
       if (!resp.ok) throw new Error('Token refresh failed');
       const data: AuthTokens = await resp.json();
       this.updateConnection(connectionId, { tokens: data });
@@ -1031,7 +1349,7 @@ export class BackendService {
       const conn: BackendConnection = {
         id: crypto.randomUUID(),
         serverUrl: config.serverUrl,
-        label: new URL(config.serverUrl).hostname,
+        label: (() => { try { return new URL(config.serverUrl).hostname; } catch { return config.serverUrl; } })(),
         tokens,
         user: null,
         projects: [],
@@ -1064,7 +1382,15 @@ export class BackendService {
       await this.loadProjectsFor(connectionId);
     } catch (err) {
       console.warn('Auto-reconnect failed:', err);
-      this.updateConnection(connectionId, { tokens: null, user: null, projectPermissions: {}, status: 'disconnected' });
+      // Keep refresh token so the periodic reconnect loop can retry
+      const conn = this.getConnection(connectionId);
+      const refreshToken = conn?.tokens?.refreshToken ?? null;
+      this.updateConnection(connectionId, {
+        tokens: refreshToken ? { accessToken: '', refreshToken } : null,
+        user: null,
+        projectPermissions: {},
+        status: 'disconnected',
+      });
       this.persistConnections();
     }
   }

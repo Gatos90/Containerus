@@ -249,6 +249,6 @@ The seeded permissions include `projects.edit` but no `projects.create`. Current
 | 4 | Change `clusters.project_id` → `clusters.environment_id` | Migration |
 | 5 | Move `idp_configs.project_id` → `idp_configs.company_id` | Migration |
 | 6 | Add `projects.create` permission to seed data | Migration |
-| 7 | Optionally add `environment_id` to `audit_log` | Migration |
+| 7 | Add `environment_id` to `audit_log` for environment-level scoping | Migration |
 | 8 | Update all API handlers and models for new hierarchy | Rust code |
 | 9 | Update frontend models, services, and components | Angular code |

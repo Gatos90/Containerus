@@ -87,19 +87,17 @@ impl PermissionCache {
         .fetch_all(db)
         .await?;
 
-        // Build a complete new map, then atomically swap.
+        // Build a complete new map and swap atomically.
         let new_cache: DashMap<Uuid, HashSet<String>> = DashMap::new();
         for (role_id, key) in rows {
             new_cache.entry(role_id).or_insert_with(HashSet::new).insert(key);
         }
 
-        // Insert/update all entries first, then remove stale roles.
-        // This avoids a window where valid roles have empty permission sets.
-        let new_role_ids: HashSet<Uuid> = new_cache.iter().map(|e| *e.key()).collect();
+        // Clear the old cache and populate from the new map in one pass.
+        self.cache.clear();
         for entry in new_cache.into_iter() {
             self.cache.insert(entry.0, entry.1);
         }
-        self.cache.retain(|role_id, _| new_role_ids.contains(role_id));
 
         Ok(())
     }

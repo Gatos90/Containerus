@@ -198,15 +198,29 @@ export class ProjectAuditComponent implements OnInit, OnChanges {
   }
 
   async nextPage(): Promise<void> {
+    const prevOffset = this.offset();
+    const prevPage = this.page();
     this.offset.update(o => o + this.pageSize);
     this.page.update(p => p + 1);
-    await this.loadLogs();
+    try {
+      await this.loadLogs();
+    } catch {
+      this.offset.set(prevOffset);
+      this.page.set(prevPage);
+    }
   }
 
   async prevPage(): Promise<void> {
+    const prevOffset = this.offset();
+    const prevPage = this.page();
     this.offset.update(o => Math.max(0, o - this.pageSize));
     this.page.update(p => Math.max(1, p - 1));
-    await this.loadLogs();
+    try {
+      await this.loadLogs();
+    } catch {
+      this.offset.set(prevOffset);
+      this.page.set(prevPage);
+    }
   }
 
   formatTime(iso: string): string {

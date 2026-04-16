@@ -111,7 +111,11 @@ export class ProjectListComponent implements OnInit {
     this.backend.logoutFrom(this.connectionId());
     this.connection.set(this.backend.getConnection(this.connectionId()));
     this.environmentCounts.set(new Map());
-    await this.appState.onBackendLogout();
+    try {
+      await this.appState.onBackendLogout();
+    } catch (err) {
+      console.error('Failed to complete logout:', err);
+    }
   }
 
   toggleCreateForm(): void {
@@ -144,6 +148,7 @@ export class ProjectListComponent implements OnInit {
       const slug = this.generateSlug(this.newProjectName);
       if (!slug) {
         this.createError.set('Project name must contain at least one alphanumeric character');
+        this.creating.set(false);
         return;
       }
       await this.backend.createProjectFor(this.connectionId(), {

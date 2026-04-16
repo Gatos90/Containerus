@@ -3,6 +3,7 @@ import { ContainerRuntime } from '../models/container.model';
 import { DirectoryListing, FileContent } from '../models/file-browser.model';
 import { BackendService } from './backend.service';
 import { TauriService } from './tauri.service';
+import { PodContext } from '../../state/terminal.state';
 
 @Injectable({ providedIn: 'root' })
 export class FileBrowserService {
@@ -16,7 +17,14 @@ export class FileBrowserService {
     path: string,
     containerId?: string | null,
     runtime?: ContainerRuntime | null,
+    podCtx?: PodContext | null,
   ): Promise<DirectoryListing> {
+    if (podCtx) {
+      return this.backend.listPodDirectoryFor(
+        podCtx.connectionId, podCtx.clusterId, podCtx.namespace,
+        podCtx.podName, path, podCtx.containerName,
+      );
+    }
     const connId = this.backend.getBackendForSystem(systemId);
     if (connId) {
       return this.backend.listDirectoryFor(
@@ -35,7 +43,14 @@ export class FileBrowserService {
     path: string,
     containerId?: string | null,
     runtime?: ContainerRuntime | null,
+    podCtx?: PodContext | null,
   ): Promise<FileContent> {
+    if (podCtx) {
+      return this.backend.readPodFileFor(
+        podCtx.connectionId, podCtx.clusterId, podCtx.namespace,
+        podCtx.podName, path, podCtx.containerName,
+      );
+    }
     const connId = this.backend.getBackendForSystem(systemId);
     if (connId) {
       return this.backend.readFileFor(
@@ -55,7 +70,14 @@ export class FileBrowserService {
     content: string,
     containerId?: string | null,
     runtime?: ContainerRuntime | null,
+    podCtx?: PodContext | null,
   ): Promise<void> {
+    if (podCtx) {
+      return this.backend.writePodFileFor(
+        podCtx.connectionId, podCtx.clusterId, podCtx.namespace,
+        podCtx.podName, path, content, podCtx.containerName,
+      );
+    }
     const connId = this.backend.getBackendForSystem(systemId);
     if (connId) {
       return this.backend.writeFileFor(
@@ -74,7 +96,14 @@ export class FileBrowserService {
     path: string,
     containerId?: string | null,
     runtime?: ContainerRuntime | null,
+    podCtx?: PodContext | null,
   ): Promise<void> {
+    if (podCtx) {
+      return this.backend.createPodDirectoryFor(
+        podCtx.connectionId, podCtx.clusterId, podCtx.namespace,
+        podCtx.podName, path, podCtx.containerName,
+      );
+    }
     const connId = this.backend.getBackendForSystem(systemId);
     if (connId) {
       return this.backend.createDirectoryFor(
@@ -94,7 +123,14 @@ export class FileBrowserService {
     isDirectory: boolean,
     containerId?: string | null,
     runtime?: ContainerRuntime | null,
+    podCtx?: PodContext | null,
   ): Promise<void> {
+    if (podCtx) {
+      return this.backend.deletePodPathFor(
+        podCtx.connectionId, podCtx.clusterId, podCtx.namespace,
+        podCtx.podName, path, isDirectory, podCtx.containerName,
+      );
+    }
     const connId = this.backend.getBackendForSystem(systemId);
     if (connId) {
       return this.backend.deletePathFor(
@@ -114,7 +150,14 @@ export class FileBrowserService {
     newPath: string,
     containerId?: string | null,
     runtime?: ContainerRuntime | null,
+    podCtx?: PodContext | null,
   ): Promise<void> {
+    if (podCtx) {
+      return this.backend.renamePodPathFor(
+        podCtx.connectionId, podCtx.clusterId, podCtx.namespace,
+        podCtx.podName, oldPath, newPath, podCtx.containerName,
+      );
+    }
     const connId = this.backend.getBackendForSystem(systemId);
     if (connId) {
       return this.backend.renamePathFor(
@@ -134,32 +177,24 @@ export class FileBrowserService {
     localPath: string,
     containerId?: string | null,
     runtime?: ContainerRuntime | null,
+    podCtx?: PodContext | null,
   ): Promise<void> {
+    if (podCtx) {
+      const result = await this.backend.downloadPodFileFor(
+        podCtx.connectionId, podCtx.clusterId, podCtx.namespace,
+        podCtx.podName, remotePath, podCtx.containerName,
+      );
+      this.triggerBrowserDownload(result.content, remotePath);
+      return;
+    }
     const connId = this.backend.getBackendForSystem(systemId);
     if (connId) {
-      // Backend mode: download returns base64, save via browser
       const result = await this.backend.downloadFileFor(
         connId, systemId, remotePath,
         containerId ?? undefined,
         runtime ?? undefined,
       );
-      // Decode base64 and trigger browser download
-      let blob: Blob;
-      try {
-        const resp = await fetch(`data:application/octet-stream;base64,${result.content}`);
-        blob = await resp.blob();
-      } catch (err) {
-        throw new Error(`Failed to decode file content: ${err instanceof Error ? err.message : String(err)}`);
-      }
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = remotePath.split(/[/\\]/).pop() || 'download';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      // Delay revocation to ensure download starts
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      this.triggerBrowserDownload(result.content, remotePath);
       return;
     }
     return this.tauri.invoke<void>('download_file', {
@@ -176,9 +211,6 @@ export class FileBrowserService {
   ): Promise<void> {
     const connId = this.backend.getBackendForSystem(systemId);
     if (connId) {
-      // Backend mode: read local file via File API isn't possible here
-      // (localPath is a native path). For backend systems, the caller
-      // should use uploadFileFromContent() instead.
       throw new Error('Use uploadFileFromContent() for backend systems');
     }
     return this.tauri.invoke<void>('upload_file', {
@@ -193,15 +225,23 @@ export class FileBrowserService {
     content: ArrayBuffer,
     containerId?: string | null,
     runtime?: ContainerRuntime | null,
+    podCtx?: PodContext | null,
   ): Promise<void> {
+    const bytes = new Uint8Array(content);
+    const chars: string[] = [];
+    for (let i = 0; i < bytes.length; i++) {
+      chars.push(String.fromCharCode(bytes[i]));
+    }
+    const base64 = btoa(chars.join(''));
+
+    if (podCtx) {
+      return this.backend.uploadPodFileFor(
+        podCtx.connectionId, podCtx.clusterId, podCtx.namespace,
+        podCtx.podName, remotePath, base64, podCtx.containerName,
+      );
+    }
     const connId = this.backend.getBackendForSystem(systemId);
     if (connId) {
-      const bytes = new Uint8Array(content);
-      const chars: string[] = [];
-      for (let i = 0; i < bytes.length; i++) {
-        chars.push(String.fromCharCode(bytes[i]));
-      }
-      const base64 = btoa(chars.join(''));
       return this.backend.uploadFileFor(
         connId, systemId, remotePath, base64,
         containerId ?? undefined,
@@ -209,5 +249,22 @@ export class FileBrowserService {
       );
     }
     throw new Error('uploadFileFromContent is only for backend systems');
+  }
+
+  private triggerBrowserDownload(base64Content: string, remotePath: string): void {
+    const byteChars = atob(base64Content);
+    const byteArray = new Uint8Array(byteChars.length);
+    for (let i = 0; i < byteChars.length; i++) {
+      byteArray[i] = byteChars.charCodeAt(i);
+    }
+    const blob = new Blob([byteArray]);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = remotePath.split(/[/\\]/).pop() || 'download';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 }

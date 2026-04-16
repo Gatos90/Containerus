@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use axum::{extract::State, http::StatusCode, routing::get, Json, Router};
 use serde_json::{json, Value};
 
@@ -8,11 +10,14 @@ pub fn router() -> Router<AppState> {
 }
 
 async fn health_check(State(state): State<AppState>) -> (StatusCode, Json<Value>) {
-    // Verify database connectivity
-    let db_ok = sqlx::query("SELECT 1")
-        .fetch_one(&state.db)
-        .await
-        .is_ok();
+    // Verify database connectivity with a timeout to fail fast
+    let db_ok = tokio::time::timeout(
+        Duration::from_secs(3),
+        sqlx::query("SELECT 1").fetch_one(&state.db),
+    )
+    .await
+    .map(|r| r.is_ok())
+    .unwrap_or(false);
 
     let status_code = if db_ok {
         StatusCode::OK

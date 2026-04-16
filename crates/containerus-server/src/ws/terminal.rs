@@ -286,19 +286,17 @@ async fn wait_for_auth(
                             }
                         }
 
-                        // Ensure connected for this user
-                        if !state.connections.is_connected(claims.sub, system_id) {
-                            if let Err(e) = state.connections.connect(&state.db, claims.sub, &system).await {
-                                tracing::error!("Failed to connect to system {}: {}", system_id, e);
-                                let _ = ws_sender
-                                    .send(Message::Text(
-                                        json!({"type": "error", "message": "Cannot connect to system"})
-                                            .to_string()
-                                            .into(),
-                                    ))
-                                    .await;
-                                return Err(());
-                            }
+                        // Ensure connected for this user (connect is idempotent)
+                        if let Err(e) = state.connections.connect(&state.db, claims.sub, &system).await {
+                            tracing::error!("Failed to connect to system {}: {}", system_id, e);
+                            let _ = ws_sender
+                                .send(Message::Text(
+                                    json!({"type": "error", "message": "Cannot connect to system"})
+                                        .to_string()
+                                        .into(),
+                                ))
+                                .await;
+                            return Err(());
                         }
 
                         tracing::info!(

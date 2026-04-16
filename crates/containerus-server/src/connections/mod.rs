@@ -169,17 +169,19 @@ impl ConnectionManager {
 
         let client = self.create_ssh_client(db, system).await?;
 
-        // Re-check after SSH connect (another task may have connected)
-        if self.shared_connections.contains_key(&system.id) {
-            return Ok(());
+        // Atomic check-and-insert to avoid race conditions
+        match self.shared_connections.entry(system.id) {
+            dashmap::mapref::entry::Entry::Occupied(_) => {
+                // Another task connected while we were creating the client
+                tracing::debug!("Discarding duplicate shared connection for system {}", system.id);
+                return Ok(());
+            }
+            dashmap::mapref::entry::Entry::Vacant(entry) => {
+                entry.insert(ConnectionEntry {
+                    client: Arc::new(Mutex::new(client)),
+                });
+            }
         }
-
-        self.shared_connections.insert(
-            system.id,
-            ConnectionEntry {
-                client: Arc::new(Mutex::new(client)),
-            },
-        );
 
         tracing::info!(
             "Shared connection established to system {} ({})",
@@ -244,17 +246,19 @@ impl ConnectionManager {
 
         let client = self.create_ssh_client(db, system).await?;
 
-        // Re-check after SSH connect (another task may have connected)
-        if self.user_connections.contains_key(&key) {
-            return Ok(());
+        // Atomic check-and-insert to avoid race conditions
+        match self.user_connections.entry(key) {
+            dashmap::mapref::entry::Entry::Occupied(_) => {
+                // Another task connected while we were creating the client
+                tracing::debug!("Discarding duplicate connection for user {} / system {}", user_id, system.id);
+                return Ok(());
+            }
+            dashmap::mapref::entry::Entry::Vacant(entry) => {
+                entry.insert(ConnectionEntry {
+                    client: Arc::new(Mutex::new(client)),
+                });
+            }
         }
-
-        self.user_connections.insert(
-            key,
-            ConnectionEntry {
-                client: Arc::new(Mutex::new(client)),
-            },
-        );
 
         tracing::info!(
             "User {} connected to system {} ({})",

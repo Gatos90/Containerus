@@ -184,6 +184,8 @@ export class ProjectMembersComponent implements OnInit, OnChanges {
         this.inviteRoleId = roles[0].id;
       }
     } catch (e: any) {
+      this.roles.set([]);
+      this.loadError.set(e?.message ?? 'Failed to load roles');
       console.error('Failed to load roles:', e);
     }
   }

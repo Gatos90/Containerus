@@ -240,11 +240,14 @@ export class ProjectDetailComponent implements OnInit {
   async deleteEnvironment(envId: string): Promise<void> {
     this.confirmingDeleteEnvId.set(null);
     this.envError.set(null);
+    this.saving.set(true);
     try {
       await this.backend.deleteEnvironmentFor(this.connectionId(), this.projectId(), envId);
       await this.reloadEnvironments();
     } catch (e: any) {
       this.envError.set(e.message ?? 'Failed to delete environment');
+    } finally {
+      this.saving.set(false);
     }
   }
 

@@ -30,7 +30,11 @@ export class SystemService {
 
   async listSystems(): Promise<ContainerSystem[]> {
     // Load local and backend systems in parallel
-    const localPromise = this.tauri.invoke<ContainerSystem[]>('list_systems');
+    const localPromise = this.tauri.invoke<ContainerSystem[]>('list_systems')
+      .catch(err => {
+        console.warn('Failed to load local systems:', err);
+        return [] as ContainerSystem[];
+      });
 
     const backendPromises = this.backend.connectedBackends().map(async conn => {
       try {
@@ -132,7 +136,9 @@ export class SystemService {
             this._backendSystemStates.set(systemId, isConnected);
             return isConnected ? 'connected' : 'disconnected';
           }
-        } catch { /* fall through */ }
+        } catch (err) {
+          console.warn(`Failed to fetch connection state for system ${systemId}:`, err);
+        }
       }
       return 'disconnected';
     }

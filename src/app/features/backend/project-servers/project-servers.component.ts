@@ -11,7 +11,6 @@ import { FormsModule } from '@angular/forms';
 import {
   LucideAngularModule,
   Monitor,
-  Cloud,
   Plus,
   X,
   Plug,
@@ -20,22 +19,10 @@ import {
   Loader2,
   AlertCircle,
   Key,
-  Lock,
-  CheckCircle,
-  XCircle,
-  Play,
-  RefreshCw,
-  Scale,
+  Pencil,
 } from 'lucide-angular';
 import { BackendService } from '../../../core/services/backend.service';
-import {
-  BackendSystem,
-  K8sCluster,
-  K8sNamespace,
-  K8sPod,
-  K8sDeployment,
-  K8sService as K8sSvc,
-} from '../../../core/models/backend.model';
+import { BackendSystem } from '../../../core/models/backend.model';
 import { AppState } from '../../../state/app.state';
 
 @Component({
@@ -54,7 +41,6 @@ export class ProjectServersComponent implements OnChanges {
 
   // Icons
   readonly Monitor = Monitor;
-  readonly Cloud = Cloud;
   readonly Plus = Plus;
   readonly X = X;
   readonly Plug = Plug;
@@ -63,12 +49,7 @@ export class ProjectServersComponent implements OnChanges {
   readonly Loader2 = Loader2;
   readonly AlertCircle = AlertCircle;
   readonly Key = Key;
-  readonly Lock = Lock;
-  readonly CheckCircle = CheckCircle;
-  readonly XCircle = XCircle;
-  readonly Play = Play;
-  readonly RefreshCw = RefreshCw;
-  readonly Scale = Scale;
+  readonly Pencil = Pencil;
 
   // ---- Systems state ----
   systems = signal<BackendSystem[]>([]);
@@ -89,9 +70,23 @@ export class ProjectServersComponent implements OnChanges {
     passphrase: '',
   };
 
+  // Edit system state
+  editingSystemId = signal<string | null>(null);
+  savingEdit = signal(false);
+  editSystem = {
+    name: '',
+    hostname: '',
+    port: 22,
+    username: 'root',
+    primaryRuntime: 'docker' as 'docker' | 'podman',
+    authMethod: 'password' as 'password' | 'publicKey',
+    password: '',
+    privateKey: '',
+    passphrase: '',
+  };
+
   // Inline confirm state
   confirmingDeleteSystemId = signal<string | null>(null);
-  confirmingDeleteCluster = signal<K8sCluster | null>(null);
 
   // Host key mismatch modal
   showHostKeyModal = signal(false);
@@ -103,42 +98,25 @@ export class ProjectServersComponent implements OnChanges {
   } | null>(null);
   trustingHostKey = signal(false);
 
-  // ---- Kubernetes state ----
-  clusters = signal<K8sCluster[]>([]);
-  showAddCluster = signal(false);
-  savingCluster = signal(false);
-  addClusterError = signal<string | null>(null);
-  clusterTestResults = signal<Map<string, string>>(new Map());
-
-  // Add cluster form
-  newCluster = {
-    name: '',
-    kubeconfig: '',
-    contextName: '',
-  };
-
-  // Cluster detail
-  selectedCluster = signal<K8sCluster | null>(null);
-  namespaces = signal<K8sNamespace[]>([]);
-  selectedNs = signal<string>('default');
-  pods = signal<K8sPod[]>([]);
-  deployments = signal<K8sDeployment[]>([]);
-  services = signal<K8sSvc[]>([]);
-  refreshing = signal(false);
-  activeK8sTab = signal<'pods' | 'deployments' | 'services'>('pods');
-
-  readonly k8sTabs = [
-    { key: 'pods' as const, label: 'Pods' },
-    { key: 'deployments' as const, label: 'Deployments' },
-    { key: 'services' as const, label: 'Services' },
-  ];
-
   // Loading
   loading = signal(false);
+  refreshing = signal(false);
+
+  // Search
+  searchQuery = signal('');
 
   // Computed
   systemCount = computed(() => this.systems().length);
-  clusterCount = computed(() => this.clusters().length);
+  filteredSystems = computed(() => {
+    const query = this.searchQuery().toLowerCase().trim();
+    const all = this.systems();
+    if (!query) return all;
+    return all.filter(s =>
+      s.name.toLowerCase().includes(query) ||
+      s.hostname.toLowerCase().includes(query) ||
+      s.username.toLowerCase().includes(query)
+    );
+  });
 
   ngOnChanges(changes: SimpleChanges): void {
     if (changes['connectionId'] || changes['projectId'] || changes['environmentId']) {
@@ -155,16 +133,23 @@ export class ProjectServersComponent implements OnChanges {
     if (!this.connectionId || !this.projectId || !this.environmentId) return;
     this.loading.set(true);
     try {
-      const [systems, clusters] = await Promise.all([
-        this.backend.listSystemsInEnvironmentFor(this.connectionId, this.projectId, this.environmentId),
-        this.backend.listClustersInEnvironmentFor(this.connectionId, this.projectId, this.environmentId),
-      ]);
+      const systems = await this.backend.listSystemsInEnvironmentFor(
+        this.connectionId, this.projectId, this.environmentId,
+      );
       this.systems.set(systems);
-      this.clusters.set(clusters);
     } catch (e) {
       console.error('Failed to load resources:', e);
     } finally {
       this.loading.set(false);
+    }
+  }
+
+  async refresh(): Promise<void> {
+    this.refreshing.set(true);
+    try {
+      await this.loadResources();
+    } finally {
+      this.refreshing.set(false);
     }
   }
 
@@ -239,14 +224,15 @@ export class ProjectServersComponent implements OnChanges {
       await this.appState.system.loadSystems();
       try {
         await this.appState.loadAllDataForSystem(system.id);
-      } catch {
-        // system may not have connected
+      } catch (e) {
+        console.debug(`System ${system.id} may not be connected, skipping data load:`, e);
       }
       await this.loadResources();
 
       this.showAddSystem.set(false);
       this.resetSystemForm();
     } catch (e: any) {
+      this.setSystemError('new', e?.message ?? 'Failed to create system');
       console.error('Failed to save system:', e);
     } finally {
       this.savingSystem.set(false);
@@ -303,6 +289,69 @@ export class ProjectServersComponent implements OnChanges {
   }
 
   // ========================================================================
+  // Edit system
+  // ========================================================================
+
+  startEditSystem(system: BackendSystem): void {
+    this.editingSystemId.set(system.id);
+    this.editSystem = {
+      name: system.name,
+      hostname: system.hostname,
+      port: system.port,
+      username: system.username,
+      primaryRuntime: system.primaryRuntime as 'docker' | 'podman',
+      authMethod: system.authMethod as 'password' | 'publicKey',
+      password: '',
+      privateKey: '',
+      passphrase: '',
+    };
+    this.clearSystemError(system.id);
+  }
+
+  cancelEditSystem(): void {
+    this.editingSystemId.set(null);
+  }
+
+  async saveEditSystem(): Promise<void> {
+    const systemId = this.editingSystemId();
+    if (!systemId || !this.editSystem.name.trim() || !this.editSystem.hostname.trim()) return;
+
+    this.savingEdit.set(true);
+    this.clearSystemError(systemId);
+
+    try {
+      const data: Record<string, unknown> = {
+        name: this.editSystem.name.trim(),
+        hostname: this.editSystem.hostname.trim(),
+        port: this.editSystem.port,
+        username: this.editSystem.username.trim(),
+        authMethod: this.editSystem.authMethod,
+        primaryRuntime: this.editSystem.primaryRuntime,
+        availableRuntimes: [this.editSystem.primaryRuntime],
+      };
+
+      // Only send credential fields if they were filled in
+      if (this.editSystem.authMethod === 'password' && this.editSystem.password) {
+        data['password'] = this.editSystem.password;
+      } else if (this.editSystem.authMethod === 'publicKey' && this.editSystem.privateKey) {
+        data['privateKey'] = this.editSystem.privateKey;
+        if (this.editSystem.passphrase) {
+          data['passphrase'] = this.editSystem.passphrase;
+        }
+      }
+
+      await this.backend.updateSystemFor(this.connectionId, systemId, data);
+      this.editingSystemId.set(null);
+      await this.appState.system.loadSystems();
+      await this.loadResources();
+    } catch (e: any) {
+      this.setSystemError(systemId, e?.message ?? 'Failed to update system');
+    } finally {
+      this.savingEdit.set(false);
+    }
+  }
+
+  // ========================================================================
   // Host Key Mismatch
   // ========================================================================
 
@@ -349,182 +398,13 @@ export class ProjectServersComponent implements OnChanges {
   }
 
   // ========================================================================
-  // Kubernetes Clusters
-  // ========================================================================
-
-  openAddCluster(): void {
-    this.showAddCluster.set(true);
-    this.addClusterError.set(null);
-    this.newCluster = { name: '', kubeconfig: '', contextName: '' };
-  }
-
-  async saveCluster(): Promise<void> {
-    if (!this.newCluster.name.trim() || !this.newCluster.kubeconfig.trim()) return;
-    this.savingCluster.set(true);
-    this.addClusterError.set(null);
-    try {
-      await this.backend.createClusterInEnvironmentFor(
-        this.connectionId,
-        this.projectId,
-        this.environmentId,
-        {
-          name: this.newCluster.name.trim(),
-          kubeconfig: this.newCluster.kubeconfig,
-          contextName: this.newCluster.contextName.trim() || undefined,
-        },
-      );
-      this.showAddCluster.set(false);
-      await this.loadResources();
-    } catch (e: any) {
-      this.addClusterError.set(e?.message ?? 'Failed to add cluster');
-    } finally {
-      this.savingCluster.set(false);
-    }
-  }
-
-  async testCluster(cluster: K8sCluster): Promise<void> {
-    this.clusterTestResults.update(m => {
-      const n = new Map(m);
-      n.set(cluster.id, 'testing');
-      return n;
-    });
-    try {
-      await this.backend.testClusterFor(this.connectionId, cluster.id);
-      this.clusterTestResults.update(m => {
-        const n = new Map(m);
-        n.set(cluster.id, 'success');
-        return n;
-      });
-    } catch {
-      this.clusterTestResults.update(m => {
-        const n = new Map(m);
-        n.set(cluster.id, 'error');
-        return n;
-      });
-    }
-  }
-
-  promptDeleteCluster(cluster: K8sCluster): void {
-    this.confirmingDeleteCluster.set(cluster);
-  }
-
-  async deleteCluster(cluster: K8sCluster): Promise<void> {
-    this.confirmingDeleteCluster.set(null);
-    try {
-      await this.backend.deleteClusterFor(this.connectionId, cluster.id);
-      if (this.selectedCluster()?.id === cluster.id) {
-        this.selectedCluster.set(null);
-        this.pods.set([]);
-        this.deployments.set([]);
-        this.services.set([]);
-        this.namespaces.set([]);
-      }
-      await this.loadResources();
-    } catch (e) {
-      console.error('Failed to delete cluster:', e);
-    }
-  }
-
-  async selectCluster(cluster: K8sCluster): Promise<void> {
-    this.selectedCluster.set(cluster);
-    try {
-      this.namespaces.set(await this.backend.listNamespacesFor(this.connectionId, cluster.id));
-      if (this.namespaces().length > 0) {
-        await this.selectNamespace(this.namespaces()[0].name);
-      }
-    } catch (e) {
-      console.error('Failed to load cluster namespaces:', e);
-    }
-  }
-
-  async selectNamespace(ns: string): Promise<void> {
-    this.selectedNs.set(ns);
-    await this.refreshClusterData();
-  }
-
-  async refreshClusterData(): Promise<void> {
-    const cluster = this.selectedCluster();
-    const ns = this.selectedNs();
-    if (!cluster || !ns) return;
-
-    this.refreshing.set(true);
-    try {
-      const [pods, deps, svcs] = await Promise.all([
-        this.backend.listPodsFor(this.connectionId, cluster.id, ns),
-        this.backend.listDeploymentsFor(this.connectionId, cluster.id, ns),
-        this.backend.listServicesFor(this.connectionId, cluster.id, ns),
-      ]);
-      this.pods.set(pods);
-      this.deployments.set(deps);
-      this.services.set(svcs);
-    } catch (e) {
-      console.error('Failed to refresh cluster data:', e);
-    } finally {
-      this.refreshing.set(false);
-    }
-  }
-
-  async scaleUp(dep: K8sDeployment): Promise<void> {
-    const cluster = this.selectedCluster();
-    if (!cluster) return;
-    const parts = dep.ready.split('/');
-    if (parts.length !== 2) return;
-    const current = parseInt(parts[1], 10);
-    if (isNaN(current) || current >= 50) return;
-    try {
-      await this.backend.scaleDeploymentFor(this.connectionId, cluster.id, dep.namespace, dep.name, current + 1);
-      await this.refreshClusterData();
-    } catch (e) {
-      console.error('Failed to scale up:', e);
-    }
-  }
-
-  async scaleDown(dep: K8sDeployment): Promise<void> {
-    const cluster = this.selectedCluster();
-    if (!cluster) return;
-    const parts = dep.ready.split('/');
-    if (parts.length !== 2) return;
-    const current = parseInt(parts[1], 10);
-    if (isNaN(current) || current <= 0) return;
-    try {
-      await this.backend.scaleDeploymentFor(this.connectionId, cluster.id, dep.namespace, dep.name, current - 1);
-      await this.refreshClusterData();
-    } catch (e) {
-      console.error('Failed to scale down:', e);
-    }
-  }
-
-  getPodStatusClass(status: string): string {
-    switch (status) {
-      case 'Running':
-        return 'bg-green-500/20 text-green-400';
-      case 'Pending':
-        return 'bg-yellow-500/20 text-yellow-400';
-      case 'Failed':
-        return 'bg-red-500/20 text-red-400';
-      case 'Succeeded':
-        return 'bg-blue-500/20 text-blue-400';
-      default:
-        return 'bg-zinc-700 text-zinc-400';
-    }
-  }
-
-  // ========================================================================
   // Helpers
   // ========================================================================
 
   private resetState(): void {
     this.systems.set([]);
-    this.clusters.set([]);
     this.systemErrors.set(new Map());
     this.showAddSystem.set(false);
-    this.showAddCluster.set(false);
-    this.selectedCluster.set(null);
-    this.namespaces.set([]);
-    this.selectedNs.set('default');
-    this.pods.set([]);
-    this.deployments.set([]);
-    this.services.set([]);
   }
 
   private setSystemError(systemId: string, msg: string): void {

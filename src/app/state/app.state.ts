@@ -119,6 +119,10 @@ export class AppState {
 
   /** Called after a backend logout to reload systems (clears backend-provided systems). */
   async onBackendLogout(): Promise<void> {
+    const backendSystems = this.system.systems().filter(s => this.backend.isBackendSystem(s.id));
+    for (const sys of backendSystems) {
+      this.clearDataForSystem(sys.id);
+    }
     await this.system.loadSystems();
   }
 

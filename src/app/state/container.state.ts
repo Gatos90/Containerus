@@ -17,7 +17,7 @@ export class ContainerState {
   private _selectedContainerId = signal<string | null>(null);
 
   private _statusFilter = signal<ContainerStatus | null>(null);
-  private _runtimeFilter = signal<ContainerRuntime | null>(null);
+  private _runtimeFilter = signal<ContainerRuntime | 'kubernetes' | null>(null);
   private _searchQuery = signal<string>('');
   private _systemFilter = signal<string | null>(null);
   private _sortOption = signal<SortOption>('name');
@@ -48,7 +48,12 @@ export class ContainerState {
 
     const runtimeFilter = this._runtimeFilter();
     if (runtimeFilter) {
-      result = result.filter((c) => c.runtime === runtimeFilter);
+      // 'kubernetes' means show only K8s pods — hide all containers
+      if (runtimeFilter === 'kubernetes') {
+        result = [];
+      } else {
+        result = result.filter((c) => c.runtime === runtimeFilter);
+      }
     }
 
     const systemFilter = this._systemFilter();
@@ -189,7 +194,7 @@ export class ContainerState {
     this._statusFilter.set(status);
   }
 
-  setRuntimeFilter(runtime: ContainerRuntime | null): void {
+  setRuntimeFilter(runtime: ContainerRuntime | 'kubernetes' | null): void {
     this._runtimeFilter.set(runtime);
   }
 

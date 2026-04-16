@@ -234,7 +234,7 @@ describe('FileBrowserState', () => {
     mockService.createDirectory.mockResolvedValue(undefined);
     const result = await state.createDirectory('newdir');
     expect(result).toBe(true);
-    expect(mockService.createDirectory).toHaveBeenCalledWith('sys-1', '/home/newdir', null, null);
+    expect(mockService.createDirectory).toHaveBeenCalledWith('sys-1', '/home/newdir', null, null, null);
   });
 
   it('should create directory at root', async () => {
@@ -244,7 +244,7 @@ describe('FileBrowserState', () => {
 
     mockService.createDirectory.mockResolvedValue(undefined);
     await state.createDirectory('newdir');
-    expect(mockService.createDirectory).toHaveBeenCalledWith('sys-1', '/newdir', null, null);
+    expect(mockService.createDirectory).toHaveBeenCalledWith('sys-1', '/newdir', null, null, null);
   });
 
   it('should delete a path', async () => {
@@ -267,7 +267,7 @@ describe('FileBrowserState', () => {
     const entry = makeEntry({ path: '/home/old.txt' });
     const result = await state.renamePath(entry, 'new.txt');
     expect(result).toBe(true);
-    expect(mockService.renamePath).toHaveBeenCalledWith('sys-1', '/home/old.txt', '/home/new.txt', null, null);
+    expect(mockService.renamePath).toHaveBeenCalledWith('sys-1', '/home/old.txt', '/home/new.txt', null, null, null);
   });
 
   it('should navigate back and forward in history', async () => {

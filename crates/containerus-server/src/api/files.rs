@@ -502,6 +502,14 @@ async fn upload_file(
         ));
     }
 
+    // Validate that content is valid base64
+    if base64::engine::general_purpose::STANDARD.decode(&req.content).is_err() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": "Invalid base64 content"})),
+        ));
+    }
+
     ensure_connected(&state, user.claims.sub, &user.system).await?;
 
     let base_cmd = CommandBuilder::write_file_base64(&req.remote_path, &req.content);

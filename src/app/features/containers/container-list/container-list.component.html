@@ -8,11 +8,11 @@
       </div>
       <!-- Compact colored stats -->
       <div class="flex items-center gap-2 text-sm">
-        <span class="text-green-500 font-medium" title="Running">{{ containerState.stats().running }}</span>
+        <span class="text-green-500 font-medium" title="Running">{{ combinedStats().running }}</span>
         <span class="text-zinc-600">/</span>
-        <span class="text-red-500 font-medium" title="Stopped">{{ containerState.stats().stopped }}</span>
+        <span class="text-red-500 font-medium" title="Stopped">{{ combinedStats().stopped }}</span>
         <span class="text-zinc-600">/</span>
-        <span class="text-yellow-500 font-medium" title="Paused">{{ containerState.stats().paused }}</span>
+        <span class="text-yellow-500 font-medium" title="Paused">{{ combinedStats().paused }}</span>
       </div>
     </div>
 
@@ -53,7 +53,7 @@
       ></lucide-icon>
       <input
         type="text"
-        placeholder="Search containers..."
+        placeholder="Search containers & pods..."
         [ngModel]="containerState.searchQuery()"
         (ngModelChange)="containerState.setSearchQuery($event)"
         class="w-full h-9 pl-10 pr-4 bg-zinc-800 border border-zinc-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -68,36 +68,111 @@
         (ngModelChange)="containerState.setStatusFilter($event)"
         class="h-9 px-3 bg-zinc-800 border border-zinc-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
       >
-        <option [ngValue]="null">All ({{ containerState.stats().total }})</option>
-        <option value="running">Running ({{ containerState.stats().running }})</option>
-        <option value="exited">Stopped ({{ containerState.stats().stopped }})</option>
-        <option value="paused">Paused ({{ containerState.stats().paused }})</option>
+        <option [ngValue]="null">All ({{ combinedStats().total }})</option>
+        <option value="running">Running ({{ combinedStats().running }})</option>
+        <option value="exited">Stopped ({{ combinedStats().stopped }})</option>
+        <option value="paused">Paused ({{ combinedStats().paused }})</option>
         <option value="created">Created</option>
       </select>
 
       <!-- System filter -->
-      <select
-        [ngModel]="containerState.systemFilter()"
-        (ngModelChange)="containerState.setSystemFilter($event)"
-        class="h-9 px-3 bg-zinc-800 border border-zinc-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-      >
-        <option [ngValue]="null">All Systems</option>
-        @for (system of systemState.connectedSystems(); track system.id) {
-          <option [ngValue]="system.id">{{ system.name }}</option>
+      <div class="relative system-dropdown-wrapper">
+        <button
+          (click)="toggleSystemDropdown()"
+          class="h-9 px-3 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-zinc-100 hover:border-zinc-600 transition-colors flex items-center gap-2 max-w-[200px]"
+        >
+          @if (selectedSystemDisplay(); as system) {
+            <lucide-icon [img]="getRuntimeIcon(system.primaryRuntime)" [size]="14" [class]="getRuntimeColor(system.primaryRuntime)" />
+            <span class="truncate">{{ system.name }}</span>
+          } @else {
+            <lucide-icon [img]="Server" [size]="14" class="text-zinc-400" />
+            <span class="truncate">All Systems</span>
+          }
+          <lucide-icon [img]="ChevronDown" [size]="12" class="shrink-0 text-zinc-500" />
+        </button>
+        @if (showSystemDropdown()) {
+          <div class="absolute top-full left-0 mt-1 w-64 bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl z-50 overflow-hidden">
+            <div class="max-h-64 overflow-y-auto">
+              <button
+                (click)="selectSystemFilter(null)"
+                class="w-full px-3 py-2 flex items-center gap-2.5 hover:bg-zinc-700/50 transition-colors text-left"
+                [class.bg-zinc-700/30]="!containerState.systemFilter()"
+              >
+                <lucide-icon [img]="Server" [size]="14" class="text-zinc-400 shrink-0" />
+                <span class="text-sm text-zinc-200">All Systems</span>
+              </button>
+              @for (system of systemState.connectedSystems(); track system.id) {
+                <button
+                  (click)="selectSystemFilter(system.id)"
+                  class="w-full px-3 py-2 flex items-center gap-2.5 hover:bg-zinc-700/50 transition-colors text-left"
+                  [class.bg-zinc-700/30]="containerState.systemFilter() === system.id"
+                >
+                  <lucide-icon [img]="getRuntimeIcon(system.primaryRuntime)" [size]="14" [class]="getRuntimeColor(system.primaryRuntime)" class="shrink-0" />
+                  <div class="min-w-0 flex-1">
+                    <div class="text-sm text-zinc-200 truncate">{{ system.name }}</div>
+                    <div class="text-[10px] text-zinc-500 truncate">{{ system.primaryRuntime | titlecase }} · {{ system.hostname }}</div>
+                  </div>
+                </button>
+              }
+              @if (availableClusters().length > 0) {
+                <div class="border-t border-zinc-700 my-1"></div>
+                @for (cluster of availableClusters(); track cluster.clusterId) {
+                  <button
+                    (click)="selectSystemFilter('cluster:' + cluster.clusterId)"
+                    class="w-full px-3 py-2 flex items-center gap-2.5 hover:bg-zinc-700/50 transition-colors text-left"
+                    [class.bg-zinc-700/30]="containerState.systemFilter() === 'cluster:' + cluster.clusterId"
+                  >
+                    <lucide-icon [img]="Cloud" [size]="14" class="text-purple-400 shrink-0" />
+                    <div class="min-w-0 flex-1">
+                      <div class="text-sm text-zinc-200 truncate">{{ cluster.clusterName }}</div>
+                      <div class="text-[10px] text-zinc-500 truncate">Kubernetes</div>
+                    </div>
+                  </button>
+                }
+              }
+            </div>
+          </div>
         }
-      </select>
+      </div>
 
       <!-- Runtime filter -->
-      <select
-        [ngModel]="containerState.runtimeFilter()"
-        (ngModelChange)="containerState.setRuntimeFilter($event)"
-        class="h-9 px-3 bg-zinc-800 border border-zinc-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-      >
-        <option [ngValue]="null">All Runtimes</option>
-        <option value="docker">Docker</option>
-        <option value="podman">Podman</option>
-        <option value="apple">Apple</option>
-      </select>
+      <div class="relative runtime-dropdown-wrapper">
+        <button
+          (click)="toggleRuntimeDropdown()"
+          class="h-9 px-3 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-zinc-100 hover:border-zinc-600 transition-colors flex items-center gap-2"
+        >
+          @if (containerState.runtimeFilter(); as rt) {
+            <lucide-icon [img]="getRuntimeIcon(rt)" [size]="14" [class]="getRuntimeColor(rt)" />
+            <span>{{ runtimeLabel(rt) }}</span>
+          } @else {
+            <lucide-icon [img]="Layers" [size]="14" class="text-zinc-400" />
+            <span>All Runtimes</span>
+          }
+          <lucide-icon [img]="ChevronDown" [size]="12" class="shrink-0 text-zinc-500" />
+        </button>
+        @if (showRuntimeDropdown()) {
+          <div class="absolute top-full left-0 mt-1 w-48 bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl z-50 overflow-hidden">
+            <button
+              (click)="selectRuntimeFilter(null)"
+              class="w-full px-3 py-2 flex items-center gap-2.5 hover:bg-zinc-700/50 transition-colors text-left"
+              [class.bg-zinc-700/30]="!containerState.runtimeFilter()"
+            >
+              <lucide-icon [img]="Layers" [size]="14" class="text-zinc-400 shrink-0" />
+              <span class="text-sm text-zinc-200">All Runtimes</span>
+            </button>
+            @for (rt of runtimeOptions; track rt.value) {
+              <button
+                (click)="selectRuntimeFilter(rt.value)"
+                class="w-full px-3 py-2 flex items-center gap-2.5 hover:bg-zinc-700/50 transition-colors text-left"
+                [class.bg-zinc-700/30]="containerState.runtimeFilter() === rt.value"
+              >
+                <lucide-icon [img]="getRuntimeIcon(rt.value)" [size]="14" [class]="getRuntimeColor(rt.value)" class="shrink-0" />
+                <span class="text-sm text-zinc-200">{{ rt.label }}</span>
+              </button>
+            }
+          </div>
+        }
+      </div>
 
       <!-- Sort -->
       <select
@@ -134,7 +209,7 @@
     <!-- Mobile: View toggle and count -->
     <div class="flex md:hidden items-center justify-between">
       <span class="text-sm text-zinc-400">
-        {{ containerState.filteredContainers().length }} containers
+        {{ workloads().length }} workloads
       </span>
       <div class="flex items-center gap-1 border border-zinc-700 rounded-lg p-1">
         <button
@@ -184,167 +259,317 @@
     </div>
   }
 
-  <!-- Container Grid -->
+  <!-- Workload Grid (Containers + K8s Pods) -->
   <div
     [class]="viewMode() === 'grid'
       ? 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4'
       : 'space-y-3'"
   >
-    @for (container of containerState.filteredContainers(); track container.id) {
-      <div
-        class="bg-zinc-900 rounded-xl border border-zinc-700/50 flex flex-col overflow-hidden hover:bg-zinc-800 transition-colors"
-      >
-        <!-- Header -->
-        <div class="flex-shrink-0 px-4 pt-4 pb-3">
-          <div class="flex items-start justify-between gap-2">
-            <div class="flex-1 min-w-0">
-              <div class="font-medium text-sm truncate text-zinc-100">{{ getDisplayName(container) }}</div>
-              <div class="text-xs text-zinc-500 truncate mt-0.5">{{ container.image }}</div>
+    @for (workload of workloads(); track trackWorkload($index, workload)) {
+      <!-- ===== Container Card ===== -->
+      @if (workload.kind === 'container') {
+        <div
+          class="bg-zinc-900 rounded-xl border border-zinc-700/50 flex flex-col overflow-hidden hover:bg-zinc-800 transition-colors"
+        >
+          <!-- Header -->
+          <div class="flex-shrink-0 px-4 pt-4 pb-3">
+            <div class="flex items-start justify-between gap-2">
+              <div class="flex-1 min-w-0">
+                <div class="flex items-center gap-1.5">
+                  <lucide-icon
+                    [img]="getRuntimeIcon(workload.container.runtime)"
+                    class="w-3.5 h-3.5 flex-shrink-0"
+                    [class]="getRuntimeColor(workload.container.runtime)"
+                  ></lucide-icon>
+                  <div class="font-medium text-sm truncate text-zinc-100">{{ getDisplayName(workload.container) }}</div>
+                </div>
+                <div class="text-xs text-zinc-500 truncate mt-0.5">{{ workload.container.image }}</div>
+              </div>
+              <div class="flex items-center gap-0.5 flex-shrink-0">
+                <button
+                  (click)="openModal(workload.container)"
+                  class="p-1 rounded-md hover:bg-zinc-700/50 transition-colors text-zinc-500 hover:text-zinc-300"
+                  title="Open full details"
+                >
+                  <lucide-icon [img]="Maximize2" class="w-3.5 h-3.5"></lucide-icon>
+                </button>
+                <button
+                  (click)="toggleDetails(workload.container)"
+                  class="p-1 rounded-md hover:bg-zinc-700/50 transition-colors text-zinc-500 hover:text-zinc-300"
+                  title="View details"
+                >
+                  <lucide-icon [img]="Info" class="w-3.5 h-3.5"></lucide-icon>
+                </button>
+              </div>
             </div>
-            <div class="flex items-center gap-0.5 flex-shrink-0">
-              <button
-                (click)="openModal(container)"
-                class="p-1 rounded-md hover:bg-zinc-700/50 transition-colors text-zinc-500 hover:text-zinc-300"
-                title="Open full details"
-              >
-                <lucide-icon [img]="Maximize2" class="w-3.5 h-3.5"></lucide-icon>
-              </button>
-              <button
-                (click)="toggleDetails(container)"
-                class="p-1 rounded-md hover:bg-zinc-700/50 transition-colors text-zinc-500 hover:text-zinc-300"
-                title="View details"
-              >
-                <lucide-icon [img]="Info" class="w-3.5 h-3.5"></lucide-icon>
-              </button>
+
+            <!-- Status Row -->
+            <div class="flex items-center justify-between mt-2">
+              <div class="flex items-center gap-1.5">
+                <span
+                  class="w-1.5 h-1.5 rounded-full"
+                  [class.bg-green-400]="workload.container.status === 'running'"
+                  [class.bg-red-400]="workload.container.status === 'exited' || workload.container.status === 'dead'"
+                  [class.bg-yellow-400]="workload.container.status === 'paused'"
+                  [class.bg-orange-400]="workload.container.status === 'created'"
+                  [class.bg-blue-400]="workload.container.status === 'restarting'"
+                ></span>
+                <span
+                  class="text-xs font-medium"
+                  [class.text-green-400]="workload.container.status === 'running'"
+                  [class.text-red-400]="workload.container.status === 'exited' || workload.container.status === 'dead'"
+                  [class.text-yellow-400]="workload.container.status === 'paused'"
+                  [class.text-orange-400]="workload.container.status === 'created'"
+                  [class.text-blue-400]="workload.container.status === 'restarting'"
+                >
+                  {{ getStatusText(workload.container.status) }}
+                </span>
+              </div>
+              <span class="text-[11px] text-zinc-600">{{ getRelativeTime(workload.container.createdAt) }}</span>
             </div>
           </div>
 
-          <!-- Status Row -->
-          <div class="flex items-center justify-between mt-2">
-            <div class="flex items-center gap-1.5">
-              <span
-                class="w-1.5 h-1.5 rounded-full"
-                [class.bg-green-400]="container.status === 'running'"
-                [class.bg-red-400]="container.status === 'exited' || container.status === 'dead'"
-                [class.bg-yellow-400]="container.status === 'paused'"
-                [class.bg-orange-400]="container.status === 'created'"
-                [class.bg-blue-400]="container.status === 'restarting'"
-              ></span>
-              <span
-                class="text-xs font-medium"
-                [class.text-green-400]="container.status === 'running'"
-                [class.text-red-400]="container.status === 'exited' || container.status === 'dead'"
-                [class.text-yellow-400]="container.status === 'paused'"
-                [class.text-orange-400]="container.status === 'created'"
-                [class.text-blue-400]="container.status === 'restarting'"
-              >
-                {{ getStatusText(container.status) }}
-              </span>
-            </div>
-            <span class="text-[11px] text-zinc-600">{{ getRelativeTime(container.createdAt) }}</span>
-          </div>
-        </div>
+          <!-- Middle content (ports, expanded details) -->
+          <div class="flex-1 min-h-0 px-4">
+            @if (workload.container.ports && workload.container.ports.length > 0) {
+              <app-port-section
+                [ports]="workload.container.ports"
+                [containerId]="workload.container.id"
+                [systemId]="workload.container.systemId"
+              />
+            }
 
-        <!-- Middle content (ports, expanded details) -->
-        <div class="flex-1 min-h-0 px-4">
-          @if (container.ports && container.ports.length > 0) {
-            <app-port-section
-              [ports]="container.ports"
-              [containerId]="container.id"
-              [systemId]="container.systemId"
-            />
-          }
-
-          @if (expandedContainerId() === container.id) {
-            <div class="pt-3 border-t border-zinc-800 mt-2">
-              <app-container-details [container]="container" />
-            </div>
-          }
-        </div>
-
-        <!-- Action Buttons (always at bottom) -->
-        <div class="flex-shrink-0 px-4 py-3 mt-auto">
-          <div class="flex items-center gap-1.5 border-t border-zinc-700/50 pt-3">
-            @if (isRunning(container)) {
-              <button
-                (click)="performAction(container, 'stop')"
-                class="flex items-center gap-1 px-2.5 py-1 rounded-md text-xs text-red-400 hover:bg-red-500/10 transition-colors"
-                [disabled]="containerState.isLoading(container.id)"
-                title="Stop"
-              >
-                <lucide-icon [img]="Square" class="w-3 h-3"></lucide-icon>
-                Stop
-              </button>
-              <button
-                (click)="performAction(container, 'restart')"
-                class="flex items-center gap-1 px-2.5 py-1 rounded-md text-xs text-zinc-400 hover:bg-zinc-700/50 hover:text-zinc-200 transition-colors"
-                [disabled]="containerState.isLoading(container.id)"
-                title="Restart"
-              >
-                <lucide-icon [img]="RotateCcw" class="w-3 h-3"></lucide-icon>
-                Restart
-              </button>
-              <div class="flex-1"></div>
-              <button
-                (click)="showLogs(container)"
-                class="p-1.5 rounded-md text-zinc-500 hover:bg-zinc-700/50 hover:text-zinc-300 transition-colors"
-                title="Logs"
-              >
-                <lucide-icon [img]="FileText" class="w-3.5 h-3.5"></lucide-icon>
-              </button>
-              <button
-                (click)="dockTerminal(container)"
-                class="p-1.5 rounded-md text-zinc-500 hover:bg-zinc-700/50 hover:text-zinc-300 transition-colors"
-                title="Terminal"
-              >
-                <lucide-icon [img]="Terminal" class="w-3.5 h-3.5"></lucide-icon>
-              </button>
-              <button
-                (click)="dockFileBrowser(container)"
-                class="p-1.5 rounded-md text-zinc-500 hover:bg-zinc-700/50 hover:text-zinc-300 transition-colors"
-                title="Files"
-              >
-                <lucide-icon [img]="FolderOpen" class="w-3.5 h-3.5"></lucide-icon>
-              </button>
-            } @else {
-              <button
-                (click)="performAction(container, 'start')"
-                class="flex items-center gap-1 px-2.5 py-1 rounded-md text-xs text-green-400 hover:bg-green-500/10 transition-colors"
-                [disabled]="containerState.isLoading(container.id)"
-                title="Start"
-              >
-                <lucide-icon [img]="Play" class="w-3 h-3"></lucide-icon>
-                Start
-              </button>
-              <button
-                (click)="performAction(container, 'restart')"
-                class="flex items-center gap-1 px-2.5 py-1 rounded-md text-xs text-zinc-400 hover:bg-zinc-700/50 hover:text-zinc-200 transition-colors"
-                [disabled]="containerState.isLoading(container.id)"
-                title="Restart"
-              >
-                <lucide-icon [img]="RotateCcw" class="w-3 h-3"></lucide-icon>
-                Restart
-              </button>
-              <div class="flex-1"></div>
-              <button
-                (click)="showLogs(container)"
-                class="p-1.5 rounded-md text-zinc-500 hover:bg-zinc-700/50 hover:text-zinc-300 transition-colors"
-                title="Logs"
-              >
-                <lucide-icon [img]="FileText" class="w-3.5 h-3.5"></lucide-icon>
-              </button>
+            @if (expandedContainerId() === workload.container.id) {
+              <div class="pt-3 border-t border-zinc-800 mt-2">
+                <app-container-details [container]="workload.container" />
+              </div>
             }
           </div>
+
+          <!-- Action Buttons (always at bottom) -->
+          <div class="flex-shrink-0 px-4 py-3 mt-auto">
+            <div class="flex items-center gap-1.5 border-t border-zinc-700/50 pt-3">
+              @if (isRunning(workload.container)) {
+                <button
+                  (click)="performAction(workload.container, 'stop')"
+                  class="flex items-center gap-1 px-2.5 py-1 rounded-md text-xs text-red-400 hover:bg-red-500/10 transition-colors"
+                  [disabled]="containerState.isLoading(workload.container.id)"
+                  title="Stop"
+                >
+                  <lucide-icon [img]="Square" class="w-3 h-3"></lucide-icon>
+                  Stop
+                </button>
+                <button
+                  (click)="performAction(workload.container, 'restart')"
+                  class="flex items-center gap-1 px-2.5 py-1 rounded-md text-xs text-zinc-400 hover:bg-zinc-700/50 hover:text-zinc-200 transition-colors"
+                  [disabled]="containerState.isLoading(workload.container.id)"
+                  title="Restart"
+                >
+                  <lucide-icon [img]="RotateCcw" class="w-3 h-3"></lucide-icon>
+                  Restart
+                </button>
+                <div class="flex-1"></div>
+                <button
+                  (click)="showLogs(workload.container)"
+                  class="p-1.5 rounded-md text-zinc-500 hover:bg-zinc-700/50 hover:text-zinc-300 transition-colors"
+                  title="Logs"
+                >
+                  <lucide-icon [img]="FileText" class="w-3.5 h-3.5"></lucide-icon>
+                </button>
+                <button
+                  (click)="dockTerminal(workload.container)"
+                  class="p-1.5 rounded-md text-zinc-500 hover:bg-zinc-700/50 hover:text-zinc-300 transition-colors"
+                  title="Terminal"
+                >
+                  <lucide-icon [img]="Terminal" class="w-3.5 h-3.5"></lucide-icon>
+                </button>
+                <button
+                  (click)="dockFileBrowser(workload.container)"
+                  class="p-1.5 rounded-md text-zinc-500 hover:bg-zinc-700/50 hover:text-zinc-300 transition-colors"
+                  title="Files"
+                >
+                  <lucide-icon [img]="FolderOpen" class="w-3.5 h-3.5"></lucide-icon>
+                </button>
+              } @else {
+                <button
+                  (click)="performAction(workload.container, 'start')"
+                  class="flex items-center gap-1 px-2.5 py-1 rounded-md text-xs text-green-400 hover:bg-green-500/10 transition-colors"
+                  [disabled]="containerState.isLoading(workload.container.id)"
+                  title="Start"
+                >
+                  <lucide-icon [img]="Play" class="w-3 h-3"></lucide-icon>
+                  Start
+                </button>
+                <button
+                  (click)="performAction(workload.container, 'restart')"
+                  class="flex items-center gap-1 px-2.5 py-1 rounded-md text-xs text-zinc-400 hover:bg-zinc-700/50 hover:text-zinc-200 transition-colors"
+                  [disabled]="containerState.isLoading(workload.container.id)"
+                  title="Restart"
+                >
+                  <lucide-icon [img]="RotateCcw" class="w-3 h-3"></lucide-icon>
+                  Restart
+                </button>
+                <div class="flex-1"></div>
+                <button
+                  (click)="showLogs(workload.container)"
+                  class="p-1.5 rounded-md text-zinc-500 hover:bg-zinc-700/50 hover:text-zinc-300 transition-colors"
+                  title="Logs"
+                >
+                  <lucide-icon [img]="FileText" class="w-3.5 h-3.5"></lucide-icon>
+                </button>
+              }
+            </div>
+          </div>
         </div>
-      </div>
+      }
+
+      <!-- ===== K8s Pod Card ===== -->
+      @if (workload.kind === 'pod') {
+        <div
+          class="bg-zinc-900 rounded-xl border border-zinc-700/50 flex flex-col overflow-hidden hover:bg-zinc-800 transition-colors"
+        >
+          <!-- Header -->
+          <div class="flex-shrink-0 px-4 pt-4 pb-3">
+            <div class="flex items-start justify-between gap-2">
+              <div class="flex-1 min-w-0">
+                <div class="flex items-center gap-1.5">
+                  <lucide-icon [img]="Cloud" class="w-3.5 h-3.5 text-purple-400 flex-shrink-0"></lucide-icon>
+                  <div class="font-medium text-sm truncate text-zinc-100 font-mono">{{ workload.pod.name }}</div>
+                </div>
+                <div class="flex items-center gap-1.5 mt-1">
+                  <span class="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400">{{ workload.pod.namespace }}</span>
+                  <span class="text-[10px] text-zinc-600">{{ workload.clusterName }}</span>
+                </div>
+              </div>
+              <div class="flex items-center gap-0.5 flex-shrink-0">
+                <button
+                  (click)="openPodModal(workload)"
+                  class="p-1 rounded-md hover:bg-zinc-700/50 transition-colors text-zinc-500 hover:text-zinc-300"
+                  title="Open full details"
+                >
+                  <lucide-icon [img]="Maximize2" class="w-3.5 h-3.5"></lucide-icon>
+                </button>
+                <button
+                  (click)="togglePodDetails(workload)"
+                  class="p-1 rounded-md hover:bg-zinc-700/50 transition-colors text-zinc-500 hover:text-zinc-300"
+                  title="View details"
+                >
+                  <lucide-icon [img]="Info" class="w-3.5 h-3.5"></lucide-icon>
+                </button>
+              </div>
+            </div>
+
+            <!-- Status Row -->
+            <div class="flex items-center justify-between mt-2">
+              <div class="flex items-center gap-1.5">
+                <span class="w-1.5 h-1.5 rounded-full" [class]="getPodStatusDot(workload.pod.status)"></span>
+                <span class="text-xs font-medium" [class]="getPodStatusTextClass(workload.pod.status)">
+                  {{ workload.pod.status }}
+                </span>
+              </div>
+              <span class="text-[11px] text-zinc-600">{{ workload.pod.age }}</span>
+            </div>
+          </div>
+
+          <!-- Pod details -->
+          <div class="flex-1 min-h-0 px-4">
+            <div class="flex items-center gap-3 text-xs text-zinc-400">
+              <span>Ready: {{ workload.pod.ready }}</span>
+              <span>Restarts: {{ workload.pod.restarts }}</span>
+              @if (workload.pod.node) {
+                <span class="truncate ml-auto text-zinc-600" [title]="workload.pod.node">{{ workload.pod.node }}</span>
+              }
+            </div>
+
+            @if (expandedPodKey() === getPodKey(workload)) {
+              <div class="pt-3 border-t border-zinc-800 mt-2 space-y-2 text-xs">
+                <div class="grid grid-cols-2 gap-x-4 gap-y-1.5">
+                  <span class="text-zinc-500">Namespace</span>
+                  <span class="text-zinc-300 font-mono">{{ workload.pod.namespace }}</span>
+                  <span class="text-zinc-500">Status</span>
+                  <span [class]="getPodStatusTextClass(workload.pod.status)">{{ workload.pod.status }}</span>
+                  <span class="text-zinc-500">Ready</span>
+                  <span class="text-zinc-300">{{ workload.pod.ready }}</span>
+                  <span class="text-zinc-500">Restarts</span>
+                  <span class="text-zinc-300">{{ workload.pod.restarts }}</span>
+                  @if (workload.pod.ip) {
+                    <span class="text-zinc-500">Pod IP</span>
+                    <span class="text-zinc-300 font-mono">{{ workload.pod.ip }}</span>
+                  }
+                  @if (workload.pod.node) {
+                    <span class="text-zinc-500">Node</span>
+                    <span class="text-zinc-300 font-mono truncate">{{ workload.pod.node }}</span>
+                  }
+                  <span class="text-zinc-500">Cluster</span>
+                  <span class="text-zinc-300">{{ workload.clusterName }}</span>
+                  <span class="text-zinc-500">Age</span>
+                  <span class="text-zinc-300">{{ workload.pod.age }}</span>
+                </div>
+                @if (workload.pod.containerNames?.length) {
+                  <div>
+                    <span class="text-zinc-500">Containers:</span>
+                    <div class="flex flex-wrap gap-1 mt-1">
+                      @for (name of workload.pod.containerNames; track name) {
+                        <span class="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400 font-mono">{{ name }}</span>
+                      }
+                    </div>
+                  </div>
+                }
+              </div>
+            }
+          </div>
+
+          <!-- Pod actions -->
+          <div class="flex-shrink-0 px-4 py-3 mt-auto">
+            <div class="flex items-center gap-1.5 border-t border-zinc-700/50 pt-3">
+              <button
+                (click)="deletePod(workload)"
+                [disabled]="isPodActionLoading(workload)"
+                class="flex items-center gap-1 px-2.5 py-1 rounded-md text-xs text-zinc-400 hover:bg-red-500/10 hover:text-red-400 transition-colors disabled:opacity-50"
+                title="Delete pod"
+              >
+                <lucide-icon [img]="Trash2" class="w-3 h-3"></lucide-icon>
+                Delete
+              </button>
+              <div class="flex-1"></div>
+              @if (isPodActionLoading(workload)) {
+                <lucide-icon [img]="Loader2" class="w-3.5 h-3.5 animate-spin text-zinc-500"></lucide-icon>
+              }
+              <button
+                (click)="showPodLogs(workload)"
+                class="p-1.5 rounded-md text-zinc-500 hover:bg-zinc-700/50 hover:text-zinc-300 transition-colors"
+                title="Logs"
+              >
+                <lucide-icon [img]="FileText" class="w-3.5 h-3.5"></lucide-icon>
+              </button>
+              @if (workload.pod.status === 'Running') {
+                <button
+                  (click)="dockPodTerminal(workload)"
+                  class="p-1.5 rounded-md text-zinc-500 hover:bg-zinc-700/50 hover:text-zinc-300 transition-colors"
+                  title="Terminal"
+                >
+                  <lucide-icon [img]="Terminal" class="w-3.5 h-3.5"></lucide-icon>
+                </button>
+                <button
+                  (click)="dockPodFileBrowser(workload)"
+                  class="p-1.5 rounded-md text-zinc-500 hover:bg-zinc-700/50 hover:text-zinc-300 transition-colors"
+                  title="Files"
+                >
+                  <lucide-icon [img]="FolderOpen" class="w-3.5 h-3.5"></lucide-icon>
+                </button>
+              }
+            </div>
+          </div>
+        </div>
+      }
     } @empty {
       <div class="col-span-full text-center py-12 text-zinc-500">
-        @if (systemState.connectedSystems().length === 0) {
+        @if (systemState.connectedSystems().length === 0 && backend.connectedBackends().length === 0) {
           <p>No systems connected. Go to Systems to connect.</p>
         } @else if (containerState.searchQuery() || containerState.statusFilter() || containerState.runtimeFilter()) {
-          <p>No containers match your filters.</p>
+          <p>No containers or pods match your filters.</p>
         } @else {
-          <p>No containers found on connected systems.</p>
+          <p>No containers or pods found on connected systems.</p>
         }
       </div>
     }
@@ -399,6 +624,225 @@
   />
 }
 
+<!-- Pod Logs Modal -->
+@if (logsPod()) {
+  <app-pod-logs-viewer-modal
+    [connectionId]="logsPod()!.connectionId"
+    [clusterId]="logsPod()!.clusterId"
+    [namespace]="logsPod()!.pod.namespace"
+    [podName]="logsPod()!.pod.name"
+    (close)="closePodLogs()"
+  />
+}
+
+<!-- Pod Detail Modal -->
+@if (modalPod()) {
+  <div class="fixed inset-0 bg-black/70 z-50 flex items-end sm:items-center justify-center sm:p-4" (click)="closePodModal()">
+    <div class="bg-zinc-900 w-full h-[100dvh] sm:h-auto sm:rounded-xl sm:max-w-3xl sm:max-h-[90vh] overflow-hidden flex flex-col shadow-2xl" (click)="$event.stopPropagation()">
+      <!-- Header -->
+      <div class="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 border-b border-zinc-800">
+        <div class="flex items-center gap-2 sm:gap-3 min-w-0">
+          <lucide-icon [img]="Cloud" class="w-5 h-5 text-purple-400 flex-shrink-0"></lucide-icon>
+          <div class="min-w-0">
+            <h2 class="text-base sm:text-lg font-semibold truncate font-mono">{{ modalPod()!.pod.name }}</h2>
+            <div class="flex items-center gap-1.5">
+              <span class="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400">{{ modalPod()!.pod.namespace }}</span>
+              <span class="text-xs text-zinc-600">{{ modalPod()!.clusterName }}</span>
+            </div>
+          </div>
+        </div>
+        <button (click)="closePodModal()" class="p-2.5 sm:p-2 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 rounded-lg">
+          <lucide-icon [img]="X" class="w-5 h-5"></lucide-icon>
+        </button>
+      </div>
+
+      <!-- Body -->
+      <div class="flex-1 overflow-auto p-4 sm:p-6 space-y-4">
+        <!-- Status overview cards -->
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div class="bg-zinc-800/50 rounded-lg p-3">
+            <div class="text-[10px] uppercase tracking-wider text-zinc-500 mb-1">Status</div>
+            <div class="flex items-center gap-1.5">
+              <span class="w-2 h-2 rounded-full" [class]="getPodStatusDot(modalPod()!.pod.status)"></span>
+              <span class="text-sm font-medium" [class]="getPodStatusTextClass(modalPod()!.pod.status)">{{ modalPod()!.pod.status }}</span>
+            </div>
+          </div>
+          <div class="bg-zinc-800/50 rounded-lg p-3">
+            <div class="text-[10px] uppercase tracking-wider text-zinc-500 mb-1">Ready</div>
+            <div class="text-sm font-medium text-zinc-200">{{ modalPod()!.pod.ready }}</div>
+          </div>
+          <div class="bg-zinc-800/50 rounded-lg p-3">
+            <div class="text-[10px] uppercase tracking-wider text-zinc-500 mb-1">Restarts</div>
+            <div class="text-sm font-medium text-zinc-200">{{ modalPod()!.pod.restarts }}</div>
+          </div>
+          <div class="bg-zinc-800/50 rounded-lg p-3">
+            <div class="text-[10px] uppercase tracking-wider text-zinc-500 mb-1">Age</div>
+            <div class="text-sm font-medium text-zinc-200">{{ modalPod()!.pod.age }}</div>
+          </div>
+        </div>
+
+        <!-- Pod info grid -->
+        <div class="bg-zinc-800/30 rounded-lg p-4">
+          <h3 class="text-xs font-medium text-zinc-400 uppercase tracking-wider mb-3">Pod Information</h3>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-sm">
+            <div class="flex justify-between gap-2">
+              <span class="text-zinc-500">Namespace</span>
+              <span class="text-zinc-300 font-mono text-right truncate">{{ modalPod()!.pod.namespace }}</span>
+            </div>
+            <div class="flex justify-between gap-2">
+              <span class="text-zinc-500">Cluster</span>
+              <span class="text-zinc-300 text-right truncate">{{ modalPod()!.clusterName }}</span>
+            </div>
+            @if (modalPod()!.pod.ip) {
+              <div class="flex justify-between gap-2">
+                <span class="text-zinc-500">Pod IP</span>
+                <span class="text-zinc-300 font-mono text-right">{{ modalPod()!.pod.ip }}</span>
+              </div>
+            }
+            @if (modalPod()!.pod.node) {
+              <div class="flex justify-between gap-2">
+                <span class="text-zinc-500">Node</span>
+                <span class="text-zinc-300 font-mono text-right truncate">{{ modalPod()!.pod.node }}</span>
+              </div>
+            }
+          </div>
+        </div>
+
+        @if (podDetailLoading()) {
+          <div class="flex items-center justify-center py-8">
+            <lucide-icon [img]="Loader2" class="w-6 h-6 animate-spin text-zinc-400"></lucide-icon>
+            <span class="ml-3 text-zinc-400 text-sm">Loading details...</span>
+          </div>
+        } @else if (podDetail()) {
+          <!-- Container Statuses -->
+          @if (podDetail().status?.containerStatuses?.length) {
+            <div class="bg-zinc-800/30 rounded-lg p-4">
+              <h3 class="text-xs font-medium text-zinc-400 uppercase tracking-wider mb-3">Container Statuses</h3>
+              <div class="space-y-2">
+                @for (cs of podDetail().status.containerStatuses; track cs.name) {
+                  <div class="flex items-center justify-between bg-zinc-900/50 rounded-lg px-3 py-2">
+                    <div class="flex items-center gap-2 min-w-0">
+                      <span class="w-1.5 h-1.5 rounded-full flex-shrink-0" [class.bg-green-400]="cs.ready" [class.bg-red-400]="!cs.ready"></span>
+                      <span class="text-sm text-zinc-200 font-mono truncate">{{ cs.name }}</span>
+                    </div>
+                    <div class="flex items-center gap-3 text-xs text-zinc-500 flex-shrink-0">
+                      <span>Restarts: {{ cs.restartCount ?? 0 }}</span>
+                      @if (cs.state?.running) {
+                        <span class="text-green-400">Running</span>
+                      } @else if (cs.state?.waiting) {
+                        <span class="text-yellow-400">{{ cs.state.waiting.reason ?? 'Waiting' }}</span>
+                      } @else if (cs.state?.terminated) {
+                        <span class="text-red-400">{{ cs.state.terminated.reason ?? 'Terminated' }}</span>
+                      }
+                    </div>
+                  </div>
+                }
+              </div>
+            </div>
+          }
+
+          <!-- Conditions -->
+          @if (podDetail().status?.conditions?.length) {
+            <div class="bg-zinc-800/30 rounded-lg p-4">
+              <h3 class="text-xs font-medium text-zinc-400 uppercase tracking-wider mb-3">Conditions</h3>
+              <div class="space-y-1.5">
+                @for (cond of podDetail().status.conditions; track cond.type) {
+                  <div class="flex items-center justify-between text-sm">
+                    <span class="text-zinc-300">{{ cond.type }}</span>
+                    <span [class.text-green-400]="cond.status === 'True'" [class.text-red-400]="cond.status === 'False'" [class.text-zinc-500]="cond.status === 'Unknown'" class="text-xs">
+                      {{ cond.status }}
+                    </span>
+                  </div>
+                }
+              </div>
+            </div>
+          }
+
+          <!-- Labels -->
+          @if (podDetail().metadata?.labels) {
+            <div class="bg-zinc-800/30 rounded-lg p-4">
+              <h3 class="text-xs font-medium text-zinc-400 uppercase tracking-wider mb-3">Labels</h3>
+              <div class="flex flex-wrap gap-1.5">
+                @for (entry of podDetail().metadata.labels | keyvalue; track entry.key) {
+                  <span class="text-[11px] px-2 py-1 rounded-md bg-zinc-800 text-zinc-300 font-mono">{{ entry.key }}={{ entry.value }}</span>
+                }
+              </div>
+            </div>
+          }
+
+          <!-- Annotations -->
+          @if (podDetail().metadata?.annotations) {
+            <div class="bg-zinc-800/30 rounded-lg p-4">
+              <h3 class="text-xs font-medium text-zinc-400 uppercase tracking-wider mb-3">Annotations</h3>
+              <div class="space-y-1">
+                @for (entry of podDetail().metadata.annotations | keyvalue; track entry.key) {
+                  <div class="text-[11px] font-mono text-zinc-400 break-all">
+                    <span class="text-zinc-500">{{ entry.key }}:</span> {{ entry.value }}
+                  </div>
+                }
+              </div>
+            </div>
+          }
+
+          <!-- Volumes -->
+          @if (podDetail().spec?.volumes?.length) {
+            <div class="bg-zinc-800/30 rounded-lg p-4">
+              <h3 class="text-xs font-medium text-zinc-400 uppercase tracking-wider mb-3">Volumes</h3>
+              <div class="flex flex-wrap gap-1.5">
+                @for (vol of podDetail().spec.volumes; track vol.name) {
+                  <span class="text-[11px] px-2 py-1 rounded-md bg-zinc-800 text-zinc-300 font-mono">{{ vol.name }}</span>
+                }
+              </div>
+            </div>
+          }
+        }
+      </div>
+
+      <!-- Footer -->
+      <div class="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 border-t border-zinc-800">
+        <div class="flex items-center gap-2">
+          <button
+            (click)="showPodLogs(modalPod()!); closePodModal()"
+            class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200 transition-colors"
+          >
+            <lucide-icon [img]="FileText" class="w-4 h-4"></lucide-icon>
+            Logs
+          </button>
+          @if (modalPod()!.pod.status === 'Running') {
+            <button
+              (click)="dockPodTerminal(modalPod()!); closePodModal()"
+              class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200 transition-colors"
+            >
+              <lucide-icon [img]="Terminal" class="w-4 h-4"></lucide-icon>
+              Terminal
+            </button>
+            <button
+              (click)="dockPodFileBrowser(modalPod()!); closePodModal()"
+              class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200 transition-colors"
+            >
+              <lucide-icon [img]="FolderOpen" class="w-4 h-4"></lucide-icon>
+              Files
+            </button>
+          }
+          <button
+            (click)="deletePod(modalPod()!); closePodModal()"
+            class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm text-zinc-400 hover:bg-red-500/10 hover:text-red-400 transition-colors"
+          >
+            <lucide-icon [img]="Trash2" class="w-4 h-4"></lucide-icon>
+            Delete
+          </button>
+        </div>
+        <button
+          (click)="closePodModal()"
+          class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-sm transition-colors"
+        >
+          Close
+        </button>
+      </div>
+    </div>
+  </div>
+}
+
 <!-- Mobile Filter Sheet -->
 @if (showMobileFilters()) {
   <div class="fixed inset-0 z-50 md:hidden">
@@ -445,16 +889,42 @@
         <!-- System -->
         <div class="space-y-2">
           <label class="text-sm text-zinc-400 font-medium">System</label>
-          <select
-            [ngModel]="containerState.systemFilter()"
-            (ngModelChange)="containerState.setSystemFilter($event)"
-            class="w-full px-4 py-3 bg-zinc-800 border border-zinc-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
-            <option [ngValue]="null">All Systems</option>
+          <div class="space-y-1">
+            <button
+              (click)="selectSystemFilter(null)"
+              class="w-full px-4 py-3 bg-zinc-800 border rounded-xl text-sm flex items-center gap-2.5 transition-colors"
+              [class]="!containerState.systemFilter() ? 'border-blue-500 bg-zinc-700/30' : 'border-zinc-700 hover:bg-zinc-700/50'"
+            >
+              <lucide-icon [img]="Server" [size]="14" class="text-zinc-400 shrink-0" />
+              <span class="text-zinc-200">All Systems</span>
+            </button>
             @for (system of systemState.connectedSystems(); track system.id) {
-              <option [ngValue]="system.id">{{ system.name }}</option>
+              <button
+                (click)="selectSystemFilter(system.id)"
+                class="w-full px-4 py-3 bg-zinc-800 border rounded-xl text-sm flex items-center gap-2.5 transition-colors"
+                [class]="containerState.systemFilter() === system.id ? 'border-blue-500 bg-zinc-700/30' : 'border-zinc-700 hover:bg-zinc-700/50'"
+              >
+                <lucide-icon [img]="getRuntimeIcon(system.primaryRuntime)" [size]="14" [class]="getRuntimeColor(system.primaryRuntime)" class="shrink-0" />
+                <div class="min-w-0 flex-1 text-left">
+                  <div class="text-zinc-200 truncate">{{ system.name }}</div>
+                  <div class="text-[10px] text-zinc-500 truncate">{{ system.primaryRuntime | titlecase }} · {{ system.hostname }}</div>
+                </div>
+              </button>
             }
-          </select>
+            @for (cluster of availableClusters(); track cluster.clusterId) {
+              <button
+                (click)="selectSystemFilter('cluster:' + cluster.clusterId)"
+                class="w-full px-4 py-3 bg-zinc-800 border rounded-xl text-sm flex items-center gap-2.5 transition-colors"
+                [class]="containerState.systemFilter() === 'cluster:' + cluster.clusterId ? 'border-blue-500 bg-zinc-700/30' : 'border-zinc-700 hover:bg-zinc-700/50'"
+              >
+                <lucide-icon [img]="Cloud" [size]="14" class="text-purple-400 shrink-0" />
+                <div class="min-w-0 flex-1 text-left">
+                  <div class="text-zinc-200 truncate">{{ cluster.clusterName }}</div>
+                  <div class="text-[10px] text-zinc-500 truncate">Kubernetes</div>
+                </div>
+              </button>
+            }
+          </div>
         </div>
 
         <!-- Status -->
@@ -476,16 +946,26 @@
         <!-- Runtime -->
         <div class="space-y-2">
           <label class="text-sm text-zinc-400 font-medium">Runtime</label>
-          <select
-            [ngModel]="containerState.runtimeFilter()"
-            (ngModelChange)="containerState.setRuntimeFilter($event)"
-            class="w-full px-4 py-3 bg-zinc-800 border border-zinc-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
-            <option [ngValue]="null">All Runtimes</option>
-            <option value="docker">Docker</option>
-            <option value="podman">Podman</option>
-            <option value="apple">Apple</option>
-          </select>
+          <div class="space-y-1">
+            <button
+              (click)="selectRuntimeFilter(null)"
+              class="w-full px-4 py-3 bg-zinc-800 border rounded-xl text-sm flex items-center gap-2.5 transition-colors"
+              [class]="!containerState.runtimeFilter() ? 'border-blue-500 bg-zinc-700/30' : 'border-zinc-700 hover:bg-zinc-700/50'"
+            >
+              <lucide-icon [img]="Layers" [size]="14" class="text-zinc-400 shrink-0" />
+              <span class="text-zinc-200">All Runtimes</span>
+            </button>
+            @for (rt of runtimeOptions; track rt.value) {
+              <button
+                (click)="selectRuntimeFilter(rt.value)"
+                class="w-full px-4 py-3 bg-zinc-800 border rounded-xl text-sm flex items-center gap-2.5 transition-colors"
+                [class]="containerState.runtimeFilter() === rt.value ? 'border-blue-500 bg-zinc-700/30' : 'border-zinc-700 hover:bg-zinc-700/50'"
+              >
+                <lucide-icon [img]="getRuntimeIcon(rt.value)" [size]="14" [class]="getRuntimeColor(rt.value)" class="shrink-0" />
+                <span class="text-zinc-200">{{ rt.label }}</span>
+              </button>
+            }
+          </div>
         </div>
 
         <!-- Apply Button -->

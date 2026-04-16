@@ -1,13 +1,15 @@
-import { Component, inject, signal, effect, output, ChangeDetectionStrategy } from '@angular/core';
+import { Component, inject, signal, computed, effect, output, ChangeDetectionStrategy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { LucideAngularModule, X, Save, FileText, AlertTriangle } from 'lucide-angular';
 import { FileBrowserState } from '../../../../state/file-browser.state';
+import { MonacoEditorComponent } from '../../../../shared/components/monaco-editor/monaco-editor.component';
+import { detectLanguage } from '../../../../shared/utils/language-detection';
 
 @Component({
   selector: 'app-file-editor-modal',
   standalone: true,
-  imports: [CommonModule, FormsModule, LucideAngularModule],
+  imports: [CommonModule, FormsModule, LucideAngularModule, MonacoEditorComponent],
   templateUrl: './file-editor-modal.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -21,6 +23,7 @@ export class FileEditorModalComponent {
   readonly AlertTriangle = AlertTriangle;
 
   editableContent = signal('');
+  editorLanguage = computed(() => detectLanguage(this.state.editorContent()?.path ?? ''));
 
   constructor() {
     effect(() => {

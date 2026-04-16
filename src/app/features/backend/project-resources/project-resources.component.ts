@@ -11,7 +11,6 @@ import { FormsModule } from '@angular/forms';
 import {
   LucideAngularModule,
   Box,
-  Cloud,
   Loader2,
   RefreshCw,
   Search,
@@ -21,21 +20,24 @@ import {
   Trash2,
   Server,
   AlertCircle,
+  Cloud,
 } from 'lucide-angular';
 import { BackendService } from '../../../core/services/backend.service';
-import {
-  BackendSystem,
-  K8sCluster,
-  K8sNamespace,
-  K8sPod,
-  K8sDeployment,
-  K8sService as K8sSvc,
-} from '../../../core/models/backend.model';
+import { BackendSystem, K8sCluster, K8sPod } from '../../../core/models/backend.model';
 import { Container, ContainerStatus } from '../../../core/models/container.model';
 
 interface SystemContainers {
   system: BackendSystem;
   containers: Container[];
+}
+
+interface ClusterPods {
+  cluster: K8sCluster;
+  pods: K8sPod[];
+}
+
+interface PodWithCluster extends K8sPod {
+  clusterName: string;
 }
 
 @Component({
@@ -53,7 +55,6 @@ export class ProjectResourcesComponent implements OnChanges {
 
   // Icons
   readonly Box = Box;
-  readonly Cloud = Cloud;
   readonly Loader2 = Loader2;
   readonly RefreshCw = RefreshCw;
   readonly Search = Search;
@@ -63,6 +64,7 @@ export class ProjectResourcesComponent implements OnChanges {
   readonly Trash2 = Trash2;
   readonly Server = Server;
   readonly AlertCircle = AlertCircle;
+  readonly Cloud = Cloud;
 
   // ---- Container state (local, not global) ----
   systems = signal<BackendSystem[]>([]);
@@ -103,39 +105,43 @@ export class ProjectResourcesComponent implements OnChanges {
 
   connectedSystemCount = computed(() => this.systems().filter(s => s.connected).length);
 
+  // ---- Kubernetes state ----
+  clusters = signal<K8sCluster[]>([]);
+  clusterPods = signal<ClusterPods[]>([]);
+  allPods = computed<PodWithCluster[]>(() =>
+    this.clusterPods().flatMap(cp =>
+      cp.pods.map(p => ({ ...p, clusterName: cp.cluster.name }))
+    )
+  );
+  filteredPods = computed(() => {
+    let pods = this.allPods();
+    const query = this.searchQuery().toLowerCase().trim();
+    if (query) {
+      pods = pods.filter(p =>
+        p.name.toLowerCase().includes(query) ||
+        p.namespace.toLowerCase().includes(query) ||
+        p.clusterName.toLowerCase().includes(query)
+      );
+    }
+    return pods;
+  });
+  podStats = computed(() => {
+    const all = this.allPods();
+    return {
+      total: all.length,
+      running: all.filter(p => p.status === 'Running').length,
+      pending: all.filter(p => p.status === 'Pending').length,
+      failed: all.filter(p => p.status === 'Failed').length,
+    };
+  });
+
   // Container action loading
   loadingActions = signal<Set<string>>(new Set());
-
-  // ---- K8s state ----
-  clusters = signal<K8sCluster[]>([]);
-  selectedCluster = signal<K8sCluster | null>(null);
-  namespaces = signal<K8sNamespace[]>([]);
-  selectedNs = signal<string>('default');
-  pods = signal<K8sPod[]>([]);
-  deployments = signal<K8sDeployment[]>([]);
-  services = signal<K8sSvc[]>([]);
-  refreshingK8s = signal(false);
-  activeK8sTab = signal<'pods' | 'deployments' | 'services'>('pods');
-
-  readonly k8sTabs = [
-    { key: 'pods' as const, label: 'Pods' },
-    { key: 'deployments' as const, label: 'Deployments' },
-    { key: 'services' as const, label: 'Services' },
-  ];
 
   // Loading
   loading = signal(false);
   refreshing = signal(false);
   actionError = signal<string | null>(null);
-
-  private readonly MAX_REPLICAS = 50;
-
-  private parseReplicaCount(ready: string): number | null {
-    const parts = ready.split('/');
-    if (parts.length !== 2) return null;
-    const count = parseInt(parts[1], 10);
-    return isNaN(count) ? null : count;
-  }
 
   ngOnChanges(changes: SimpleChanges): void {
     if (changes['environmentId'] || changes['connectionId'] || changes['projectId']) {
@@ -156,18 +162,26 @@ export class ProjectResourcesComponent implements OnChanges {
     const capturedConn = this.connectionId;
     const capturedProj = this.projectId;
     try {
-      const [systems, clusters] = await Promise.all([
-        this.backend.listSystemsInEnvironmentFor(this.connectionId, this.projectId, this.environmentId),
-        this.backend.listClustersInEnvironmentFor(this.connectionId, this.projectId, this.environmentId),
-      ]);
+      const systems = await this.backend.listSystemsInEnvironmentFor(
+        this.connectionId, this.projectId, this.environmentId,
+      );
       if (this.environmentId !== capturedEnv || this.connectionId !== capturedConn || this.projectId !== capturedProj) {
         return;
       }
       this.systems.set(systems);
-      this.clusters.set(clusters);
 
-      // Load containers for connected systems
-      await this.loadContainers(systems);
+      // Load containers and K8s pods in parallel
+      const [, clusters] = await Promise.all([
+        this.loadContainers(systems),
+        this.backend.listClustersInEnvironmentFor(
+          this.connectionId, this.projectId, this.environmentId,
+        ).catch(() => [] as K8sCluster[]),
+      ]);
+      if (this.environmentId !== capturedEnv || this.connectionId !== capturedConn || this.projectId !== capturedProj) {
+        return;
+      }
+      this.clusters.set(clusters);
+      await this.loadPods(clusters);
     } catch (e) {
       console.error('Failed to load resources:', e);
     } finally {
@@ -192,11 +206,34 @@ export class ProjectResourcesComponent implements OnChanges {
     this.systemContainers.set(results);
   }
 
+  private async loadPods(clusters: K8sCluster[]): Promise<void> {
+    const results: ClusterPods[] = [];
+    await Promise.all(clusters.map(async (cluster) => {
+      try {
+        const namespaces = await this.backend.listNamespacesFor(this.connectionId, cluster.id);
+        const allPods: K8sPod[] = [];
+        await Promise.all(namespaces.map(async (ns) => {
+          try {
+            const pods = await this.backend.listPodsFor(this.connectionId, cluster.id, ns.name);
+            allPods.push(...pods);
+          } catch { /* skip namespace */ }
+        }));
+        results.push({ cluster, pods: allPods });
+      } catch (e) {
+        console.error(`Failed to load pods for cluster ${cluster.name}:`, e);
+        results.push({ cluster, pods: [] });
+      }
+    }));
+    this.clusterPods.set(results);
+  }
+
   async refresh(): Promise<void> {
     this.refreshing.set(true);
     try {
-      const systems = this.systems();
-      await this.loadContainers(systems);
+      await Promise.all([
+        this.loadContainers(this.systems()),
+        this.loadPods(this.clusters()),
+      ]);
     } finally {
       this.refreshing.set(false);
     }
@@ -257,79 +294,6 @@ export class ProjectResourcesComponent implements OnChanges {
   }
 
   // ========================================================================
-  // K8s
-  // ========================================================================
-
-  async selectCluster(cluster: K8sCluster): Promise<void> {
-    this.selectedCluster.set(cluster);
-    try {
-      this.namespaces.set(await this.backend.listNamespacesFor(this.connectionId, cluster.id));
-      if (this.namespaces().length > 0) {
-        await this.selectNamespace(this.namespaces()[0].name);
-      }
-    } catch (e) {
-      console.error('Failed to load cluster namespaces:', e);
-    }
-  }
-
-  async selectNamespace(ns: string): Promise<void> {
-    this.selectedNs.set(ns);
-    await this.refreshClusterData();
-  }
-
-  async refreshClusterData(): Promise<void> {
-    const cluster = this.selectedCluster();
-    const ns = this.selectedNs();
-    if (!cluster || !ns) return;
-
-    this.refreshingK8s.set(true);
-    try {
-      const [pods, deps, svcs] = await Promise.all([
-        this.backend.listPodsFor(this.connectionId, cluster.id, ns),
-        this.backend.listDeploymentsFor(this.connectionId, cluster.id, ns),
-        this.backend.listServicesFor(this.connectionId, cluster.id, ns),
-      ]);
-      this.pods.set(pods);
-      this.deployments.set(deps);
-      this.services.set(svcs);
-    } catch (e) {
-      console.error('Failed to refresh cluster data:', e);
-    } finally {
-      this.refreshingK8s.set(false);
-    }
-  }
-
-  async scaleUp(dep: K8sDeployment): Promise<void> {
-    const cluster = this.selectedCluster();
-    if (!cluster) return;
-    const current = this.parseReplicaCount(dep.ready);
-    if (current === null || current >= this.MAX_REPLICAS) return;
-    try {
-      await this.backend.scaleDeploymentFor(this.connectionId, cluster.id, dep.namespace, dep.name, current + 1);
-      await this.refreshClusterData();
-    } catch (e: any) {
-      const msg = e?.message || 'Failed to scale up deployment';
-      this.actionError.set(msg);
-      console.error('Failed to scale up:', e);
-    }
-  }
-
-  async scaleDown(dep: K8sDeployment): Promise<void> {
-    const cluster = this.selectedCluster();
-    if (!cluster) return;
-    const current = this.parseReplicaCount(dep.ready);
-    if (current === null || current <= 0) return;
-    try {
-      await this.backend.scaleDeploymentFor(this.connectionId, cluster.id, dep.namespace, dep.name, current - 1);
-      await this.refreshClusterData();
-    } catch (e: any) {
-      const msg = e?.message || 'Failed to scale down deployment';
-      this.actionError.set(msg);
-      console.error('Failed to scale down:', e);
-    }
-  }
-
-  // ========================================================================
   // Helpers
   // ========================================================================
 
@@ -369,15 +333,12 @@ export class ProjectResourcesComponent implements OnChanges {
     this.systems.set([]);
     this.systemContainers.set([]);
     this.clusters.set([]);
+    this.clusterPods.set([]);
     this.searchQuery.set('');
     this.statusFilter.set(null);
-    this.selectedCluster.set(null);
-    this.namespaces.set([]);
-    this.selectedNs.set('default');
-    this.pods.set([]);
-    this.deployments.set([]);
-    this.services.set([]);
     this.loadingActions.set(new Set());
     this.actionError.set(null);
+    this.loading.set(false);
+    this.refreshing.set(false);
   }
 }

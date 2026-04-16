@@ -160,6 +160,7 @@ export class LoginComponent implements OnInit {
   }
 
   async submit(): Promise<void> {
+    if (this.loading()) return;
     if (!this.email.trim() || !this.password.trim()) return;
 
     const connId = this.connectionId();

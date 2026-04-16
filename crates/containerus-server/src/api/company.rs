@@ -96,8 +96,9 @@ async fn update_company(
         return Err((StatusCode::FORBIDDEN, Json(json!({ "error": "Company admin required" }))));
     }
 
-    if req.name.trim().is_empty() {
-        return Err((StatusCode::BAD_REQUEST, Json(json!({ "error": "Company name is required" }))));
+    let name = req.name.trim();
+    if name.is_empty() || name.len() > 255 {
+        return Err((StatusCode::BAD_REQUEST, Json(json!({ "error": "Company name must be 1-255 characters" }))));
     }
     let slug = req.slug.trim();
     if slug.is_empty()
@@ -118,7 +119,7 @@ async fn update_company(
         RETURNING *
         "#,
     )
-    .bind(req.name.trim())
+    .bind(name)
     .bind(slug)
     .fetch_optional(&state.db)
     .await
@@ -170,12 +171,17 @@ async fn add_admin(
         return Err((StatusCode::FORBIDDEN, Json(json!({ "error": "Company admin required" }))));
     }
 
-    // Verify the target user exists
+    let mut tx = state.db.begin().await.map_err(|e| {
+        tracing::error!("Failed to begin transaction: {e}");
+        (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": "Internal server error" })))
+    })?;
+
+    // Verify the target user exists (within transaction for consistency)
     let user_exists = sqlx::query_scalar::<_, bool>(
         "SELECT EXISTS(SELECT 1 FROM users WHERE id = $1 AND is_active = true)",
     )
     .bind(req.user_id)
-    .fetch_one(&state.db)
+    .fetch_one(&mut *tx)
     .await
     .map_err(|e| {
         tracing::error!("Failed to check user existence: {e}");
@@ -191,7 +197,7 @@ async fn add_admin(
     )
     .bind(req.user_id)
     .bind(auth.claims.sub)
-    .execute(&state.db)
+    .execute(&mut *tx)
     .await
     .map_err(|e| {
         if let Some(db_err) = e.as_database_error() {
@@ -200,6 +206,11 @@ async fn add_admin(
             }
         }
         tracing::error!("Failed to add company admin: {e}");
+        (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": "Internal server error" })))
+    })?;
+
+    tx.commit().await.map_err(|e| {
+        tracing::error!("Failed to commit transaction: {e}");
         (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": "Internal server error" })))
     })?;
 

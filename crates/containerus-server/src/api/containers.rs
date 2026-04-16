@@ -235,6 +235,27 @@ fn parse_action(s: &str) -> Result<ContainerAction, String> {
     }
 }
 
+/// Determine which runtimes to query for a system: use available_runtimes if present, otherwise primary.
+fn runtimes_to_query(system: &SystemRow) -> Result<Vec<ContainerRuntime>, (StatusCode, Json<serde_json::Value>)> {
+    let available: Vec<ContainerRuntime> = system
+        .available_runtimes
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().and_then(|s| parse_runtime(s).ok()))
+                .collect()
+        })
+        .unwrap_or_default();
+    if available.is_empty() {
+        match parse_runtime(&system.primary_runtime) {
+            Ok(rt) => Ok(vec![rt]),
+            Err(e) => Err(e),
+        }
+    } else {
+        Ok(available)
+    }
+}
+
 // ============================================================================
 // Handlers
 // ============================================================================
@@ -255,30 +276,14 @@ async fn list_containers(
 
     let system_id_str = system_id.to_string();
 
-    // Determine which runtimes to query: use available_runtimes if present, otherwise primary
-    let runtimes_to_query: Vec<ContainerRuntime> = {
-        let available: Vec<ContainerRuntime> = system
-            .available_runtimes
-            .as_array()
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|v| v.as_str().and_then(|s| parse_runtime(s).ok()))
-                    .collect()
-            })
-            .unwrap_or_default();
-        if available.is_empty() {
-            match parse_runtime(&system.primary_runtime) {
-                Ok(rt) => vec![rt],
-                Err(e) => return Ok(e.into_response()),
-            }
-        } else {
-            available
-        }
+    let runtimes = match runtimes_to_query(system) {
+        Ok(r) => r,
+        Err(e) => return Ok(e.into_response()),
     };
 
     let mut all_containers = Vec::new();
 
-    for runtime in runtimes_to_query {
+    for runtime in runtimes {
         // Step 1: Get basic container list
         let cmd = CommandBuilder::list_containers(runtime);
         let result = match state.connections.execute_shared(system_id, &cmd).await {
@@ -502,30 +507,33 @@ async fn list_images(
         return Ok(e.into_response());
     }
 
-    let runtime = match parse_runtime(&system.primary_runtime) {
-        Ok(rt) => rt,
+    let runtimes = match runtimes_to_query(system) {
+        Ok(r) => r,
         Err(e) => return Ok(e.into_response()),
     };
     let system_id_str = system_id.to_string();
-    let cmd = CommandBuilder::list_images(runtime);
 
-    match state.connections.execute_shared(system_id, &cmd).await {
-        Ok(result) if result.success() => {
-            match OutputParser::parse_image_list(&result.stdout, runtime, &system_id_str) {
-                Ok(images) => Ok(Json(json!(images)).into_response()),
-                Err(e) => {
-                    tracing::warn!("Failed to parse image list: {e}");
-                    Ok(Json(json!([])).into_response())
+    let mut all_images = Vec::new();
+    for runtime in runtimes {
+        let cmd = CommandBuilder::list_images(runtime);
+        match state.connections.execute_shared(system_id, &cmd).await {
+            Ok(result) if result.success() => {
+                match OutputParser::parse_image_list(&result.stdout, runtime, &system_id_str) {
+                    Ok(images) => all_images.extend(images),
+                    Err(e) => {
+                        tracing::warn!("Failed to parse image list for {:?}: {e}", runtime);
+                    }
                 }
             }
-        }
-        Ok(result) => {
-            Ok((StatusCode::BAD_GATEWAY, Json(json!({"error": format!("Command failed: {}", result.stderr)}))).into_response())
-        }
-        Err(e) => {
-            Ok((StatusCode::BAD_GATEWAY, Json(json!({"error": format!("Failed to list images: {e}")}))).into_response())
+            Ok(result) => {
+                tracing::warn!("Image list command failed for {:?}: {}", runtime, result.stderr);
+            }
+            Err(e) => {
+                tracing::warn!("Failed to list images for {:?}: {e}", runtime);
+            }
         }
     }
+    Ok(Json(json!(all_images)).into_response())
 }
 
 /// List volumes on a system.
@@ -542,30 +550,33 @@ async fn list_volumes(
         return Ok(e.into_response());
     }
 
-    let runtime = match parse_runtime(&system.primary_runtime) {
-        Ok(rt) => rt,
+    let runtimes = match runtimes_to_query(system) {
+        Ok(r) => r,
         Err(e) => return Ok(e.into_response()),
     };
     let system_id_str = system_id.to_string();
-    let cmd = CommandBuilder::list_volumes(runtime);
 
-    match state.connections.execute_shared(system_id, &cmd).await {
-        Ok(result) if result.success() => {
-            match OutputParser::parse_volume_list(&result.stdout, runtime, &system_id_str) {
-                Ok(volumes) => Ok(Json(json!(volumes)).into_response()),
-                Err(e) => {
-                    tracing::warn!("Failed to parse volume list: {e}");
-                    Ok(Json(json!([])).into_response())
+    let mut all_volumes = Vec::new();
+    for runtime in runtimes {
+        let cmd = CommandBuilder::list_volumes(runtime);
+        match state.connections.execute_shared(system_id, &cmd).await {
+            Ok(result) if result.success() => {
+                match OutputParser::parse_volume_list(&result.stdout, runtime, &system_id_str) {
+                    Ok(volumes) => all_volumes.extend(volumes),
+                    Err(e) => {
+                        tracing::warn!("Failed to parse volume list for {:?}: {e}", runtime);
+                    }
                 }
             }
-        }
-        Ok(result) => {
-            Ok((StatusCode::BAD_GATEWAY, Json(json!({"error": format!("Command failed: {}", result.stderr)}))).into_response())
-        }
-        Err(e) => {
-            Ok((StatusCode::BAD_GATEWAY, Json(json!({"error": format!("Failed to list volumes: {e}")}))).into_response())
+            Ok(result) => {
+                tracing::warn!("Volume list command failed for {:?}: {}", runtime, result.stderr);
+            }
+            Err(e) => {
+                tracing::warn!("Failed to list volumes for {:?}: {e}", runtime);
+            }
         }
     }
+    Ok(Json(json!(all_volumes)).into_response())
 }
 
 /// List networks on a system.
@@ -582,30 +593,33 @@ async fn list_networks(
         return Ok(e.into_response());
     }
 
-    let runtime = match parse_runtime(&system.primary_runtime) {
-        Ok(rt) => rt,
+    let runtimes = match runtimes_to_query(system) {
+        Ok(r) => r,
         Err(e) => return Ok(e.into_response()),
     };
     let system_id_str = system_id.to_string();
-    let cmd = CommandBuilder::list_networks(runtime);
 
-    match state.connections.execute_shared(system_id, &cmd).await {
-        Ok(result) if result.success() => {
-            match OutputParser::parse_network_list(&result.stdout, runtime, &system_id_str) {
-                Ok(networks) => Ok(Json(json!(networks)).into_response()),
-                Err(e) => {
-                    tracing::warn!("Failed to parse network list: {e}");
-                    Ok(Json(json!([])).into_response())
+    let mut all_networks = Vec::new();
+    for runtime in runtimes {
+        let cmd = CommandBuilder::list_networks(runtime);
+        match state.connections.execute_shared(system_id, &cmd).await {
+            Ok(result) if result.success() => {
+                match OutputParser::parse_network_list(&result.stdout, runtime, &system_id_str) {
+                    Ok(networks) => all_networks.extend(networks),
+                    Err(e) => {
+                        tracing::warn!("Failed to parse network list for {:?}: {e}", runtime);
+                    }
                 }
             }
-        }
-        Ok(result) => {
-            Ok((StatusCode::BAD_GATEWAY, Json(json!({"error": format!("Command failed: {}", result.stderr)}))).into_response())
-        }
-        Err(e) => {
-            Ok((StatusCode::BAD_GATEWAY, Json(json!({"error": format!("Failed to list networks: {e}")}))).into_response())
+            Ok(result) => {
+                tracing::warn!("Network list command failed for {:?}: {}", runtime, result.stderr);
+            }
+            Err(e) => {
+                tracing::warn!("Failed to list networks for {:?}: {e}", runtime);
+            }
         }
     }
+    Ok(Json(json!(all_networks)).into_response())
 }
 
 // ============================================================================

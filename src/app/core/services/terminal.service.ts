@@ -107,8 +107,12 @@ export class TerminalService {
       if (wsSess.ws.readyState === WebSocket.OPEN) {
         wsSess.ws.send(JSON.stringify({ type: 'close' }));
         wsSess.ws.close();
+        // Let the onclose handler clean up wsSessions and sessions
+      } else {
+        // WebSocket already closed/closing — clean up manually
+        this.wsSessions.delete(sessionId);
+        this.sessions.delete(sessionId);
       }
-      // Let the onclose handler clean up wsSessions and sessions
       return;
     }
 
@@ -163,6 +167,126 @@ export class TerminalService {
       systemId,
       maxEntries,
       filter,
+    });
+  }
+
+  // ==========================================================================
+  // K8s exec session (pod shell via backend WebSocket)
+  // ==========================================================================
+
+  startK8sExecSession(
+    connectionId: string,
+    clusterId: string,
+    namespace: string,
+    pod: string,
+    container?: string,
+    shell: string = '/bin/sh',
+    cols: number = 80,
+    rows: number = 24,
+  ): Promise<TerminalSession> {
+    return new Promise<TerminalSession>((resolve, reject) => {
+      const wsInfo = this.backend.getK8sExecWsUrl(connectionId, clusterId);
+      if (!wsInfo) {
+        reject(new Error('Backend not connected or no token'));
+        return;
+      }
+
+      const ws = new WebSocket(wsInfo.url);
+      ws.binaryType = 'arraybuffer';
+
+      const localSessionId = crypto.randomUUID();
+      let connected = false;
+      let settled = false;
+
+      const connectionTimeout = setTimeout(() => {
+        if (!connected && !settled) {
+          settled = true;
+          ws.close();
+          reject(new Error('K8s exec connection timed out'));
+        }
+      }, 30000);
+
+      ws.onopen = () => {
+        // Phase 1: Auth
+        ws.send(JSON.stringify({ type: 'auth', token: wsInfo.token }));
+        // Phase 2: Start exec
+        ws.send(JSON.stringify({
+          type: 'start',
+          namespace,
+          pod,
+          container: container || undefined,
+          cols,
+          rows,
+          shell,
+        }));
+      };
+
+      ws.onmessage = (event) => {
+        if (event.data instanceof ArrayBuffer) {
+          const decoder = new TextDecoder();
+          const text = decoder.decode(event.data);
+          const wsSess = this.wsSessions.get(localSessionId);
+          if (wsSess?.outputCallback) {
+            this.zone.run(() => wsSess.outputCallback!(text));
+          }
+          return;
+        }
+
+        try {
+          const msg = JSON.parse(event.data);
+          if (msg.type === 'connected') {
+            connected = true;
+            clearTimeout(connectionTimeout);
+            const session: TerminalSession = {
+              id: localSessionId,
+              systemId: `k8s-exec:${clusterId}:${namespace}:${pod}`,
+              shell,
+            };
+            this.sessions.set(localSessionId, session);
+            this.wsSessions.set(localSessionId, { ws, sessionId: msg.sessionId });
+            if (!settled) {
+              settled = true;
+              resolve(session);
+            }
+          } else if (msg.type === 'error' && !connected && !settled) {
+            settled = true;
+            clearTimeout(connectionTimeout);
+            ws.close();
+            reject(new Error(msg.message || 'K8s exec failed'));
+          } else if (msg.type === 'error' && connected) {
+            const wsSess = this.wsSessions.get(localSessionId);
+            if (wsSess?.outputCallback) {
+              this.zone.run(() => wsSess.outputCallback!(`\r\n\x1b[31m[Error: ${msg.message || 'Unknown error'}]\x1b[0m\r\n`));
+            }
+          }
+        } catch {
+          // Ignore non-JSON text
+        }
+      };
+
+      ws.onerror = () => {
+        clearTimeout(connectionTimeout);
+        if (!connected && !settled) {
+          settled = true;
+          reject(new Error('K8s exec WebSocket connection failed'));
+        }
+      };
+
+      ws.onclose = () => {
+        clearTimeout(connectionTimeout);
+        if (connected) {
+          const wsSess = this.wsSessions.get(localSessionId);
+          if (wsSess?.outputCallback) {
+            this.zone.run(() => wsSess.outputCallback!('\r\n\x1b[33m[K8s exec session disconnected]\x1b[0m\r\n'));
+          }
+        }
+        this.wsSessions.delete(localSessionId);
+        this.sessions.delete(localSessionId);
+        if (!connected && !settled) {
+          settled = true;
+          reject(new Error('K8s exec WebSocket closed before connected'));
+        }
+      };
     });
   }
 

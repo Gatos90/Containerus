@@ -59,7 +59,7 @@ impl SshCredentials {
 }
 
 /// Auth tokens for a backend server connection, stored in the keyring vault.
-#[derive(Clone, Default, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BackendTokens {
     pub access_token: String,

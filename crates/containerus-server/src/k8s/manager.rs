@@ -120,6 +120,97 @@ impl ClusterManager {
         Ok(row)
     }
 
+    /// Update an existing cluster's configuration.
+    pub async fn update_cluster(
+        &self,
+        db: &PgPool,
+        cluster_id: Uuid,
+        name: Option<&str>,
+        kubeconfig_yaml: Option<&str>,
+        context_name: Option<Option<&str>>,
+    ) -> Result<ClusterRow, K8sError> {
+        // If kubeconfig is being updated, validate and re-encrypt
+        let new_api_url;
+        let new_encrypted;
+        let new_nonce;
+        let effective_context = context_name.map(|c| c.map(String::from));
+
+        if let Some(kc_yaml) = kubeconfig_yaml {
+            let kubeconfig: Kubeconfig = serde_yaml::from_str(kc_yaml)
+                .map_err(|e| K8sError::InvalidKubeconfig(format!("YAML parse error: {e}")))?;
+
+            let ctx = effective_context.as_ref().and_then(|c| c.as_deref());
+            let api_server_url = match extract_api_server(&kubeconfig, ctx) {
+                Some(url) => url,
+                None => {
+                    return Err(K8sError::InvalidKubeconfig(
+                        "Could not extract API server URL from kubeconfig".into(),
+                    ));
+                }
+            };
+
+            let (encrypted, nonce) = self
+                .vault
+                .encrypt(kc_yaml.as_bytes())
+                .map_err(|e| K8sError::EncryptionFailed(e.to_string()))?;
+
+            new_api_url = Some(api_server_url);
+            new_encrypted = Some(encrypted);
+            new_nonce = Some(nonce);
+        } else {
+            new_api_url = None;
+            new_encrypted = None;
+            new_nonce = None;
+        }
+
+        // Collect bind values in order
+        struct Binds {
+            name: Option<String>,
+            api_url: Option<String>,
+            encrypted: Option<Vec<u8>>,
+            nonce: Option<Vec<u8>>,
+            context: Option<Option<String>>,
+        }
+        let binds = Binds {
+            name: name.map(String::from),
+            api_url: new_api_url,
+            encrypted: new_encrypted,
+            nonce: new_nonce,
+            context: effective_context,
+        };
+
+        // We'll build a simple query with all optional fields using COALESCE pattern
+        // For simplicity, always set all fields but use COALESCE to keep existing values
+        let row = sqlx::query_as::<_, ClusterRow>(
+            r#"
+            UPDATE clusters SET
+                name = COALESCE($1, name),
+                api_server_url = COALESCE($2, api_server_url),
+                kubeconfig_encrypted = COALESCE($3, kubeconfig_encrypted),
+                kubeconfig_nonce = COALESCE($4, kubeconfig_nonce),
+                context_name = CASE WHEN $5 THEN $6 ELSE context_name END,
+                updated_at = now()
+            WHERE id = $7
+            RETURNING *
+            "#,
+        )
+        .bind(binds.name)
+        .bind(binds.api_url)
+        .bind(binds.encrypted.as_deref())
+        .bind(binds.nonce.as_deref())
+        .bind(binds.context.is_some()) // $5: whether to update context_name
+        .bind(binds.context.flatten()) // $6: the new context_name value (nullable)
+        .bind(cluster_id)
+        .fetch_one(db)
+        .await
+        .map_err(K8sError::Database)?;
+
+        // Invalidate cached client so it reconnects with new config
+        self.clients.remove(&cluster_id);
+
+        Ok(row)
+    }
+
     /// Remove a cached client when a cluster is deleted.
     pub fn remove_client(&self, cluster_id: Uuid) {
         self.clients.remove(&cluster_id);

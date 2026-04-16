@@ -55,6 +55,15 @@ export interface DockedTerminal {
   displayMode?: 'xterm' | 'warp';
 }
 
+export interface PodContext {
+  connectionId: string;
+  clusterId: string;
+  namespace: string;
+  podName: string;
+  containerName?: string;
+  clusterName: string;
+}
+
 export interface DockedFileBrowser {
   id: string;
   systemId: string;
@@ -63,6 +72,7 @@ export interface DockedFileBrowser {
   systemName: string;
   containerName?: string;
   currentPath: string;
+  podContext?: PodContext;
 }
 
 export type SlotContentType = 'terminal' | 'file-browser' | 'empty';
@@ -349,10 +359,19 @@ export class TerminalState {
   // --- File Browser Dock ---
 
   addFileBrowser(fb: DockedFileBrowser, targetSlot?: number): void {
-    // Prevent duplicates for same system+container — update path instead
-    const existing = this._dockedFileBrowsers().find(
-      f => f.systemId === fb.systemId && f.containerId === fb.containerId
-    );
+    // Prevent duplicates for same system+container or same pod — update path instead
+    const existing = this._dockedFileBrowsers().find(f => {
+      if (fb.podContext && f.podContext) {
+        return f.podContext.connectionId === fb.podContext.connectionId
+          && f.podContext.clusterId === fb.podContext.clusterId
+          && f.podContext.namespace === fb.podContext.namespace
+          && f.podContext.podName === fb.podContext.podName;
+      }
+      if (!fb.podContext && !f.podContext) {
+        return f.systemId === fb.systemId && f.containerId === fb.containerId;
+      }
+      return false;
+    });
     if (existing) {
       this._dockedFileBrowsers.update(browsers =>
         browsers.map(b => b.id === existing.id ? { ...b, currentPath: fb.currentPath } : b)

@@ -159,7 +159,7 @@ impl AppState {
             return;
         };
         system.available_runtimes = runtimes.clone();
-        if let Some(primary) = new_primary {
+        if let Some(primary) = new_primary.filter(|p| runtimes.contains(p)) {
             system.primary_runtime = primary;
         }
         drop(systems);

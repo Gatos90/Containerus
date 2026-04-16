@@ -15,7 +15,7 @@ import { SystemState } from '../../../state/system.state';
 import { ContainerState } from '../../../state/container.state';
 import { FileEntry, formatFileSize, isTextFile } from '../../../core/models/file-browser.model';
 import { Container, ContainerRuntime, getDisplayName, isRunning } from '../../../core/models/container.model';
-import { TerminalState, DockedFileBrowser } from '../../../state/terminal.state';
+import { TerminalState, DockedFileBrowser, PodContext } from '../../../state/terminal.state';
 import { FileEditorModalComponent } from '../components/file-editor-modal/file-editor-modal.component';
 import { Subscription } from 'rxjs';
 
@@ -70,6 +70,7 @@ export class FileBrowserViewComponent implements OnInit, OnDestroy {
   readonly embeddedContainerId = input<string>();
   readonly embeddedRuntime = input<ContainerRuntime>();
   readonly embeddedPath = input<string>();
+  readonly embeddedPodContext = input<PodContext>();
 
   // Local UI state
   showCreateDirDialog = signal(false);
@@ -90,7 +91,18 @@ export class FileBrowserViewComponent implements OnInit, OnDestroy {
   // Path sync effect to keep docked entry in sync
   private pathSyncEffect = effect(() => {
     const path = this.state.currentPath();
-    if (this.systemId) {
+    const podCtx = this.embeddedPodContext();
+    if (podCtx) {
+      const match = this.terminalState.dockedFileBrowsers().find(
+        fb => fb.podContext?.connectionId === podCtx.connectionId
+          && fb.podContext?.clusterId === podCtx.clusterId
+          && fb.podContext?.namespace === podCtx.namespace
+          && fb.podContext?.podName === podCtx.podName
+      );
+      if (match) {
+        this.terminalState.updateFileBrowserPath(match.id, path);
+      }
+    } else if (this.systemId) {
       const match = this.terminalState.dockedFileBrowsers().find(
         fb => fb.systemId === this.systemId && fb.containerId === (this.containerId ?? undefined)
       );
@@ -107,7 +119,21 @@ export class FileBrowserViewComponent implements OnInit, OnDestroy {
     const cId = this.embeddedContainerId();
     const rt = this.embeddedRuntime();
     const path = this.embeddedPath();
-    if (sysId && this.embedded) {
+    const podCtx = this.embeddedPodContext();
+    if (!this.embedded) return;
+
+    if (podCtx) {
+      // Pod file browser mode
+      const currentPod = this.state.podContext();
+      if (!currentPod || currentPod.podName !== podCtx.podName
+          || currentPod.namespace !== podCtx.namespace
+          || currentPod.clusterId !== podCtx.clusterId) {
+        this.systemId = null;
+        this.containerId = null;
+        this.state.setPodContext(podCtx);
+        this.state.navigateTo(path ?? '/');
+      }
+    } else if (sysId) {
       if (sysId !== this.systemId || (cId ?? null) !== this.containerId) {
         this.systemId = sysId;
         this.containerId = cId ?? null;
@@ -118,6 +144,15 @@ export class FileBrowserViewComponent implements OnInit, OnDestroy {
   });
 
   async ngOnInit(): Promise<void> {
+    // Check if we're in embedded pod mode
+    const podCtx = this.embeddedPodContext();
+    if (podCtx) {
+      this.embedded = true;
+      this.state.setPodContext(podCtx);
+      await this.state.navigateTo(this.embeddedPath() ?? '/');
+      return;
+    }
+
     // Check if we're in embedded mode (inputs provided)
     const sysId = this.embeddedSystemId();
     if (sysId) {

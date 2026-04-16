@@ -29,12 +29,12 @@ impl ServerConfig {
         let jwt_secret = std::env::var("JWT_SECRET")
             .map_err(|_| "JWT_SECRET environment variable is required")?;
         if jwt_secret.len() < 32 {
-            return Err("JWT_SECRET must be at least 32 characters".into());
+            return Err("JWT_SECRET must be at least 32 bytes".into());
         }
         let encryption_key = std::env::var("ENCRYPTION_KEY")
             .map_err(|_| "ENCRYPTION_KEY environment variable is required")?;
         if encryption_key.len() < 32 {
-            return Err("ENCRYPTION_KEY must be at least 32 characters".into());
+            return Err("ENCRYPTION_KEY must be at least 32 bytes".into());
         }
 
         let bind_addr: SocketAddr = std::env::var("BIND_ADDR")

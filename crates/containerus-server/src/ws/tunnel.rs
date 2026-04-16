@@ -59,9 +59,29 @@ fn is_blocked_ipv6(ip: std::net::Ipv6Addr) -> bool {
     if (ip.segments()[0] & 0xfe00) == 0xfc00 {
         return true;
     }
+    // 6to4 addresses (2002::/16) — extract embedded IPv4 from segments 1-2
+    if ip.segments()[0] == 0x2002 {
+        let embedded_ipv4 = std::net::Ipv4Addr::new(
+            (ip.segments()[1] >> 8) as u8,
+            ip.segments()[1] as u8,
+            (ip.segments()[2] >> 8) as u8,
+            ip.segments()[2] as u8,
+        );
+        return is_blocked_ipv4(embedded_ipv4);
+    }
+    // Teredo addresses (2001:0000::/32) — block entirely as they embed arbitrary IPv4
+    if ip.segments()[0] == 0x2001 && ip.segments()[1] == 0x0000 {
+        return true;
+    }
     // IPv4-mapped addresses (::ffff:x.x.x.x) — check the mapped v4 address
     if let Some(ipv4) = ip.to_ipv4_mapped() {
         return is_blocked_ipv4(ipv4);
+    }
+    // IPv4-compatible addresses (deprecated ::x.x.x.x where high 96 bits are zero)
+    if let Some(ipv4) = ip.to_ipv4() {
+        if ip.to_ipv4_mapped().is_none() {
+            return is_blocked_ipv4(ipv4);
+        }
     }
     false
 }
@@ -397,19 +417,17 @@ async fn wait_for_tunnel_auth(
                             }
                         };
 
-                        // Ensure connected for this user
-                        if !state.connections.is_connected(claims.sub, system_id) {
-                            if let Err(e) = state.connections.connect(&state.db, claims.sub, &system).await {
-                                tracing::error!("Cannot connect to system {}: {e}", system_id);
-                                let _ = ws_sender
-                                    .send(Message::Text(
-                                        json!({"type": "error", "message": "Cannot connect to system"})
-                                            .to_string()
-                                            .into(),
-                                    ))
-                                    .await;
-                                return Err(());
-                            }
+                        // Ensure connected for this user (connect is idempotent)
+                        if let Err(e) = state.connections.connect(&state.db, claims.sub, &system).await {
+                            tracing::error!("Cannot connect to system {}: {e}", system_id);
+                            let _ = ws_sender
+                                .send(Message::Text(
+                                    json!({"type": "error", "message": "Cannot connect to system"})
+                                        .to_string()
+                                        .into(),
+                                ))
+                                .await;
+                            return Err(());
                         }
 
                         tracing::info!(

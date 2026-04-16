@@ -166,11 +166,12 @@ async fn create_role(
     })?;
 
     // Deduplicate permission keys to avoid duplicate INSERT errors
-    let unique_permissions: Vec<String> = req.permissions.iter()
+    let mut unique_permissions: Vec<String> = req.permissions.iter()
         .collect::<HashSet<_>>()
         .into_iter()
         .cloned()
         .collect();
+    unique_permissions.sort();
 
     // Insert role_permissions by looking up permission IDs from keys
     for key in &unique_permissions {
@@ -267,7 +268,7 @@ async fn update_role(
 
     let name = req.name.as_deref().unwrap_or(&existing.name);
     let slug = req.slug.as_deref().unwrap_or(&existing.slug);
-    let description = req.description.as_deref().or(existing.description.as_deref()).map(|s| s.trim());
+    let description = req.description.as_deref().or(existing.description.as_deref()).map(|s| s.trim()).filter(|s| !s.is_empty());
 
     // Update role fields
     let now = chrono::Utc::now();
@@ -297,11 +298,12 @@ async fn update_role(
     // If permissions were provided, replace them
     let final_permissions = if let Some(ref perm_keys) = req.permissions {
         // Deduplicate permission keys to avoid duplicate INSERT errors
-        let unique_perm_keys: Vec<String> = perm_keys.iter()
+        let mut unique_perm_keys: Vec<String> = perm_keys.iter()
             .collect::<HashSet<_>>()
             .into_iter()
             .cloned()
             .collect();
+        unique_perm_keys.sort();
 
         // Delete existing role_permissions
         sqlx::query("DELETE FROM role_permissions WHERE role_id = $1")
@@ -404,12 +406,18 @@ async fn delete_role(
         return Err((StatusCode::FORBIDDEN, Json(json!({ "error": "Company admin required" }))));
     }
 
-    // Verify the role exists and is not a system role
+    // Wrap role fetch, usage check and delete in a transaction to prevent TOCTOU
+    let mut tx = state.db.begin().await.map_err(|e| {
+        tracing::error!("Failed to start transaction: {e}");
+        (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": "Internal server error" })))
+    })?;
+
+    // Fetch and lock the role within the transaction
     let role = sqlx::query_as::<_, Role>(
-        "SELECT * FROM roles WHERE id = $1",
+        "SELECT * FROM roles WHERE id = $1 FOR UPDATE",
     )
     .bind(id)
-    .fetch_optional(&state.db)
+    .fetch_optional(&mut *tx)
     .await
     .map_err(|e| {
         tracing::error!("Failed to fetch role: {e}");
@@ -420,12 +428,6 @@ async fn delete_role(
     if role.is_system {
         return Err((StatusCode::FORBIDDEN, Json(json!({ "error": "Cannot delete system roles" }))));
     }
-
-    // Wrap usage check and delete in a transaction to prevent TOCTOU
-    let mut tx = state.db.begin().await.map_err(|e| {
-        tracing::error!("Failed to start transaction: {e}");
-        (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": "Internal server error" })))
-    })?;
 
     // Check if any project members still reference this role
     let usage_count: i64 = sqlx::query_scalar(

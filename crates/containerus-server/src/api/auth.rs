@@ -322,7 +322,13 @@ async fn login(
         (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": "Internal server error" })))
     })?;
 
-    // Store refresh token
+    // Store refresh token in a transaction for atomicity
+    let mut tx = state.db.begin().await
+        .map_err(|e| {
+            tracing::error!("Failed to start transaction: {e}");
+            (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": "Internal server error" })))
+        })?;
+
     let token_hash = hash_token_jti(refresh_jti);
     let expires_at = chrono::Utc::now()
         + chrono::Duration::seconds(state.config.jwt_refresh_expiry_secs);
@@ -330,10 +336,16 @@ async fn login(
         .bind(row.id)
         .bind(&token_hash)
         .bind(expires_at)
-        .execute(&state.db)
+        .execute(&mut *tx)
         .await
         .map_err(|e| {
             tracing::error!("Refresh token insert failed: {e}");
+            (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": "Internal server error" })))
+        })?;
+
+    tx.commit().await
+        .map_err(|e| {
+            tracing::error!("Failed to commit transaction: {e}");
             (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": "Internal server error" })))
         })?;
 

@@ -236,15 +236,9 @@ pub fn update_primary_runtime(
     system_id: &str,
     runtime: ContainerRuntime,
 ) -> SqliteResult<()> {
-    let runtime_str = match runtime {
-        ContainerRuntime::Docker => "docker",
-        ContainerRuntime::Podman => "podman",
-        ContainerRuntime::Apple => "apple",
-    };
-
     conn.execute(
         "UPDATE systems SET primary_runtime = ?1 WHERE id = ?2",
-        (runtime_str, system_id),
+        (runtime_to_str(runtime), system_id),
     )?;
 
     Ok(())

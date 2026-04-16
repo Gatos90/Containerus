@@ -54,11 +54,11 @@ pub struct UpdateEnvironmentRequest {
 // ============================================================================
 
 /// Validate a slug: must start with a lowercase letter, end with alphanumeric,
-/// contain only lowercase alphanumeric and hyphens, 1-64 characters.
+/// contain only lowercase alphanumeric and hyphens, 1-63 characters.
 /// RFC 1123 compatible for DNS/Kubernetes label use.
 fn is_valid_slug(s: &str) -> bool {
     let len = s.len();
-    if len == 0 || len > 64 {
+    if len == 0 || len > 63 {
         return false;
     }
     let bytes = s.as_bytes();
@@ -135,7 +135,7 @@ async fn create_environment(
     if !is_valid_slug(slug) {
         return Ok((
             StatusCode::BAD_REQUEST,
-            Json(json!({"error": "Invalid slug: must be 1-64 characters, start with a letter, end with alphanumeric, lowercase alphanumeric and hyphens only"})),
+            Json(json!({"error": "Invalid slug: must be 1-63 characters, start with a letter, end with alphanumeric, lowercase alphanumeric and hyphens only"})),
         )
             .into_response());
     }
@@ -269,7 +269,7 @@ async fn update_environment(
     if req.slug.is_some() && !is_valid_slug(slug) {
         return Ok((
             StatusCode::BAD_REQUEST,
-            Json(json!({"error": "Invalid slug: must be 1-64 characters, start with a letter, end with alphanumeric, lowercase alphanumeric and hyphens only"})),
+            Json(json!({"error": "Invalid slug: must be 1-63 characters, start with a letter, end with alphanumeric, lowercase alphanumeric and hyphens only"})),
         )
             .into_response());
     }
@@ -362,12 +362,20 @@ async fn delete_environment(
             .into_response());
     }
 
+    let mut tx = state.db.begin().await.map_err(|e| {
+        tracing::error!("Failed to begin transaction: {e}");
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"error": "Failed to delete environment"})),
+        )
+    })?;
+
     // Check for systems in this environment
     let system_count: (i64,) = sqlx::query_as(
         "SELECT COUNT(*) FROM systems WHERE environment_id = $1",
     )
     .bind(environment_id)
-    .fetch_one(&state.db)
+    .fetch_one(&mut *tx)
     .await
     .map_err(|e| {
         tracing::error!("Failed to count systems: {e}");
@@ -382,7 +390,7 @@ async fn delete_environment(
         "SELECT COUNT(*) FROM clusters WHERE environment_id = $1",
     )
     .bind(environment_id)
-    .fetch_one(&state.db)
+    .fetch_one(&mut *tx)
     .await
     .map_err(|e| {
         tracing::error!("Failed to count clusters: {e}");
@@ -409,7 +417,7 @@ async fn delete_environment(
     )
     .bind(environment_id)
     .bind(scoped.project_id)
-    .execute(&state.db)
+    .execute(&mut *tx)
     .await
     .map_err(|e| {
         tracing::error!("Failed to delete environment: {e}");
@@ -426,6 +434,14 @@ async fn delete_environment(
         )
             .into_response());
     }
+
+    tx.commit().await.map_err(|e| {
+        tracing::error!("Failed to commit transaction: {e}");
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"error": "Failed to delete environment"})),
+        )
+    })?;
 
     log_action(&state.db, Some(scoped.project_id), Some(scoped.claims.sub), "environment.delete", "environment", Some(&environment_id.to_string()), Some(serde_json::json!({"name": &environment.name})), None, None).await;
 
