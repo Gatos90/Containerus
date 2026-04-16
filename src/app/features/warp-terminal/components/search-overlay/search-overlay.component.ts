@@ -10,6 +10,9 @@ import type { SearchResult } from '../../models/terminal-block.model';
   imports: [CommonModule, FormsModule, LucideAngularModule],
   templateUrl: './search-overlay.component.html',
   styleUrl: './search-overlay.component.css',
+  host: {
+    '(document:keydown.escape)': 'onClose()',
+  },
 })
 export class SearchOverlayComponent {
   @Input() open = false;
@@ -25,5 +28,11 @@ export class SearchOverlayComponent {
 
   updateQuery(value: string): void {
     this.queryChange.emit(value);
+  }
+
+  onClose(): void {
+    if (this.open) {
+      this.close.emit();
+    }
   }
 }

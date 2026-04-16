@@ -31,6 +31,7 @@ describe('SystemState', () => {
       getConnectionState: vi.fn(),
       detectRuntimes: vi.fn(),
       getExtendedSystemInfo: vi.fn(),
+      removeKnownHost: vi.fn(),
     };
     mockMonitoringService = {
       startListening: vi.fn(),
@@ -320,5 +321,158 @@ describe('SystemState', () => {
 
     state.isMonitoring('sys-1');
     expect(mockMonitoringService.isMonitoring).toHaveBeenCalledWith('sys-1');
+  });
+
+  describe('dismissHostKeyMismatch', () => {
+    it('should clear host key mismatch', () => {
+      // Set a host key mismatch via internal signal
+      (state as any)._hostKeyMismatch.set({
+        systemId: 'sys-1',
+        hostname: 'test.local',
+        port: 22,
+        expected: 'abc123',
+        actual: 'def456',
+      });
+
+      expect(state.hostKeyMismatch()).not.toBeNull();
+
+      state.dismissHostKeyMismatch();
+
+      expect(state.hostKeyMismatch()).toBeNull();
+    });
+
+    it('should clear pending credentials on dismiss', () => {
+      (state as any)._pendingCredentials = { password: 'secret' };
+      (state as any)._hostKeyMismatch.set({
+        systemId: 'sys-1',
+        hostname: 'test.local',
+        port: 22,
+        expected: 'abc',
+        actual: 'def',
+      });
+
+      state.dismissHostKeyMismatch();
+
+      expect((state as any)._pendingCredentials).toBeNull();
+    });
+
+    it('should be a no-op when no mismatch is pending', () => {
+      expect(state.hostKeyMismatch()).toBeNull();
+      state.dismissHostKeyMismatch();
+      expect(state.hostKeyMismatch()).toBeNull();
+    });
+  });
+
+  describe('trustNewHostKey', () => {
+    it('should be a no-op when no mismatch is set', async () => {
+      await state.trustNewHostKey();
+      expect(mockSystemService.removeKnownHost).not.toHaveBeenCalled();
+    });
+
+    it('should set error and clear mismatch when hostname is empty', async () => {
+      (state as any)._hostKeyMismatch.set({
+        systemId: 'sys-1',
+        hostname: '',
+        port: 22,
+        expected: 'abc',
+        actual: 'def',
+      });
+
+      await state.trustNewHostKey();
+
+      expect(state.error()).toContain('hostname is unknown');
+      expect(state.hostKeyMismatch()).toBeNull();
+    });
+
+    it('should call removeKnownHost and reconnect on trust', async () => {
+      const systems = [makeSystem({ id: 'sys-1', hostname: 'test.local' })];
+      mockSystemService.listSystems.mockResolvedValue(systems);
+      mockSystemService.getConnectionState.mockResolvedValue('disconnected');
+      await state.loadSystems();
+
+      (state as any)._hostKeyMismatch.set({
+        systemId: 'sys-1',
+        hostname: 'test.local',
+        port: 22,
+        expected: 'abc',
+        actual: 'def',
+      });
+      (state as any)._pendingCredentials = { password: 'pw' };
+
+      mockSystemService.removeKnownHost.mockResolvedValue(undefined);
+      mockSystemService.connectSystem.mockResolvedValue('connected');
+
+      await state.trustNewHostKey();
+
+      expect(mockSystemService.removeKnownHost).toHaveBeenCalledWith('test.local', 22);
+      expect(state.hostKeyMismatch()).toBeNull();
+    });
+
+    it('should set error if removeKnownHost fails', async () => {
+      (state as any)._hostKeyMismatch.set({
+        systemId: 'sys-1',
+        hostname: 'bad.host',
+        port: 22,
+        expected: 'abc',
+        actual: 'def',
+      });
+
+      mockSystemService.removeKnownHost.mockRejectedValue(new Error('permission denied'));
+
+      await state.trustNewHostKey();
+
+      expect(state.error()).not.toBeNull();
+      expect(state.hostKeyMismatch()).toBeNull();
+    });
+  });
+
+  describe('extractHostKeyError (via connectSystem)', () => {
+    it('should detect HostKeyVerificationFailed object error', async () => {
+      const systems = [makeSystem({ id: 'sys-1' })];
+      mockSystemService.listSystems.mockResolvedValue(systems);
+      mockSystemService.getConnectionState.mockResolvedValue('disconnected');
+      await state.loadSystems();
+
+      const hostKeyError = {
+        HostKeyVerificationFailed: {
+          hostname: 'test.local',
+          reason: 'Expected: abc123\nReceived: def456',
+        },
+      };
+      mockSystemService.connectSystem.mockRejectedValue(hostKeyError);
+
+      await state.connectSystem('sys-1');
+
+      expect(state.hostKeyMismatch()).not.toBeNull();
+      expect(state.hostKeyMismatch()?.hostname).toBe('test.local');
+    });
+
+    it('should detect HostKeyVerificationFailed string error', async () => {
+      const systems = [makeSystem({ id: 'sys-1' })];
+      mockSystemService.listSystems.mockResolvedValue(systems);
+      mockSystemService.getConnectionState.mockResolvedValue('disconnected');
+      await state.loadSystems();
+
+      const err = new Error('host key verification failed for test.local');
+      mockSystemService.connectSystem.mockRejectedValue(err);
+
+      await state.connectSystem('sys-1');
+
+      expect(state.hostKeyMismatch()).not.toBeNull();
+    });
+
+    it('should set generic error for non-hostkey errors', async () => {
+      const systems = [makeSystem({ id: 'sys-1' })];
+      mockSystemService.listSystems.mockResolvedValue(systems);
+      mockSystemService.getConnectionState.mockResolvedValue('disconnected');
+      await state.loadSystems();
+
+      mockSystemService.connectSystem.mockRejectedValue(new Error('auth failed'));
+
+      await state.connectSystem('sys-1');
+
+      expect(state.error()).toContain('auth failed');
+      expect(state.hostKeyMismatch()).toBeNull();
+    });
   });
 });

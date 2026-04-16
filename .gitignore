@@ -63,3 +63,4 @@ src-tauri/gen/
 .pnpm-store/
 
 scripts/.config.sh
+target/

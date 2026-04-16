@@ -20,6 +20,9 @@ import { SystemImageSectionComponent } from '../components/system-image-section/
   imports: [CommonModule, FormsModule, LucideAngularModule, SystemImageSectionComponent],
   templateUrl: './image-list.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
+  host: {
+    '(document:keydown.escape)': 'onEscape()',
+  },
 })
 export class ImageListComponent implements OnInit {
   readonly imageState = inject(ImageState);
@@ -60,6 +63,12 @@ export class ImageListComponent implements OnInit {
 
     return grouped;
   });
+
+  onEscape(): void {
+    if (this.showMobileFilters()) {
+      this.showMobileFilters.set(false);
+    }
+  }
 
   async ngOnInit(): Promise<void> {
     await this.refresh();
