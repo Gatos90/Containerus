@@ -9,6 +9,7 @@ import {
   Folder, File, FileText, FileCode, FileImage, FileArchive,
   Link, Settings, Trash2, Pencil, Download, MoreVertical,
   ChevronRight, ChevronDown, X, FolderOpen, PanelBottomOpen, Box, Globe,
+  HardDrive,
 } from 'lucide-angular';
 import { FileBrowserState } from '../../../state/file-browser.state';
 import { SystemState } from '../../../state/system.state';
@@ -27,6 +28,7 @@ import { Subscription } from 'rxjs';
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
     '(document:keydown.escape)': 'onEscape()',
+    '(document:keydown.alt.arrowup)': 'onAltArrowUp($event)',
   },
 })
 export class FileBrowserViewComponent implements OnInit, OnDestroy {
@@ -67,6 +69,7 @@ export class FileBrowserViewComponent implements OnInit, OnDestroy {
   readonly Box = Box;
   readonly ChevronDown = ChevronDown;
   readonly Globe = Globe;
+  readonly HardDrive = HardDrive;
 
   // Embedded mode inputs (when rendered inside workspace dock)
   readonly embeddedSystemId = input<string>();
@@ -374,6 +377,44 @@ export class FileBrowserViewComponent implements OnInit, OnDestroy {
     } else if (this.contextMenuEntry()) {
       this.closeContextMenu();
     }
+  }
+
+  async onAltArrowUp(event: Event): Promise<void> {
+    if (!this.systemId && !this.state.podContext()) return;
+    if (this.renameEntry() || this.showCreateDirDialog() || this.confirmDeleteEntry()) return;
+    event.preventDefault();
+    await this.state.goUp();
+  }
+
+  /** Navigate back to the system picker (non-embedded route mode only). */
+  navigateToSystems(): void {
+    if (this.embedded) return;
+    this.router.navigate(['/files']);
+  }
+
+  /** Navigate to the root of the current system's host filesystem. */
+  async navigateToSystemRoot(): Promise<void> {
+    if (!this.systemId) return;
+    if (this.embedded) {
+      // In embedded mode, just drop the container scope and go to root of host FS.
+      if (this.containerId) {
+        this.containerId = null;
+        this.state.setContext(this.systemId, null, null);
+      }
+      await this.state.navigateTo('/');
+      return;
+    }
+    this.router.navigate(['/files', this.systemId], { queryParams: { path: '/' } });
+  }
+
+  /** Navigate to the root of the current container's filesystem. */
+  async navigateToContainerRoot(): Promise<void> {
+    if (!this.systemId || !this.containerId) return;
+    if (this.embedded) {
+      await this.state.navigateTo('/');
+      return;
+    }
+    this.router.navigate(['/files', this.systemId, this.containerId], { queryParams: { path: '/' } });
   }
 
   async downloadEntry(entry: FileEntry): Promise<void> {

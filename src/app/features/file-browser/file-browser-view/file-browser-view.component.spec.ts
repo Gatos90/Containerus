@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Injector, runInInjectionContext, ɵChangeDetectionScheduler as ChangeDetectionScheduler, ɵEffectScheduler as EffectScheduler } from '@angular/core';
+import { setupTestBed } from '@analogjs/vitest-angular/setup-testbed';
+setupTestBed();
 import { FileBrowserViewComponent } from './file-browser-view.component';
 import { FileBrowserState } from '../../../state/file-browser.state';
 import { SystemState } from '../../../state/system.state';
@@ -78,6 +80,8 @@ function makeComponent() {
     parentPath: vi.fn(() => null),
     setContext: vi.fn(),
     navigateTo: vi.fn().mockResolvedValue(undefined),
+    goUp: vi.fn().mockResolvedValue(undefined),
+    podContext: vi.fn(() => null),
     refresh: vi.fn().mockResolvedValue(undefined),
     createDirectory: vi.fn().mockResolvedValue(undefined),
     renamePath: vi.fn().mockResolvedValue(undefined),
@@ -677,6 +681,131 @@ describe('FileBrowserViewComponent', () => {
       mockSystemState.systems.mockReturnValue([]);
       component.selectContainer('sys-none', makeContainer());
       expect(mockTerminalState.addFileBrowser).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('navigateToSystems', () => {
+    it('should navigate to /files in route mode', () => {
+      const { component, mockRouter } = makeComponent();
+      component.embedded = false;
+      component.navigateToSystems();
+      expect(mockRouter.navigate).toHaveBeenCalledWith(['/files']);
+    });
+
+    it('should do nothing in embedded mode', () => {
+      const { component, mockRouter } = makeComponent();
+      component.embedded = true;
+      component.navigateToSystems();
+      expect(mockRouter.navigate).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('navigateToSystemRoot', () => {
+    it('should route to /files/:systemId with path=/ in route mode', async () => {
+      const { component, mockRouter } = makeComponent();
+      component.embedded = false;
+      component.systemId = 'sys-1';
+      component.containerId = 'ctr-1';
+      await component.navigateToSystemRoot();
+      expect(mockRouter.navigate).toHaveBeenCalledWith(['/files', 'sys-1'], { queryParams: { path: '/' } });
+    });
+
+    it('should drop container scope and navigate to / in embedded mode', async () => {
+      const { component, mockFileBrowserState } = makeComponent();
+      component.embedded = true;
+      component.systemId = 'sys-1';
+      component.containerId = 'ctr-1';
+      await component.navigateToSystemRoot();
+      expect(component.containerId).toBeNull();
+      expect(mockFileBrowserState.setContext).toHaveBeenCalledWith('sys-1', null, null);
+      expect(mockFileBrowserState.navigateTo).toHaveBeenCalledWith('/');
+    });
+
+    it('should do nothing without a systemId', async () => {
+      const { component, mockRouter, mockFileBrowserState } = makeComponent();
+      component.systemId = null;
+      await component.navigateToSystemRoot();
+      expect(mockRouter.navigate).not.toHaveBeenCalled();
+      expect(mockFileBrowserState.navigateTo).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('navigateToContainerRoot', () => {
+    it('should route to /files/:systemId/:containerId with path=/', async () => {
+      const { component, mockRouter } = makeComponent();
+      component.embedded = false;
+      component.systemId = 'sys-1';
+      component.containerId = 'ctr-1';
+      await component.navigateToContainerRoot();
+      expect(mockRouter.navigate).toHaveBeenCalledWith(['/files', 'sys-1', 'ctr-1'], { queryParams: { path: '/' } });
+    });
+
+    it('should navigate state to / in embedded mode', async () => {
+      const { component, mockFileBrowserState } = makeComponent();
+      component.embedded = true;
+      component.systemId = 'sys-1';
+      component.containerId = 'ctr-1';
+      await component.navigateToContainerRoot();
+      expect(mockFileBrowserState.navigateTo).toHaveBeenCalledWith('/');
+    });
+
+    it('should do nothing without systemId or containerId', async () => {
+      const { component, mockRouter, mockFileBrowserState } = makeComponent();
+      component.systemId = 'sys-1';
+      component.containerId = null;
+      await component.navigateToContainerRoot();
+      expect(mockRouter.navigate).not.toHaveBeenCalled();
+      expect(mockFileBrowserState.navigateTo).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('onAltArrowUp', () => {
+    function makeEvent(): KeyboardEvent {
+      return { preventDefault: vi.fn() } as any;
+    }
+
+    it('should call state.goUp when a system is selected', async () => {
+      const { component, mockFileBrowserState } = makeComponent();
+      component.systemId = 'sys-1';
+      const event = makeEvent();
+      await component.onAltArrowUp(event);
+      expect(event.preventDefault).toHaveBeenCalled();
+      expect(mockFileBrowserState.goUp).toHaveBeenCalledOnce();
+    });
+
+    it('should call state.goUp when a pod context is set', async () => {
+      const { component, mockFileBrowserState } = makeComponent();
+      component.systemId = null;
+      mockFileBrowserState.podContext.mockReturnValue({ podName: 'p', namespace: 'n', clusterId: 'c', clusterName: 'c', connectionId: 'c' });
+      await component.onAltArrowUp(makeEvent());
+      expect(mockFileBrowserState.goUp).toHaveBeenCalledOnce();
+    });
+
+    it('should not goUp when no system/pod is selected (picker view)', async () => {
+      const { component, mockFileBrowserState } = makeComponent();
+      component.systemId = null;
+      const event = makeEvent();
+      await component.onAltArrowUp(event);
+      expect(event.preventDefault).not.toHaveBeenCalled();
+      expect(mockFileBrowserState.goUp).not.toHaveBeenCalled();
+    });
+
+    it('should not goUp while a modal/dialog is open', async () => {
+      const { component, mockFileBrowserState } = makeComponent();
+      component.systemId = 'sys-1';
+      component.showCreateDirDialog.set(true);
+      await component.onAltArrowUp(makeEvent());
+      expect(mockFileBrowserState.goUp).not.toHaveBeenCalled();
+
+      component.showCreateDirDialog.set(false);
+      component.renameEntry.set(makeFileEntry());
+      await component.onAltArrowUp(makeEvent());
+      expect(mockFileBrowserState.goUp).not.toHaveBeenCalled();
+
+      component.renameEntry.set(null);
+      component.confirmDeleteEntry.set(makeFileEntry());
+      await component.onAltArrowUp(makeEvent());
+      expect(mockFileBrowserState.goUp).not.toHaveBeenCalled();
     });
   });
 
