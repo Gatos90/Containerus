@@ -2,24 +2,23 @@
 //! deny/allow precedence tests.
 //!
 //! Requires a real Postgres reachable via `TEST_DATABASE_URL`. When the env
-//! var is unset each test logs a skip message and returns Ok — this keeps
-//! `cargo test -p containerus-server` green on dev machines that haven't
-//! booted the `docker-compose db` service, while CI runs the matrix against
-//! a real database (see `crates/containerus-server/README.md` for setup).
+//! var is unset each test skips — unless `REQUIRE_DB=1`, which flips the
+//! skip into a panic so a broken Postgres service in CI can't ship as
+//! "green with zero assertions".
 //!
-//! The matrix covers four representative RBAC-gated endpoints across the
-//! two permission-scoping extractors (`ProjectScoped`, `SystemScoped`) plus
-//! a separate precedence suite that exercises the `resource_acls`-aware
-//! middleware methods directly:
+//! Matrix coverage is intentionally **representative**, not exhaustive:
+//! one permission per category (`projects`, `audit`, `systems`, `containers`,
+//! `images`, `files`) plus targeted rows that distinguish every built-in
+//! role from every other — operator vs developer (`files.write`) and
+//! developer vs viewer (`containers.start`, `images.pull`). Exhaustive
+//! per-endpoint migration of the remaining ~25 `.require()` call sites is
+//! tracked separately (CON-73 for handler migration, CON-8x for the full
+//! per-endpoint matrix once those migrations land).
 //!
-//! - `ProjectScoped::require_for_resource` — exercised via
-//!   `resolver::resolve` semantics, both flag-on and flag-off.
-//! - `SystemScoped::require_for_system`   — same.
-//!
-//! This is intentionally a middleware-level assertion for CON-72: no
-//! handlers have been migrated off the coarse `.require()` path yet. That
-//! migration is tracked as CON-73 and, once it lands, the matrix will be
-//! re-run with handler-driven ACL cases.
+//! Precedence suite: `ProjectScoped::require_for_resource` and
+//! `SystemScoped::require_for_system` directly, in both flag-on and flag-off
+//! states, plus handler-driven assertions (`handler_acl_deny_*`, CON-77)
+//! proving the full HTTP path honors ACL rows.
 
 mod common;
 
@@ -34,58 +33,91 @@ struct Endpoint {
     /// Formatter producing the concrete URI given `(project_id, system_id)`.
     uri: fn(uuid::Uuid, uuid::Uuid) -> String,
     label: &'static str,
+    /// The permission key the gate checks. Used to derive expected allow/deny
+    /// per role from the built-in seed — no hand-maintained parallel table.
+    permission: &'static str,
+    /// Optional JSON body for POST/PUT rows. None for GET/DELETE.
+    body: Option<fn() -> serde_json::Value>,
 }
 
 fn endpoints() -> Vec<Endpoint> {
     vec![
+        // projects category — ProjectScoped
         Endpoint {
             method: Method::GET,
             uri: |p, _| format!("/api/projects/{p}"),
-            label: "GET /projects/{id} (projects.view)",
+            label: "GET /projects/{id}",
+            permission: "projects.view",
+            body: None,
         },
         Endpoint {
             method: Method::GET,
             uri: |p, _| format!("/api/projects/{p}/members"),
-            label: "GET /projects/{id}/members (projects.members.view)",
+            label: "GET /projects/{id}/members",
+            permission: "projects.members.view",
+            body: None,
         },
         Endpoint {
             method: Method::GET,
             uri: |p, _| format!("/api/projects/{p}/audit"),
-            label: "GET /projects/{id}/audit (audit.view)",
+            label: "GET /projects/{id}/audit",
+            permission: "audit.view",
+            body: None,
         },
         Endpoint {
             method: Method::DELETE,
             uri: |p, _| format!("/api/projects/{p}"),
-            label: "DELETE /projects/{id} (projects.edit)",
+            label: "DELETE /projects/{id}",
+            permission: "projects.edit",
+            body: None,
         },
+        // systems category — SystemScoped
         Endpoint {
             method: Method::GET,
             uri: |_, s| format!("/api/systems/{s}"),
-            label: "GET /systems/{id} (systems.view)",
+            label: "GET /systems/{id}",
+            permission: "systems.view",
+            body: None,
         },
         Endpoint {
             method: Method::DELETE,
             uri: |_, s| format!("/api/systems/{s}"),
-            label: "DELETE /systems/{id} (systems.delete)",
+            label: "DELETE /systems/{id}",
+            permission: "systems.delete",
+            body: None,
+        },
+        // containers category — developer allow, viewer deny (test-sensitivity row)
+        Endpoint {
+            method: Method::POST,
+            uri: |_, s| format!("/api/systems/{s}/containers/dummy/action"),
+            label: "POST /systems/{id}/containers/{ctr}/action",
+            permission: "containers.start",
+            body: Some(|| serde_json::json!({"action": "start", "runtime": "docker"})),
+        },
+        // images category — developer allow, viewer deny
+        Endpoint {
+            method: Method::POST,
+            uri: |_, s| format!("/api/systems/{s}/images/pull"),
+            label: "POST /systems/{id}/images/pull",
+            permission: "images.pull",
+            body: Some(|| serde_json::json!({"image": "alpine:latest", "runtime": "docker"})),
+        },
+        // files category — operator allow, developer+viewer deny (operator vs developer row)
+        Endpoint {
+            method: Method::POST,
+            uri: |_, s| format!("/api/systems/{s}/files/write"),
+            label: "POST /systems/{id}/files/write",
+            permission: "files.write",
+            body: Some(|| serde_json::json!({"path": "/tmp/matrix-test", "content": "x"})),
         },
     ]
 }
 
-/// Matrix expectations keyed by (role, endpoint index).
-/// Derived from the built-in role seed in migration 0001.
-fn expected(role: uuid::Uuid, endpoint_idx: usize) -> Expect {
-    // Columns: projects.view, members.view, audit.view, projects.edit,
-    // systems.view, systems.delete
-    let perms: [&str; 6] = [
-        "projects.view",
-        "projects.members.view",
-        "audit.view",
-        "projects.edit",
-        "systems.view",
-        "systems.delete",
-    ];
-    let role_perms: &[&str] = if role == ROLE_PROJECT_ADMIN {
-        // all except company.admin
+/// Built-in role → permission set, derived from migration 0001. Kept short:
+/// we only list the permissions the matrix probes so the expectations table
+/// stays inspectable.
+fn role_perms(role: uuid::Uuid) -> &'static [&'static str] {
+    if role == ROLE_PROJECT_ADMIN {
         &[
             "projects.view",
             "projects.members.view",
@@ -93,6 +125,9 @@ fn expected(role: uuid::Uuid, endpoint_idx: usize) -> Expect {
             "projects.edit",
             "systems.view",
             "systems.delete",
+            "containers.start",
+            "images.pull",
+            "files.write",
         ]
     } else if role == ROLE_OPERATOR {
         &[
@@ -101,6 +136,9 @@ fn expected(role: uuid::Uuid, endpoint_idx: usize) -> Expect {
             "audit.view",
             "systems.view",
             "systems.delete",
+            "containers.start",
+            "images.pull",
+            "files.write",
         ]
     } else if role == ROLE_DEVELOPER {
         &[
@@ -108,6 +146,8 @@ fn expected(role: uuid::Uuid, endpoint_idx: usize) -> Expect {
             "projects.members.view",
             "audit.view",
             "systems.view",
+            "containers.start",
+            "images.pull",
         ]
     } else if role == ROLE_VIEWER {
         &[
@@ -118,9 +158,11 @@ fn expected(role: uuid::Uuid, endpoint_idx: usize) -> Expect {
         ]
     } else {
         &[]
-    };
+    }
+}
 
-    if role_perms.contains(&perms[endpoint_idx]) {
+fn expected(role: uuid::Uuid, ep: &Endpoint) -> Expect {
+    if role_perms(role).contains(&ep.permission) {
         Expect::Allow
     } else {
         Expect::Deny
@@ -189,18 +231,20 @@ async fn run_matrix(h: &TestHarness) {
     for (role_name, role_id, user_id) in &users {
         let token = h.token_for(*user_id, vec![(project_id, *role_id)], false);
         let system_id = h.create_system(environment_id, *user_id).await;
-        for (idx, ep) in endpoints.iter().enumerate() {
+        for ep in endpoints.iter() {
             let uri = (ep.uri)(project_id, system_id);
-            let (status, body) =
-                call(&h.router, ep.method.clone(), &uri, Some(&token), None).await;
-            let want = expected(*role_id, idx);
+            let body = ep.body.map(|f| f());
+            let (status, resp_body) =
+                call(&h.router, ep.method.clone(), &uri, Some(&token), body).await;
+            let want = expected(*role_id, ep);
             if !want.matches(status) {
                 failures.push(format!(
-                    "role={role_name} endpoint={} expected={:?} got={} body={}",
+                    "role={role_name} endpoint={} perm={} expected={:?} got={} body={}",
                     ep.label,
+                    ep.permission,
                     want,
                     status,
-                    String::from_utf8_lossy(&body)
+                    String::from_utf8_lossy(&resp_body)
                 ));
             }
         }
@@ -217,12 +261,13 @@ async fn run_matrix(h: &TestHarness) {
     let outsider_token = h.token_for(outsider, vec![], false);
     for ep in &endpoints {
         let uri = (ep.uri)(project_id, scratch_system_id);
+        let body = ep.body.map(|f| f());
         let (status, _) = call(
             &h.router,
             ep.method.clone(),
             &uri,
             Some(&outsider_token),
-            None,
+            body,
         )
         .await;
         if status != StatusCode::FORBIDDEN && status != StatusCode::NOT_FOUND {
@@ -239,12 +284,13 @@ async fn run_matrix(h: &TestHarness) {
     for ep in &endpoints {
         let ep_system = h.create_system(environment_id, company_admin).await;
         let uri = (ep.uri)(project_id, ep_system);
-        let (status, body) = call(
+        let body = ep.body.map(|f| f());
+        let (status, resp_body) = call(
             &h.router,
             ep.method.clone(),
             &uri,
             Some(&admin_token),
-            None,
+            body,
         )
         .await;
         if !Expect::Allow.matches(status) {
@@ -252,7 +298,7 @@ async fn run_matrix(h: &TestHarness) {
                 "company-admin endpoint={} expected Allow got={} body={}",
                 ep.label,
                 status,
-                String::from_utf8_lossy(&body)
+                String::from_utf8_lossy(&resp_body)
             ));
         }
     }
@@ -260,7 +306,8 @@ async fn run_matrix(h: &TestHarness) {
     // Unauthenticated requests: every endpoint must 401.
     for ep in &endpoints {
         let uri = (ep.uri)(project_id, scratch_system_id);
-        let (status, _) = call(&h.router, ep.method.clone(), &uri, None, None).await;
+        let body = ep.body.map(|f| f());
+        let (status, _) = call(&h.router, ep.method.clone(), &uri, None, body).await;
         if status != StatusCode::UNAUTHORIZED {
             failures.push(format!(
                 "no-token endpoint={} expected 401 got={}",
@@ -305,7 +352,7 @@ async fn acl_deny_is_ignored_when_flag_off() {
 
 async fn run_deny_precedence(h: &TestHarness, flag_on: bool) {
     use containerus_server::auth::middleware::ProjectScoped;
-    use containerus_server::auth::jwt::{decode_access_token, ProjectMembership};
+    use containerus_server::auth::jwt::decode_access_token;
     use containerus_server::db::models::EffectivePermissions;
 
     let project_id = h.create_project("deny-precedence").await;
@@ -357,10 +404,6 @@ async fn run_deny_precedence(h: &TestHarness, flag_on: bool) {
         edit_result.is_err(),
         "viewer lacks projects.edit regardless of flag state",
     );
-    let _ = ProjectMembership {
-        project_id,
-        role_id: ROLE_VIEWER,
-    };
 }
 
 /// Allow-from-ACL: a viewer doesn't have `systems.delete`, but an ACL

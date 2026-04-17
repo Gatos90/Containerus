@@ -9,7 +9,9 @@
 //! Tests require `TEST_DATABASE_URL` to point at a Postgres instance. When
 //! unset, [`TestHarness::try_new`] returns `None` and tests short-circuit
 //! so local developers without a DB can still run `cargo check`/`cargo test`
-//! for the rest of the crate.
+//! for the rest of the crate. CI sets `REQUIRE_DB=1` to convert the skip
+//! into a panic — otherwise a misconfigured Postgres service would ship as
+//! "green with zero assertions".
 
 #![allow(dead_code)]
 
@@ -358,10 +360,20 @@ pub async fn call(
     (status, body_bytes)
 }
 
-/// Emit a structured skip message when `TEST_DATABASE_URL` isn't configured.
-/// Using `eprintln!` plus an `Ok(())` return keeps `cargo test` green on
-/// machines without Postgres so the crate still type-checks in those shells.
+/// Emit a structured skip message when `TEST_DATABASE_URL` isn't configured,
+/// or panic if `REQUIRE_DB=1` is set.
+///
+/// Local dev ergonomics: missing DB → skip so `cargo test` still passes.
+/// CI ergonomics: `REQUIRE_DB=1` flips the skip into a hard fail so a broken
+/// Postgres service (misconfigured image, port clash, healthcheck failure)
+/// can't ship as "green CI with zero assertions run".
 pub fn skip_without_db(test_name: &str) {
+    if std::env::var("REQUIRE_DB").map(|v| v == "1").unwrap_or(false) {
+        panic!(
+            "[{test_name}] REQUIRE_DB=1 is set but TEST_DATABASE_URL is empty or missing — \
+             refusing to skip. Fix the CI Postgres service or unset REQUIRE_DB."
+        );
+    }
     eprintln!(
         "[{test_name}] skipping: TEST_DATABASE_URL is not set. \
          Point it at a local Postgres (e.g. the docker-compose db service) to run the RBAC matrix."
