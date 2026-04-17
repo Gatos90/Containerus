@@ -4,6 +4,10 @@ version = "0.1.0"
 edition = "2021"
 description = "Self-hosted backend server for Containerus"
 
+[lib]
+name = "containerus_server"
+path = "src/lib.rs"
+
 [[bin]]
 name = "containerus-server"
 path = "src/main.rs"

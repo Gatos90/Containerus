@@ -1,0 +1,492 @@
+//! CON-72: Built-in-role × endpoint 200/403 matrix + resource_acls
+//! deny/allow precedence tests.
+//!
+//! Requires a real Postgres reachable via `TEST_DATABASE_URL`. When the env
+//! var is unset each test logs a skip message and returns Ok — this keeps
+//! `cargo test -p containerus-server` green on dev machines that haven't
+//! booted the `docker-compose db` service, while CI runs the matrix against
+//! a real database (see `crates/containerus-server/README.md` for setup).
+//!
+//! The matrix covers four representative RBAC-gated endpoints across the
+//! two permission-scoping extractors (`ProjectScoped`, `SystemScoped`) plus
+//! a separate precedence suite that exercises the `resource_acls`-aware
+//! middleware methods directly:
+//!
+//! - `ProjectScoped::require_for_resource` — exercised via
+//!   `resolver::resolve` semantics, both flag-on and flag-off.
+//! - `SystemScoped::require_for_system`   — same.
+//!
+//! This is intentionally a middleware-level assertion for CON-72: no
+//! handlers have been migrated off the coarse `.require()` path yet. That
+//! migration is tracked as CON-73 and, once it lands, the matrix will be
+//! re-run with handler-driven ACL cases.
+
+mod common;
+
+use axum::http::{Method, StatusCode};
+use common::{
+    call, Expect, TestHarness, ROLE_DEVELOPER, ROLE_OPERATOR, ROLE_PROJECT_ADMIN, ROLE_VIEWER,
+};
+
+/// An endpoint cell in the matrix.
+struct Endpoint {
+    method: Method,
+    /// Formatter producing the concrete URI given `(project_id, system_id)`.
+    uri: fn(uuid::Uuid, uuid::Uuid) -> String,
+    label: &'static str,
+}
+
+fn endpoints() -> Vec<Endpoint> {
+    vec![
+        Endpoint {
+            method: Method::GET,
+            uri: |p, _| format!("/api/projects/{p}"),
+            label: "GET /projects/{id} (projects.view)",
+        },
+        Endpoint {
+            method: Method::GET,
+            uri: |p, _| format!("/api/projects/{p}/members"),
+            label: "GET /projects/{id}/members (projects.members.view)",
+        },
+        Endpoint {
+            method: Method::GET,
+            uri: |p, _| format!("/api/projects/{p}/audit"),
+            label: "GET /projects/{id}/audit (audit.view)",
+        },
+        Endpoint {
+            method: Method::DELETE,
+            uri: |p, _| format!("/api/projects/{p}"),
+            label: "DELETE /projects/{id} (projects.edit)",
+        },
+        Endpoint {
+            method: Method::GET,
+            uri: |_, s| format!("/api/systems/{s}"),
+            label: "GET /systems/{id} (systems.view)",
+        },
+        Endpoint {
+            method: Method::DELETE,
+            uri: |_, s| format!("/api/systems/{s}"),
+            label: "DELETE /systems/{id} (systems.delete)",
+        },
+    ]
+}
+
+/// Matrix expectations keyed by (role, endpoint index).
+/// Derived from the built-in role seed in migration 0001.
+fn expected(role: uuid::Uuid, endpoint_idx: usize) -> Expect {
+    // Columns: projects.view, members.view, audit.view, projects.edit,
+    // systems.view, systems.delete
+    let perms: [&str; 6] = [
+        "projects.view",
+        "projects.members.view",
+        "audit.view",
+        "projects.edit",
+        "systems.view",
+        "systems.delete",
+    ];
+    let role_perms: &[&str] = if role == ROLE_PROJECT_ADMIN {
+        // all except company.admin
+        &[
+            "projects.view",
+            "projects.members.view",
+            "audit.view",
+            "projects.edit",
+            "systems.view",
+            "systems.delete",
+        ]
+    } else if role == ROLE_OPERATOR {
+        &[
+            "projects.view",
+            "projects.members.view",
+            "audit.view",
+            "systems.view",
+            "systems.delete",
+        ]
+    } else if role == ROLE_DEVELOPER {
+        &[
+            "projects.view",
+            "projects.members.view",
+            "audit.view",
+            "systems.view",
+        ]
+    } else if role == ROLE_VIEWER {
+        &[
+            "projects.view",
+            "projects.members.view",
+            "audit.view",
+            "systems.view",
+        ]
+    } else {
+        &[]
+    };
+
+    if role_perms.contains(&perms[endpoint_idx]) {
+        Expect::Allow
+    } else {
+        Expect::Deny
+    }
+}
+
+#[tokio::test]
+async fn role_endpoint_matrix_enforce_off() {
+    let Some(h) = TestHarness::try_new(false).await else {
+        common::skip_without_db("role_endpoint_matrix_enforce_off");
+        return;
+    };
+
+    run_matrix(&h).await;
+    h.cleanup().await;
+}
+
+#[tokio::test]
+async fn role_endpoint_matrix_enforce_on() {
+    // The matrix uses plain `.require()` in every handler today (CON-73
+    // migrates them to the ACL-aware methods). Running the same matrix with
+    // the flag on proves the flag itself does not alter legacy handler
+    // semantics — i.e. flipping the flag is non-breaking before the
+    // handler-level migration happens.
+    let Some(h) = TestHarness::try_new(true).await else {
+        common::skip_without_db("role_endpoint_matrix_enforce_on");
+        return;
+    };
+
+    run_matrix(&h).await;
+    h.cleanup().await;
+}
+
+async fn run_matrix(h: &TestHarness) {
+    let project_id = h.create_project("matrix").await;
+    let environment_id = h.create_environment(project_id).await;
+
+    // Roles under test.
+    let roles = [
+        ("project-admin", ROLE_PROJECT_ADMIN),
+        ("operator", ROLE_OPERATOR),
+        ("developer", ROLE_DEVELOPER),
+        ("viewer", ROLE_VIEWER),
+    ];
+
+    // Seed one user per role with the matching membership.
+    let mut users = Vec::with_capacity(roles.len());
+    for (name, role_id) in &roles {
+        let user = h.create_user(name).await;
+        h.add_member(project_id, user, *role_id).await;
+        users.push((*name, *role_id, user));
+    }
+
+    // A non-member and a company admin for the edge rows.
+    let outsider = h.create_user("outsider").await;
+    let company_admin = h.create_user("companyadmin").await;
+    h.grant_company_admin(company_admin).await;
+
+    let endpoints = endpoints();
+    let mut failures: Vec<String> = Vec::new();
+
+    // DELETE /projects and DELETE /systems actually mutate state when the
+    // permission gate passes. Give every role its own fresh system so each
+    // (role, endpoint) cell is independent — the matrix is about the gate,
+    // not about sequencing side effects.
+    for (role_name, role_id, user_id) in &users {
+        let token = h.token_for(*user_id, vec![(project_id, *role_id)], false);
+        let system_id = h.create_system(environment_id, *user_id).await;
+        for (idx, ep) in endpoints.iter().enumerate() {
+            let uri = (ep.uri)(project_id, system_id);
+            let (status, body) =
+                call(&h.router, ep.method.clone(), &uri, Some(&token), None).await;
+            let want = expected(*role_id, idx);
+            if !want.matches(status) {
+                failures.push(format!(
+                    "role={role_name} endpoint={} expected={:?} got={} body={}",
+                    ep.label,
+                    want,
+                    status,
+                    String::from_utf8_lossy(&body)
+                ));
+            }
+        }
+    }
+
+    // Extra rows below (outsider / company-admin / no-token) use a shared
+    // scratch system — they never expect Allow on DELETE /projects, so the
+    // project itself survives the matrix.
+    let scratch_system_id = h.create_system(environment_id, users[0].2).await;
+
+    // Non-member: every project/system-scoped endpoint must 403 (or 404 for
+    // project-scoped paths that can't be resolved). Our matrix uses an
+    // existing project id so it's always 403 from NotProjectMember.
+    let outsider_token = h.token_for(outsider, vec![], false);
+    for ep in &endpoints {
+        let uri = (ep.uri)(project_id, scratch_system_id);
+        let (status, _) = call(
+            &h.router,
+            ep.method.clone(),
+            &uri,
+            Some(&outsider_token),
+            None,
+        )
+        .await;
+        if status != StatusCode::FORBIDDEN && status != StatusCode::NOT_FOUND {
+            failures.push(format!(
+                "outsider endpoint={} expected 403/404 got={}",
+                ep.label, status
+            ));
+        }
+    }
+
+    // Company admin: every endpoint must clear the permission gate. A
+    // fresh system per iteration keeps DELETE idempotent.
+    let admin_token = h.token_for(company_admin, vec![], true);
+    for ep in &endpoints {
+        let ep_system = h.create_system(environment_id, company_admin).await;
+        let uri = (ep.uri)(project_id, ep_system);
+        let (status, body) = call(
+            &h.router,
+            ep.method.clone(),
+            &uri,
+            Some(&admin_token),
+            None,
+        )
+        .await;
+        if !Expect::Allow.matches(status) {
+            failures.push(format!(
+                "company-admin endpoint={} expected Allow got={} body={}",
+                ep.label,
+                status,
+                String::from_utf8_lossy(&body)
+            ));
+        }
+    }
+
+    // Unauthenticated requests: every endpoint must 401.
+    for ep in &endpoints {
+        let uri = (ep.uri)(project_id, scratch_system_id);
+        let (status, _) = call(&h.router, ep.method.clone(), &uri, None, None).await;
+        if status != StatusCode::UNAUTHORIZED {
+            failures.push(format!(
+                "no-token endpoint={} expected 401 got={}",
+                ep.label, status
+            ));
+        }
+    }
+
+    assert!(
+        failures.is_empty(),
+        "role/endpoint matrix failures ({} total):\n  - {}",
+        failures.len(),
+        failures.join("\n  - ")
+    );
+}
+
+/// Deny-beats-allow: a viewer has `projects.view`, but a resource-level
+/// deny on the same project must strip that permission when enforcement is
+/// on. Exercised via `ProjectScoped::require_for_resource` directly because
+/// no handler has been migrated to that method yet (tracked: CON-73).
+#[tokio::test]
+async fn acl_deny_overrides_role_allow_flag_on() {
+    let Some(h) = TestHarness::try_new(true).await else {
+        common::skip_without_db("acl_deny_overrides_role_allow_flag_on");
+        return;
+    };
+    run_deny_precedence(&h, true).await;
+    h.cleanup().await;
+}
+
+/// Same setup, but with enforcement off — the ACL row must be ignored so
+/// the viewer still sees `projects.view` pass.
+#[tokio::test]
+async fn acl_deny_is_ignored_when_flag_off() {
+    let Some(h) = TestHarness::try_new(false).await else {
+        common::skip_without_db("acl_deny_is_ignored_when_flag_off");
+        return;
+    };
+    run_deny_precedence(&h, false).await;
+    h.cleanup().await;
+}
+
+async fn run_deny_precedence(h: &TestHarness, flag_on: bool) {
+    use containerus_server::auth::middleware::ProjectScoped;
+    use containerus_server::auth::jwt::{decode_access_token, ProjectMembership};
+    use containerus_server::db::models::EffectivePermissions;
+
+    let project_id = h.create_project("deny-precedence").await;
+    let viewer = h.create_user("viewer-deny").await;
+    h.add_member(project_id, viewer, ROLE_VIEWER).await;
+
+    // ACL: deny projects.view for the viewer on this project (resource_type
+    // = "system" is used as the scoping vehicle — the resolver is keyed on
+    // (user, project, resource_type, resource_id)).
+    let environment_id = h.create_environment(project_id).await;
+    let system_id = h.create_system(environment_id, viewer).await;
+    h.set_resource_acl(viewer, project_id, "system", system_id, &[], &["projects.view"])
+        .await;
+
+    let token = h.token_for(viewer, vec![(project_id, ROLE_VIEWER)], false);
+    let claims = decode_access_token(&token, common::JWT_SECRET).expect("decode");
+
+    let scoped = ProjectScoped {
+        claims: claims.clone(),
+        project_id,
+        permissions: EffectivePermissions {
+            permissions: h.state.permission_cache.get_permissions(&ROLE_VIEWER),
+            is_company_admin: false,
+        },
+        client_ip: None,
+    };
+
+    let result = scoped
+        .require_for_resource("projects.view", "system", system_id, &h.state)
+        .await;
+
+    if flag_on {
+        assert!(
+            result.is_err(),
+            "with flag on, resource-level deny must override role allow for projects.view",
+        );
+    } else {
+        assert!(
+            result.is_ok(),
+            "with flag off, the ACL deny row must be ignored and role grants apply",
+        );
+    }
+
+    // Sanity: the viewer still doesn't have projects.edit — no ACL row here.
+    let edit_result = scoped
+        .require_for_resource("projects.edit", "system", system_id, &h.state)
+        .await;
+    assert!(
+        edit_result.is_err(),
+        "viewer lacks projects.edit regardless of flag state",
+    );
+    let _ = ProjectMembership {
+        project_id,
+        role_id: ROLE_VIEWER,
+    };
+}
+
+/// Allow-from-ACL: a viewer doesn't have `systems.delete`, but an ACL
+/// `extra_permissions` row on the target system must grant it when the
+/// flag is on. The same row must be ignored when the flag is off.
+#[tokio::test]
+async fn acl_extra_grants_missing_perm_flag_on() {
+    let Some(h) = TestHarness::try_new(true).await else {
+        common::skip_without_db("acl_extra_grants_missing_perm_flag_on");
+        return;
+    };
+    run_allow_precedence(&h, true).await;
+    h.cleanup().await;
+}
+
+#[tokio::test]
+async fn acl_extra_is_ignored_when_flag_off() {
+    let Some(h) = TestHarness::try_new(false).await else {
+        common::skip_without_db("acl_extra_is_ignored_when_flag_off");
+        return;
+    };
+    run_allow_precedence(&h, false).await;
+    h.cleanup().await;
+}
+
+async fn run_allow_precedence(h: &TestHarness, flag_on: bool) {
+    use containerus_server::auth::jwt::decode_access_token;
+    use containerus_server::auth::middleware::SystemScoped;
+    use containerus_server::db::models::{EffectivePermissions, SystemRow};
+
+    let project_id = h.create_project("allow-precedence").await;
+    let viewer = h.create_user("viewer-allow").await;
+    h.add_member(project_id, viewer, ROLE_VIEWER).await;
+
+    let environment_id = h.create_environment(project_id).await;
+    let system_id = h.create_system(environment_id, viewer).await;
+
+    // Grant systems.delete via ACL extra_permissions only.
+    h.set_resource_acl(viewer, project_id, "system", system_id, &["systems.delete"], &[])
+        .await;
+
+    let token = h.token_for(viewer, vec![(project_id, ROLE_VIEWER)], false);
+    let claims = decode_access_token(&token, common::JWT_SECRET).expect("decode");
+
+    // Load the SystemRow the extractor would fetch.
+    let system: SystemRow = sqlx::query_as("SELECT * FROM systems WHERE id = $1")
+        .bind(system_id)
+        .fetch_one(&h.db)
+        .await
+        .expect("load system");
+
+    let scoped = SystemScoped {
+        claims,
+        system,
+        project_id,
+        environment_id,
+        permissions: EffectivePermissions {
+            permissions: h.state.permission_cache.get_permissions(&ROLE_VIEWER),
+            is_company_admin: false,
+        },
+        client_ip: None,
+    };
+
+    let result = scoped.require_for_system("systems.delete", &h.state).await;
+
+    if flag_on {
+        assert!(
+            result.is_ok(),
+            "with flag on, resource-level extra_permissions must grant systems.delete to viewer",
+        );
+    } else {
+        assert!(
+            result.is_err(),
+            "with flag off, extra_permissions rows must be ignored",
+        );
+    }
+
+    // Sanity: a perm that isn't in the role or the ACL is still denied.
+    let nope = scoped
+        .require_for_system("networks.delete", &h.state)
+        .await;
+    assert!(nope.is_err(), "networks.delete must remain denied for viewer");
+}
+
+/// Company admins short-circuit the resolver — even when both the ACL says
+/// deny AND the flag is on, the caller still passes. This is the "impossible
+/// to lock yourself out" invariant and it applies across both scopes.
+#[tokio::test]
+async fn company_admin_short_circuits_acl_deny() {
+    let Some(h) = TestHarness::try_new(true).await else {
+        common::skip_without_db("company_admin_short_circuits_acl_deny");
+        return;
+    };
+
+    use containerus_server::auth::jwt::decode_access_token;
+    use containerus_server::auth::middleware::ProjectScoped;
+    use containerus_server::db::models::EffectivePermissions;
+
+    let project_id = h.create_project("super-admin").await;
+    let admin = h.create_user("super-admin").await;
+    h.grant_company_admin(admin).await;
+
+    let environment_id = h.create_environment(project_id).await;
+    let system_id = h.create_system(environment_id, admin).await;
+
+    // Even with a hard deny row in place, the admin must still be allowed.
+    h.set_resource_acl(admin, project_id, "system", system_id, &[], &["projects.view"])
+        .await;
+
+    let token = h.token_for(admin, vec![], true);
+    let claims = decode_access_token(&token, common::JWT_SECRET).expect("decode");
+
+    let scoped = ProjectScoped {
+        claims,
+        project_id,
+        permissions: EffectivePermissions {
+            permissions: Default::default(),
+            is_company_admin: true,
+        },
+        client_ip: None,
+    };
+
+    let r = scoped
+        .require_for_resource("projects.view", "system", system_id, &h.state)
+        .await;
+    assert!(r.is_ok(), "company admin must bypass ACL deny");
+
+    h.cleanup().await;
+}
