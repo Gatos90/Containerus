@@ -1,4 +1,11 @@
-use axum::{extract::State, http::StatusCode, routing::post, Json, Router};
+use std::net::SocketAddr;
+
+use axum::{
+    extract::{ConnectInfo, State},
+    http::{HeaderMap, StatusCode},
+    routing::post,
+    Json, Router,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use uuid::Uuid;
@@ -11,6 +18,8 @@ use crate::auth::middleware::AuthUser;
 use crate::db::models::UserResponse;
 use crate::AppState;
 
+use super::mfa;
+
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/register", post(register))
@@ -18,6 +27,7 @@ pub fn router() -> Router<AppState> {
         .route("/logout", post(logout))
         .route("/refresh", post(refresh))
         .route("/me", axum::routing::get(me))
+        .nest("/mfa", mfa::router())
 }
 
 // ============================================================================
@@ -53,6 +63,27 @@ pub struct AuthResponse {
     pub user: UserResponse,
 }
 
+/// Returned from `/auth/login` when the user has MFA enabled (or the
+/// company mandates MFA). The client completes the flow by calling
+/// `/auth/mfa/verify-login` with the challenge token and a TOTP / backup
+/// code.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MfaChallengeResponse {
+    pub mfa_required: bool,
+    pub challenge_token: String,
+}
+
+/// Untagged so the serialized payload is either a full `AuthResponse` or
+/// just `{mfaRequired, challengeToken}` — the frontend discriminates on
+/// the presence of `mfaRequired`.
+#[derive(Debug, Serialize)]
+#[serde(untagged)]
+pub enum LoginResponse {
+    Authenticated(AuthResponse),
+    MfaRequired(MfaChallengeResponse),
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MeResponse {
@@ -70,6 +101,8 @@ pub struct MeResponse {
 /// If this is the first user, creates the company row and makes them company admin.
 async fn register(
     State(state): State<AppState>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
     Json(req): Json<RegisterRequest>,
 ) -> Result<(StatusCode, Json<AuthResponse>), (StatusCode, Json<Value>)> {
     // Validate input
@@ -187,10 +220,15 @@ async fn register(
     let token_hash = hash_token_jti(refresh_jti);
     let expires_at = chrono::Utc::now()
         + chrono::Duration::seconds(state.config.jwt_refresh_expiry_secs);
-    sqlx::query("INSERT INTO refresh_tokens (user_id, token_hash, expires_at) VALUES ($1, $2, $3)")
+    let user_agent = request_user_agent(&headers);
+    sqlx::query(
+        "INSERT INTO refresh_tokens (user_id, token_hash, expires_at, user_agent, ip_address) VALUES ($1, $2, $3, $4, $5)",
+    )
         .bind(user_id)
         .bind(&token_hash)
         .bind(expires_at)
+        .bind(user_agent.as_deref())
+        .bind(addr.ip().to_string())
         .execute(&mut *tx)
         .await
         .map_err(|e| {
@@ -227,8 +265,10 @@ async fn register(
 /// Login with email + password.
 async fn login(
     State(state): State<AppState>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
     Json(req): Json<LoginRequest>,
-) -> Result<Json<AuthResponse>, (StatusCode, Json<Value>)> {
+) -> Result<Json<LoginResponse>, (StatusCode, Json<Value>)> {
     // Dummy hash for constant-time response when user is not found (prevents timing-based enumeration)
     const DUMMY_HASH: &str = "$argon2id$v=19$m=19456,t=2,p=1$dW5rbm93bnNhbHQ$dW5rbm93bmhhc2g";
 
@@ -286,6 +326,37 @@ async fn login(
             (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": "Internal server error" })))
         })?;
 
+    // MFA gate — if the user has MFA enabled OR the company mandates it,
+    // stop here and hand back a short-lived challenge token. The client
+    // redeems the challenge via /auth/mfa/verify-login.
+    let user_has_mfa = mfa::is_mfa_enabled(&state.db, row.id).await?;
+    let company_requires_mfa = mfa::company_mfa_required(&state.db).await?;
+    if user_has_mfa || company_requires_mfa {
+        if !user_has_mfa {
+            // Company mandate is on but this user hasn't enrolled yet —
+            // refuse the login so they can't bypass the requirement. The
+            // error surface is deliberately actionable; operators flipping
+            // the toggle are expected to communicate the enrollment flow
+            // out of band.
+            return Err((
+                StatusCode::FORBIDDEN,
+                Json(json!({
+                    "error": "MFA is required for this account but is not yet enrolled",
+                    "code": "mfa_enrollment_required",
+                })),
+            ));
+        }
+        let challenge_token = jwt::create_mfa_challenge_token(row.id, &state.config.jwt_secret)
+            .map_err(|e| {
+                tracing::error!("MFA challenge creation failed: {e}");
+                (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": "Internal server error" })))
+            })?;
+        return Ok(Json(LoginResponse::MfaRequired(MfaChallengeResponse {
+            mfa_required: true,
+            challenge_token,
+        })));
+    }
+
     // Get ALL user's project memberships
     let memberships: Vec<ProjectMembership> = sqlx::query_as::<_, crate::db::models::ProjectMemberRow>(
         "SELECT * FROM project_members WHERE user_id = $1"
@@ -335,10 +406,15 @@ async fn login(
     let token_hash = hash_token_jti(refresh_jti);
     let expires_at = chrono::Utc::now()
         + chrono::Duration::seconds(state.config.jwt_refresh_expiry_secs);
-    sqlx::query("INSERT INTO refresh_tokens (user_id, token_hash, expires_at) VALUES ($1, $2, $3)")
+    let user_agent = request_user_agent(&headers);
+    sqlx::query(
+        "INSERT INTO refresh_tokens (user_id, token_hash, expires_at, user_agent, ip_address) VALUES ($1, $2, $3, $4, $5)",
+    )
         .bind(row.id)
         .bind(&token_hash)
         .bind(expires_at)
+        .bind(user_agent.as_deref())
+        .bind(addr.ip().to_string())
         .execute(&mut *tx)
         .await
         .map_err(|e| {
@@ -352,16 +428,18 @@ async fn login(
             (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": "Internal server error" })))
         })?;
 
-    Ok(Json(AuthResponse {
+    Ok(Json(LoginResponse::Authenticated(AuthResponse {
         access_token,
         refresh_token,
         user: UserResponse::from(row),
-    }))
+    })))
 }
 
 /// Refresh an access token using a refresh token.
 async fn refresh(
     State(state): State<AppState>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
     Json(req): Json<RefreshRequest>,
 ) -> Result<Json<AuthResponse>, (StatusCode, Json<Value>)> {
     // Decode refresh token
@@ -377,21 +455,30 @@ async fn refresh(
             (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": "Internal server error" })))
         })?;
 
-    let result = sqlx::query(
-        "DELETE FROM refresh_tokens WHERE user_id = $1 AND token_hash = $2 AND expires_at > now()"
+    // Atomically delete the old row and capture its session metadata so the
+    // rotated token keeps the same user-agent/IP and creation timestamp —
+    // otherwise the session list would "refresh" every 15 minutes.
+    let prior: Option<(Option<String>, Option<String>)> = sqlx::query_as(
+        r#"
+        DELETE FROM refresh_tokens
+         WHERE user_id = $1
+           AND token_hash = $2
+           AND expires_at > now()
+        RETURNING user_agent, ip_address
+        "#,
     )
         .bind(claims.sub)
         .bind(&token_hash)
-        .execute(&mut *tx)
+        .fetch_optional(&mut *tx)
         .await
         .map_err(|e| {
             tracing::error!("Database error during token refresh: {e}");
             (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": "Internal server error" })))
         })?;
 
-    if result.rows_affected() == 0 {
+    let Some((prior_ua, prior_ip)) = prior else {
         return Err((StatusCode::UNAUTHORIZED, Json(json!({ "error": "Refresh token revoked or expired" }))));
-    }
+    };
 
     // Fetch user (within the same transaction)
     let row = sqlx::query_as::<_, crate::db::models::UserRow>(
@@ -457,14 +544,31 @@ async fn refresh(
         (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": "Internal server error" })))
     })?;
 
-    // Store new refresh token within the same transaction
+    // Store new refresh token within the same transaction. Preserve the
+    // prior session's user_agent/IP when the request doesn't give us a
+    // fresh one (e.g. a background refresh with no UA header) so the
+    // session list stays stable across rotations. Always bump ip_address /
+    // user_agent to the current request when present — a real device move
+    // should surface in the UI.
     let new_hash = hash_token_jti(new_jti);
     let expires_at = chrono::Utc::now()
         + chrono::Duration::seconds(state.config.jwt_refresh_expiry_secs);
-    sqlx::query("INSERT INTO refresh_tokens (user_id, token_hash, expires_at) VALUES ($1, $2, $3)")
+    let fresh_ua = request_user_agent(&headers);
+    let stored_ua = fresh_ua.or(prior_ua);
+    let fresh_ip = addr.ip().to_string();
+    let stored_ip = if fresh_ip == "127.0.0.1" || fresh_ip == "::1" {
+        prior_ip.unwrap_or(fresh_ip)
+    } else {
+        fresh_ip
+    };
+    sqlx::query(
+        "INSERT INTO refresh_tokens (user_id, token_hash, expires_at, user_agent, ip_address, last_used_at) VALUES ($1, $2, $3, $4, $5, now())",
+    )
         .bind(row.id)
         .bind(&new_hash)
         .bind(expires_at)
+        .bind(stored_ua.as_deref())
+        .bind(&stored_ip)
         .execute(&mut *tx)
         .await
         .map_err(|e| {
@@ -544,10 +648,22 @@ async fn me(
 }
 
 /// Deterministic hash for refresh token JTIs (for storage/lookup).
-fn hash_token_jti(id: Uuid) -> String {
+pub(super) fn hash_token_jti(id: Uuid) -> String {
     use sha2::{Sha256, Digest};
     let digest = Sha256::digest(id.as_bytes());
     format!("{:x}", digest)
+}
+
+/// Extract a trimmed, truncated user-agent string for storage. Returns
+/// `None` when the header is missing or empty. Clients sometimes send a
+/// bare UA so the "empty string" case is treated the same as missing.
+pub(super) fn request_user_agent(headers: &HeaderMap) -> Option<String> {
+    headers
+        .get(axum::http::header::USER_AGENT)
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .map(mfa::truncate_user_agent)
 }
 
 #[cfg(test)]

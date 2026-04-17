@@ -149,6 +149,73 @@ pub fn decode_access_token(
     Ok(data.claims)
 }
 
+/// Short-lived JWT issued when a user has passed password auth but still
+/// needs to present a second factor. The backend re-reads this instead of
+/// re-authenticating, so the claim set has to be self-contained enough to
+/// finish issuing the real access/refresh pair on verify.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct MfaChallengeClaims {
+    pub sub: Uuid,
+    pub iss: String,
+    pub aud: String,
+    pub jti: Uuid,
+    pub iat: i64,
+    pub exp: i64,
+    /// Discriminator so this token is never accepted anywhere an access
+    /// token is expected (belt-and-braces on top of the aud check).
+    pub mfa_challenge: bool,
+}
+
+const MFA_CHALLENGE_AUDIENCE: &str = "containerus-mfa-challenge";
+/// Challenge lifetime — long enough for a user to open their authenticator
+/// app, short enough that a stolen challenge token is useless.
+pub const MFA_CHALLENGE_TTL_SECS: i64 = 300;
+
+/// Create a short-lived MFA challenge token for a user who has passed
+/// password auth but still owes a TOTP (or backup code).
+pub fn create_mfa_challenge_token(
+    user_id: Uuid,
+    secret: &str,
+) -> Result<String, jsonwebtoken::errors::Error> {
+    let now = Utc::now();
+    let claims = MfaChallengeClaims {
+        sub: user_id,
+        iss: JWT_ISSUER.to_string(),
+        aud: MFA_CHALLENGE_AUDIENCE.to_string(),
+        jti: Uuid::new_v4(),
+        iat: now.timestamp(),
+        exp: (now + Duration::seconds(MFA_CHALLENGE_TTL_SECS)).timestamp(),
+        mfa_challenge: true,
+    };
+    encode(
+        &Header::default(),
+        &claims,
+        &EncodingKey::from_secret(secret.as_bytes()),
+    )
+}
+
+/// Decode and validate an MFA challenge token. Rejects anything without the
+/// challenge audience so a leaked access token can't be replayed here.
+pub fn decode_mfa_challenge_token(
+    token: &str,
+    secret: &str,
+) -> Result<MfaChallengeClaims, jsonwebtoken::errors::Error> {
+    let mut validation = Validation::new(jsonwebtoken::Algorithm::HS256);
+    validation.set_issuer(&[JWT_ISSUER]);
+    validation.set_audience(&[MFA_CHALLENGE_AUDIENCE]);
+    let data = decode::<MfaChallengeClaims>(
+        token,
+        &DecodingKey::from_secret(secret.as_bytes()),
+        &validation,
+    )?;
+    if !data.claims.mfa_challenge {
+        return Err(jsonwebtoken::errors::Error::from(
+            jsonwebtoken::errors::ErrorKind::InvalidToken,
+        ));
+    }
+    Ok(data.claims)
+}
+
 /// Decode and validate a refresh token.
 pub fn decode_refresh_token(
     token: &str,

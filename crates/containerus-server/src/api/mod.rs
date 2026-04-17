@@ -7,8 +7,10 @@ pub mod containers;
 pub mod environments;
 pub mod files;
 pub mod health;
+pub mod mfa;
 pub mod projects;
 pub mod roles;
+pub mod sessions;
 pub mod systems;
 
 use axum::body::Body;
@@ -62,4 +64,6 @@ pub fn router(auth_limiter: RateLimiter) -> Router<AppState> {
         .nest("/api/roles", roles::router())
         .nest("/api/permissions", roles::permissions_router())
         .nest("/api/company", company::router())
+        // Per-user session management (authed; no rate-limit wrapper)
+        .nest("/api/users/me/sessions", sessions::router())
 }

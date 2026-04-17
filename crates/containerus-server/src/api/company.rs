@@ -1,7 +1,7 @@
 use axum::{
     extract::{Path, State},
     http::StatusCode,
-    routing::{delete, get, post, put},
+    routing::{delete, get},
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
@@ -22,6 +22,7 @@ pub fn router() -> Router<AppState> {
         .route("/", get(get_company).put(update_company))
         .route("/admins", get(list_admins).post(add_admin))
         .route("/admins/{user_id}", delete(remove_admin))
+        .route("/security", get(get_security).put(update_security))
 }
 
 // ============================================================================
@@ -39,6 +40,15 @@ pub struct UpdateCompanyRequest {
 #[serde(rename_all = "camelCase")]
 pub struct AddAdminRequest {
     pub user_id: Uuid,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SecuritySettings {
+    /// When true, every login MUST present a second factor. Enforced in the
+    /// login handler via `mfa::company_mfa_required`. Users without MFA
+    /// enrolled are locked out until they enrol out-of-band.
+    pub require_mfa: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -217,6 +227,94 @@ async fn add_admin(
     log_action(&state.db, None, Some(auth.claims.sub), "admin.add", "company_admin", Some(&req.user_id.to_string()), None, auth.client_ip.as_deref(), None).await;
 
     Ok((StatusCode::CREATED, Json(json!({ "message": "Admin added successfully" }))))
+}
+
+/// Read the company security settings (MFA mandate, etc.). Requires company admin.
+async fn get_security(
+    State(state): State<AppState>,
+    auth: AuthUser,
+) -> Result<Json<SecuritySettings>, (StatusCode, Json<Value>)> {
+    if !auth.claims.is_company_admin {
+        return Err((StatusCode::FORBIDDEN, Json(json!({ "error": "Company admin required" }))));
+    }
+
+    let settings = sqlx::query_scalar::<_, serde_json::Value>(
+        "SELECT settings FROM company LIMIT 1",
+    )
+    .fetch_optional(&state.db)
+    .await
+    .map_err(|e| {
+        tracing::error!("Failed to read company settings: {e}");
+        (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": "Internal server error" })))
+    })?
+    .ok_or_else(|| (StatusCode::NOT_FOUND, Json(json!({ "error": "Company not configured" }))))?;
+
+    let require_mfa = settings
+        .get("security")
+        .and_then(|s| s.get("mfa"))
+        .and_then(|m| m.get("require"))
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+
+    Ok(Json(SecuritySettings { require_mfa }))
+}
+
+/// Flip the company-wide MFA mandate. Requires company admin.
+///
+/// Writing to `settings.security.mfa.require` uses `jsonb_set(..., true)`
+/// so the parent objects are created if absent — no migration is needed
+/// when a customer first turns this on.
+async fn update_security(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Json(req): Json<SecuritySettings>,
+) -> Result<Json<SecuritySettings>, (StatusCode, Json<Value>)> {
+    if !auth.claims.is_company_admin {
+        return Err((StatusCode::FORBIDDEN, Json(json!({ "error": "Company admin required" }))));
+    }
+
+    let new_value = json!({ "require": req.require_mfa });
+
+    sqlx::query(
+        r#"
+        UPDATE company
+           SET settings = jsonb_set(
+                   jsonb_set(
+                       COALESCE(settings, '{}'::jsonb),
+                       '{security}',
+                       COALESCE(settings->'security', '{}'::jsonb),
+                       true
+                   ),
+                   '{security,mfa}',
+                   $1::jsonb,
+                   true
+               ),
+               updated_at = now()
+         WHERE id = (SELECT id FROM company LIMIT 1)
+        "#,
+    )
+    .bind(&new_value)
+    .execute(&state.db)
+    .await
+    .map_err(|e| {
+        tracing::error!("Failed to update company security settings: {e}");
+        (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": "Internal server error" })))
+    })?;
+
+    log_action(
+        &state.db,
+        None,
+        Some(auth.claims.sub),
+        "company.security.mfa.require",
+        "company",
+        None,
+        Some(json!({ "requireMfa": req.require_mfa })),
+        auth.client_ip.as_deref(),
+        None,
+    )
+    .await;
+
+    Ok(Json(SecuritySettings { require_mfa: req.require_mfa }))
 }
 
 /// Remove a company admin. Cannot remove yourself. At least one admin must remain.
