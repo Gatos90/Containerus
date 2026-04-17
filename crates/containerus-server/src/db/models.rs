@@ -211,6 +211,11 @@ pub struct ResourceAcl {
     pub project_id: Uuid,
     pub resource_type: String,
     pub resource_id: Uuid,
+    // CON-79: reserved; the resolver never consults this value. The write
+    // path rejects non-null inputs so callers can't install an overlay that
+    // silently does nothing. Kept on the model so legacy rows still
+    // round-trip through SELECT and so a future per-resource role overlay
+    // feature can wire it up without another migration.
     pub role_id: Option<Uuid>,
     pub extra_permissions: serde_json::Value,
     pub denied_permissions: serde_json::Value,

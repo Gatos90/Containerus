@@ -140,6 +140,114 @@ async fn create_acl_rejects_unknown_keys_with_400() {
     h.cleanup().await;
 }
 
+// CON-79: `resource_acls.role_id` is a silent no-op in the resolver. Any
+// non-null value on create or update must be rejected so callers can't think
+// they've installed a per-resource role overlay that never runs.
+
+#[tokio::test]
+async fn create_acl_rejects_non_null_role_id_with_400() {
+    let Some(h) = TestHarness::try_new(true).await else {
+        common::skip_without_db("create_acl_rejects_non_null_role_id_with_400");
+        return;
+    };
+
+    let project_id = h.create_project("acl-role-id-create").await;
+    let admin = h.create_user("admin-role-id-create").await;
+    h.add_member(project_id, admin, ROLE_PROJECT_ADMIN).await;
+    let environment_id = h.create_environment(project_id).await;
+    let system_id = h.create_system(environment_id, admin).await;
+    let target = h.create_user("target-role-id-create").await;
+    let token = h.login_as(admin, false).await;
+
+    let body = json!({
+        "userId": target,
+        "resourceType": "system",
+        "resourceId": system_id,
+        "roleId": ROLE_PROJECT_ADMIN,
+        "extraPermissions": ["systems.view"],
+        "deniedPermissions": [],
+    });
+    let uri = format!("/api/projects/{project_id}/acls/");
+    let (status, bytes) =
+        call(&h.router, Method::POST, &uri, Some(&token), Some(body)).await;
+    assert_eq!(
+        status,
+        StatusCode::BAD_REQUEST,
+        "non-null roleId must 400, got {status}: {}",
+        String::from_utf8_lossy(&bytes)
+    );
+
+    let json: Value = serde_json::from_slice(&bytes).expect("parse response");
+    assert_eq!(json["field"], "roleId");
+
+    let count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM resource_acls WHERE project_id = $1",
+    )
+    .bind(project_id)
+    .fetch_one(&h.db)
+    .await
+    .expect("count acls");
+    assert_eq!(count, 0, "rejected create must not persist a row");
+
+    h.cleanup().await;
+}
+
+#[tokio::test]
+async fn update_acl_rejects_non_null_role_id_with_400() {
+    let Some(h) = TestHarness::try_new(true).await else {
+        common::skip_without_db("update_acl_rejects_non_null_role_id_with_400");
+        return;
+    };
+
+    let project_id = h.create_project("acl-role-id-update").await;
+    let admin = h.create_user("admin-role-id-update").await;
+    h.add_member(project_id, admin, ROLE_PROJECT_ADMIN).await;
+    let environment_id = h.create_environment(project_id).await;
+    let system_id = h.create_system(environment_id, admin).await;
+    let target = h.create_user("target-role-id-update").await;
+    let token = h.login_as(admin, false).await;
+
+    h.set_resource_acl(target, project_id, "system", system_id, &["systems.view"], &[])
+        .await;
+    let acl_id: Uuid = sqlx::query_scalar(
+        "SELECT id FROM resource_acls
+         WHERE user_id = $1 AND project_id = $2 AND resource_type = 'system'
+               AND resource_id = $3",
+    )
+    .bind(target)
+    .bind(project_id)
+    .bind(system_id)
+    .fetch_one(&h.db)
+    .await
+    .expect("fetch seeded acl id");
+
+    let body = json!({ "roleId": ROLE_PROJECT_ADMIN });
+    let uri = format!("/api/projects/{project_id}/acls/{acl_id}");
+    let (status, bytes) =
+        call(&h.router, Method::PUT, &uri, Some(&token), Some(body)).await;
+    assert_eq!(
+        status,
+        StatusCode::BAD_REQUEST,
+        "non-null roleId must 400, got {status}: {}",
+        String::from_utf8_lossy(&bytes)
+    );
+
+    let json: Value = serde_json::from_slice(&bytes).expect("parse response");
+    assert_eq!(json["field"], "roleId");
+
+    // Seeded row must still show roleId as NULL — the rejected update may not
+    // install a silently-ignored overlay.
+    let row_role_id: Option<Uuid> =
+        sqlx::query_scalar("SELECT role_id FROM resource_acls WHERE id = $1")
+            .bind(acl_id)
+            .fetch_one(&h.db)
+            .await
+            .expect("fetch role_id");
+    assert!(row_role_id.is_none(), "role_id must remain NULL after rejected update");
+
+    h.cleanup().await;
+}
+
 #[tokio::test]
 async fn update_acl_rejects_unknown_keys_with_400() {
     let Some(h) = TestHarness::try_new(true).await else {

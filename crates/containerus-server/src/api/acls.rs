@@ -168,6 +168,22 @@ async fn create_acl(
         return Err((StatusCode::BAD_REQUEST, Json(json!({ "error": "Resource type is required" }))));
     }
 
+    // CON-79: `resource_acls.role_id` is reserved — the column persists but the
+    // resolver never reads it. Accepting a non-null value here would silently
+    // create a per-resource role overlay that never runs, which is a deny/allow
+    // bypass waiting to happen once CONTAINERUS_ENFORCE_ACLS=1 ships. Reject
+    // the write until a future change wires it into the resolver.
+    if req.role_id.is_some() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(json!({
+                "error": "roleId on resource_acls is not supported",
+                "field": "roleId",
+                "detail": "Per-resource role overlays are not implemented by the resolver; omit roleId or send null. See CON-79.",
+            })),
+        ));
+    }
+
     // CON-78: normalise + validate permission keys before they land in JSONB.
     // Exact match against the catalog keeps the resolver's HashSet lookup
     // from silently missing a deny because of stray casing/whitespace.
@@ -224,6 +240,21 @@ async fn update_acl(
 
     let project_id = scoped.project_id;
 
+    // CON-79: same fail-closed stance on updates. A `Some(_)` here would either
+    // set a silently-ignored role overlay (new row value) or preserve an old
+    // one that we can no longer reason about. Forcing callers to omit the
+    // field keeps the contract aligned with the resolver's actual behaviour.
+    if req.role_id.is_some() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(json!({
+                "error": "roleId on resource_acls is not supported",
+                "field": "roleId",
+                "detail": "Per-resource role overlays are not implemented by the resolver; omit roleId or send null. See CON-79.",
+            })),
+        ));
+    }
+
     // Fetch existing ACL to merge optional fields
     let existing = sqlx::query_as::<_, ResourceAcl>(
         "SELECT * FROM resource_acls WHERE id = $1 AND project_id = $2",
@@ -238,10 +269,10 @@ async fn update_acl(
     })?
     .ok_or_else(|| (StatusCode::NOT_FOUND, Json(json!({ "error": "ACL entry not found" }))))?;
 
-    // When req.role_id is None, intentionally preserve the existing role_id.
-    // This allows partial updates where only extra_permissions or denied_permissions
-    // are changed without requiring the client to re-send the current role_id.
-    let role_id = req.role_id.or(existing.role_id);
+    // CON-79: role_id writes are rejected above, so only the existing value is
+    // ever carried forward. Any non-null legacy row persists untouched until a
+    // future change decides whether to drop or wire in the column.
+    let role_id = existing.role_id;
 
     // CON-78: normalise + validate any permission keys being written so the
     // resolver's exact-match HashSet lookup stays authoritative.
