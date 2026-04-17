@@ -171,4 +171,11 @@ export const routes: Routes = [
         (m) => m.ProjectAuditComponent
       ),
   },
+  {
+    path: 'admin/roles',
+    loadComponent: () =>
+      import('./features/backend/role-manager/role-manager.component').then(
+        (m) => m.RoleManagerComponent
+      ),
+  },
 ];

@@ -1,0 +1,213 @@
+<div class="p-6 max-w-7xl mx-auto space-y-6">
+  <div class="flex items-center justify-between">
+    <h1 class="text-xl font-semibold text-zinc-100 flex items-center gap-2">
+      <lucide-icon [img]="ShieldCheck" [size]="20" />
+      Role Manager
+    </h1>
+    <button
+      (click)="startCreate()"
+      class="bg-blue-600 hover:bg-blue-500 text-white text-sm rounded-lg px-3 py-1.5 flex items-center gap-1.5 transition-colors"
+    >
+      <lucide-icon [img]="Plus" [size]="14" />
+      New role
+    </button>
+  </div>
+
+  @if (loadError()) {
+    <div class="text-red-400 text-sm bg-red-950/30 rounded-lg p-3 flex items-center gap-2">
+      <lucide-icon [img]="AlertTriangle" [size]="16" />
+      {{ loadError() }}
+    </div>
+  }
+
+  @if (loading()) {
+    <div class="flex items-center gap-2 text-zinc-400 py-4">
+      <lucide-icon [img]="Loader2" [size]="16" class="animate-spin" />
+      Loading roles...
+    </div>
+  } @else {
+    <div class="grid grid-cols-12 gap-6">
+      <!-- Role list -->
+      <div class="col-span-4 bg-zinc-900 rounded-xl border border-zinc-800 overflow-hidden">
+        <div class="px-4 py-3 border-b border-zinc-800 text-xs uppercase tracking-wide text-zinc-500">
+          Roles ({{ roles().length }})
+        </div>
+        <ul class="divide-y divide-zinc-800">
+          @for (role of roles(); track role.id) {
+            <li>
+              <button
+                (click)="selectRole(role.id)"
+                [class.bg-zinc-800]="selectedRoleId() === role.id"
+                class="w-full text-left px-4 py-3 hover:bg-zinc-800/60 transition-colors flex items-center justify-between gap-3"
+              >
+                <div class="min-w-0">
+                  <div class="text-sm font-medium text-zinc-100 truncate flex items-center gap-1.5">
+                    {{ role.name }}
+                    @if (role.isSystem) {
+                      <lucide-icon [img]="Lock" [size]="12" class="text-zinc-500" />
+                    }
+                  </div>
+                  <div class="text-xs text-zinc-500 truncate">{{ role.slug }}</div>
+                </div>
+                <span
+                  class="text-[10px] px-1.5 py-0.5 rounded shrink-0"
+                  [class.bg-zinc-800]="role.isSystem"
+                  [class.text-zinc-400]="role.isSystem"
+                  [class.bg-blue-950]="!role.isSystem"
+                  [class.text-blue-300]="!role.isSystem"
+                >
+                  {{ role.isSystem ? 'system' : 'custom' }}
+                </span>
+              </button>
+            </li>
+          } @empty {
+            <li class="px-4 py-6 text-center text-sm text-zinc-500">No roles yet.</li>
+          }
+        </ul>
+      </div>
+
+      <!-- Role editor -->
+      <div class="col-span-8">
+        @if (!creating() && !selectedRole()) {
+          <div class="bg-zinc-900 rounded-xl border border-zinc-800 p-8 text-center text-sm text-zinc-500">
+            Select a role on the left, or create a new one.
+          </div>
+        } @else {
+          <div class="bg-zinc-900 rounded-xl border border-zinc-800">
+            <div class="px-5 py-4 border-b border-zinc-800 flex items-center justify-between gap-3">
+              <div class="min-w-0">
+                <div class="text-sm font-medium text-zinc-100 flex items-center gap-2">
+                  {{ creating() ? 'New role' : selectedRole()?.name }}
+                  @if (isSystemRole()) {
+                    <span class="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400">
+                      <lucide-icon [img]="Lock" [size]="10" /> read-only
+                    </span>
+                  }
+                  @if (hasChanges() && !isSystemRole()) {
+                    <span class="text-[10px] px-1.5 py-0.5 rounded bg-amber-950 text-amber-300">unsaved</span>
+                  }
+                </div>
+                <div class="text-xs text-zinc-500">
+                  {{ draftPermissionCount() }} of {{ totalPermissions() }} permissions granted
+                </div>
+              </div>
+              <div class="flex items-center gap-2">
+                <button
+                  (click)="cancelEdit()"
+                  class="text-zinc-400 hover:text-zinc-200 text-sm rounded-lg px-3 py-1.5 flex items-center gap-1.5 transition-colors"
+                >
+                  <lucide-icon [img]="X" [size]="14" />
+                  Close
+                </button>
+                @if (!isSystemRole() && !creating()) {
+                  <button
+                    (click)="deleteRole()"
+                    [disabled]="saving()"
+                    class="bg-red-950 hover:bg-red-900 text-red-300 disabled:opacity-50 text-sm rounded-lg px-3 py-1.5 flex items-center gap-1.5 transition-colors"
+                  >
+                    <lucide-icon [img]="Trash2" [size]="14" />
+                    Delete
+                  </button>
+                }
+                @if (!isSystemRole()) {
+                  <button
+                    (click)="save()"
+                    [disabled]="saving() || !hasChanges()"
+                    class="bg-blue-600 hover:bg-blue-500 disabled:bg-zinc-700 disabled:text-zinc-400 text-white text-sm rounded-lg px-3 py-1.5 flex items-center gap-1.5 transition-colors"
+                  >
+                    @if (saving()) {
+                      <lucide-icon [img]="Loader2" [size]="14" class="animate-spin" />
+                    } @else {
+                      <lucide-icon [img]="Save" [size]="14" />
+                    }
+                    {{ creating() ? 'Create role' : 'Save changes' }}
+                  </button>
+                }
+              </div>
+            </div>
+
+            @if (saveError()) {
+              <div class="mx-5 mt-4 text-red-400 text-sm bg-red-950/30 rounded-lg p-3 flex items-center gap-2">
+                <lucide-icon [img]="AlertTriangle" [size]="16" />
+                {{ saveError() }}
+              </div>
+            }
+
+            <!-- Basic fields -->
+            <div class="p-5 grid grid-cols-2 gap-4 border-b border-zinc-800">
+              <label class="block">
+                <span class="block text-xs uppercase tracking-wide text-zinc-500 mb-1">Name</span>
+                <input
+                  type="text"
+                  [(ngModel)]="draftName"
+                  [disabled]="isSystemRole()"
+                  class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-zinc-100 text-sm disabled:opacity-60"
+                />
+              </label>
+              <label class="block">
+                <span class="block text-xs uppercase tracking-wide text-zinc-500 mb-1">Slug</span>
+                <input
+                  type="text"
+                  [(ngModel)]="draftSlug"
+                  [disabled]="isSystemRole() || !creating()"
+                  class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-zinc-100 text-sm font-mono disabled:opacity-60"
+                />
+              </label>
+              <label class="block col-span-2">
+                <span class="block text-xs uppercase tracking-wide text-zinc-500 mb-1">Description</span>
+                <textarea
+                  [(ngModel)]="draftDescription"
+                  [disabled]="isSystemRole()"
+                  rows="2"
+                  class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-zinc-100 text-sm disabled:opacity-60"
+                ></textarea>
+              </label>
+            </div>
+
+            <!-- Permission grid -->
+            <div class="p-5 space-y-5">
+              @for (group of permissionGroups(); track group.category) {
+                <section>
+                  <header class="flex items-center justify-between mb-2">
+                    <h3 class="text-xs uppercase tracking-wide text-zinc-400">{{ group.category }}</h3>
+                    @if (!isSystemRole()) {
+                      <button
+                        (click)="toggleCategory(group.category, !isCategoryFullyEnabled(group.category))"
+                        class="text-[11px] text-zinc-400 hover:text-zinc-200"
+                      >
+                        {{ isCategoryFullyEnabled(group.category) ? 'Clear all' : 'Select all' }}
+                      </button>
+                    }
+                  </header>
+                  <div class="grid grid-cols-2 gap-1.5">
+                    @for (perm of group.permissions; track perm.key) {
+                      <label
+                        class="flex items-start gap-2 rounded-md px-2 py-1.5 bg-zinc-950/50 border border-zinc-800 text-sm"
+                        [class.cursor-pointer]="!isSystemRole()"
+                        [class.opacity-60]="isSystemRole() && !hasPermission(perm.key)"
+                      >
+                        <input
+                          type="checkbox"
+                          [checked]="hasPermission(perm.key)"
+                          [disabled]="isSystemRole()"
+                          (change)="togglePermission(perm.key)"
+                          class="mt-0.5 accent-blue-500"
+                        />
+                        <div class="min-w-0">
+                          <div class="text-zinc-100 font-mono text-xs truncate">{{ perm.key }}</div>
+                          @if (perm.description) {
+                            <div class="text-zinc-500 text-xs truncate">{{ perm.description }}</div>
+                          }
+                        </div>
+                      </label>
+                    }
+                  </div>
+                </section>
+              }
+            </div>
+          </div>
+        }
+      </div>
+    </div>
+  }
+</div>
