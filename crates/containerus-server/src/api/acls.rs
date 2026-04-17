@@ -6,6 +6,7 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::auth::middleware::ProjectScoped;
@@ -43,6 +44,85 @@ pub struct UpdateAclRequest {
     pub role_id: Option<Uuid>,
     pub extra_permissions: Option<Vec<String>>,
     pub denied_permissions: Option<Vec<String>>,
+}
+
+// ============================================================================
+// Permission-key normalization (CON-78)
+// ============================================================================
+
+/// Normalize a single permission key: trim surrounding whitespace and
+/// lowercase. All catalog keys are lowercase dotted (e.g. `systems.delete`),
+/// so stray casing or padding in request bodies would silently fail to match
+/// the resolver's `HashSet` lookups. Normalising at the write boundary keeps
+/// ACL deny/allow keys unambiguously comparable to role-permission keys.
+fn normalize_key(raw: &str) -> String {
+    raw.trim().to_ascii_lowercase()
+}
+
+/// Normalise and deduplicate a list of raw permission keys while preserving
+/// first-seen order. Empty keys (after trimming) are dropped from the list so
+/// we don't ship `""` into the catalog lookup; the caller still sees them as
+/// unknown if they were the only content.
+fn normalize_keys(raw: &[String]) -> Vec<String> {
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut out = Vec::with_capacity(raw.len());
+    for key in raw {
+        let norm = normalize_key(key);
+        if norm.is_empty() {
+            continue;
+        }
+        if seen.insert(norm.clone()) {
+            out.push(norm);
+        }
+    }
+    out
+}
+
+/// Validate that every normalised key exists in the permissions catalog.
+/// Returns the normalised, de-duplicated list on success, or a `400` payload
+/// listing the unknown keys on failure so callers can fix their request.
+async fn normalize_and_validate(
+    db: &PgPool,
+    raw: &[String],
+    field: &str,
+) -> Result<Vec<String>, (StatusCode, Json<Value>)> {
+    let normalized = normalize_keys(raw);
+    if normalized.is_empty() {
+        return Ok(normalized);
+    }
+
+    let known: Vec<String> = sqlx::query_scalar(
+        "SELECT key FROM permissions WHERE key = ANY($1)",
+    )
+    .bind(&normalized)
+    .fetch_all(db)
+    .await
+    .map_err(|e| {
+        tracing::error!("Failed to validate permission keys against catalog: {e}");
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": "Internal server error" })),
+        )
+    })?;
+
+    let known_set: std::collections::HashSet<String> = known.into_iter().collect();
+    let unknown: Vec<&String> = normalized
+        .iter()
+        .filter(|k| !known_set.contains(*k))
+        .collect();
+
+    if !unknown.is_empty() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(json!({
+                "error": "Unknown permission keys",
+                "field": field,
+                "unknownKeys": unknown,
+            })),
+        ));
+    }
+
+    Ok(normalized)
 }
 
 // ============================================================================
@@ -88,9 +168,15 @@ async fn create_acl(
         return Err((StatusCode::BAD_REQUEST, Json(json!({ "error": "Resource type is required" }))));
     }
 
+    // CON-78: normalise + validate permission keys before they land in JSONB.
+    // Exact match against the catalog keeps the resolver's HashSet lookup
+    // from silently missing a deny because of stray casing/whitespace.
+    let extra = normalize_and_validate(&state.db, &req.extra_permissions, "extraPermissions").await?;
+    let denied = normalize_and_validate(&state.db, &req.denied_permissions, "deniedPermissions").await?;
+
     let acl_id = Uuid::new_v4();
-    let extra_perms = serde_json::to_value(&req.extra_permissions).unwrap_or(json!([]));
-    let denied_perms = serde_json::to_value(&req.denied_permissions).unwrap_or(json!([]));
+    let extra_perms = serde_json::to_value(&extra).unwrap_or(json!([]));
+    let denied_perms = serde_json::to_value(&denied).unwrap_or(json!([]));
     let now = chrono::Utc::now();
 
     let acl = sqlx::query_as::<_, ResourceAcl>(
@@ -156,14 +242,23 @@ async fn update_acl(
     // This allows partial updates where only extra_permissions or denied_permissions
     // are changed without requiring the client to re-send the current role_id.
     let role_id = req.role_id.or(existing.role_id);
-    let extra_perms = req
-        .extra_permissions
-        .map(|p| serde_json::to_value(p).unwrap_or(json!([])))
-        .unwrap_or(existing.extra_permissions);
-    let denied_perms = req
-        .denied_permissions
-        .map(|p| serde_json::to_value(p).unwrap_or(json!([])))
-        .unwrap_or(existing.denied_permissions);
+
+    // CON-78: normalise + validate any permission keys being written so the
+    // resolver's exact-match HashSet lookup stays authoritative.
+    let extra_perms = match req.extra_permissions {
+        Some(p) => {
+            let normalized = normalize_and_validate(&state.db, &p, "extraPermissions").await?;
+            serde_json::to_value(&normalized).unwrap_or(json!([]))
+        }
+        None => existing.extra_permissions,
+    };
+    let denied_perms = match req.denied_permissions {
+        Some(p) => {
+            let normalized = normalize_and_validate(&state.db, &p, "deniedPermissions").await?;
+            serde_json::to_value(&normalized).unwrap_or(json!([]))
+        }
+        None => existing.denied_permissions,
+    };
 
     let acl = sqlx::query_as::<_, ResourceAcl>(
         r#"
@@ -218,4 +313,42 @@ async fn delete_acl(
     }
 
     Ok(Json(json!({ "message": "ACL entry deleted successfully" })))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{normalize_key, normalize_keys};
+
+    #[test]
+    fn normalize_key_trims_and_lowercases() {
+        assert_eq!(normalize_key(" Systems.Delete "), "systems.delete");
+        assert_eq!(normalize_key("systems.delete"), "systems.delete");
+        assert_eq!(normalize_key("\tCONTAINERS.EXEC\n"), "containers.exec");
+    }
+
+    #[test]
+    fn normalize_keys_dedups_preserving_order() {
+        let input = vec![
+            "Systems.Delete".into(),
+            "systems.delete".into(),
+            " containers.exec".into(),
+            "Containers.Exec".into(),
+        ];
+        assert_eq!(
+            normalize_keys(&input),
+            vec!["systems.delete".to_string(), "containers.exec".to_string()]
+        );
+    }
+
+    #[test]
+    fn normalize_keys_drops_empty_after_trim() {
+        let input = vec!["   ".into(), "\t\n".into(), "systems.view".into()];
+        assert_eq!(normalize_keys(&input), vec!["systems.view".to_string()]);
+    }
+
+    #[test]
+    fn normalize_keys_on_empty_input_returns_empty() {
+        let input: Vec<String> = vec![];
+        assert!(normalize_keys(&input).is_empty());
+    }
 }
