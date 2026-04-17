@@ -320,6 +320,7 @@ impl ProjectScoped {
             )
             .await
             .map_err(|e| {
+                // CON-76: malformed ACL rows fail closed as 500, not silently "allow".
                 tracing::error!("Failed to load resource ACL: {e}");
                 AuthError::InternalError
             })?

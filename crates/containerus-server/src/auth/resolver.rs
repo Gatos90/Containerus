@@ -32,14 +32,39 @@ pub struct ResourceAclView {
 }
 
 impl ResourceAclView {
-    /// Extract string arrays from the raw JSONB columns. Unknown shapes are tolerated
-    /// (non-string entries are dropped) so a malformed row can never blow up the resolver.
-    pub fn from_row(row: &ResourceAcl) -> Self {
-        Self {
-            extra_permissions: json_array_to_string_set(&row.extra_permissions),
-            denied_permissions: json_array_to_string_set(&row.denied_permissions),
-        }
+    /// Extract string arrays from the raw JSONB columns.
+    ///
+    /// Fail-closed (CON-76): a malformed `denied_permissions` must never silently
+    /// collapse into "no denies" — that turns a deny row into a deny bypass. We
+    /// reject any row whose `denied_permissions` or `extra_permissions` is not a
+    /// JSON array of strings. Callers convert this into an HTTP 500 so the request
+    /// is denied instead of evaluated against a half-parsed ACL.
+    pub fn from_row(row: &ResourceAcl) -> Result<Self, AclParseError> {
+        Ok(Self {
+            extra_permissions: parse_permission_array(&row.extra_permissions, "extra_permissions", row.id)?,
+            denied_permissions: parse_permission_array(&row.denied_permissions, "denied_permissions", row.id)?,
+        })
     }
+}
+
+/// Parse failure for a `resource_acls` JSONB column. Surfaced to callers as a
+/// fail-closed signal: a malformed ACL row cannot be evaluated safely, so the
+/// request must be rejected rather than silently treated as "no ACL entries".
+#[derive(Debug, thiserror::Error)]
+#[error("resource_acls row {row_id}: column `{field}` is not a JSON array of strings")]
+pub struct AclParseError {
+    pub row_id: Uuid,
+    pub field: &'static str,
+}
+
+/// Combined error for [`load_resource_acl_view`] — either the database failed
+/// or a row's JSONB columns were malformed. Both branches should become HTTP 500.
+#[derive(Debug, thiserror::Error)]
+pub enum AclLoadError {
+    #[error(transparent)]
+    Db(#[from] sqlx::Error),
+    #[error(transparent)]
+    Parse(#[from] AclParseError),
 }
 
 /// Environment-level per-user overrides. Populated once CON-62c ships the
@@ -161,7 +186,7 @@ pub async fn load_resource_acl_view(
     project_id: Uuid,
     resource_type: &str,
     resource_id: Uuid,
-) -> Result<Option<ResourceAclView>, sqlx::Error> {
+) -> Result<Option<ResourceAclView>, AclLoadError> {
     let row = sqlx::query_as::<_, ResourceAcl>(
         r#"
         SELECT * FROM resource_acls
@@ -176,17 +201,21 @@ pub async fn load_resource_acl_view(
     .fetch_optional(db)
     .await?;
 
-    Ok(row.as_ref().map(ResourceAclView::from_row))
+    row.as_ref().map(ResourceAclView::from_row).transpose().map_err(Into::into)
 }
 
-fn json_array_to_string_set(value: &JsonValue) -> HashSet<String> {
-    match value {
-        JsonValue::Array(items) => items
-            .iter()
-            .filter_map(|v| v.as_str().map(str::to_owned))
-            .collect(),
-        _ => HashSet::new(),
+fn parse_permission_array(
+    value: &JsonValue,
+    field: &'static str,
+    row_id: Uuid,
+) -> Result<HashSet<String>, AclParseError> {
+    let items = value.as_array().ok_or(AclParseError { row_id, field })?;
+    let mut set = HashSet::with_capacity(items.len());
+    for item in items {
+        let s = item.as_str().ok_or(AclParseError { row_id, field })?;
+        set.insert(s.to_owned());
     }
+    Ok(set)
 }
 
 #[cfg(test)]
@@ -406,42 +435,79 @@ mod tests {
 
     // ---------- ResourceAclView::from_row ----------
 
-    #[test]
-    fn from_row_parses_json_arrays() {
-        let row = ResourceAcl {
-            id: Uuid::nil(),
+    fn acl_row(extra: JsonValue, denied: JsonValue) -> ResourceAcl {
+        ResourceAcl {
+            id: Uuid::new_v4(),
             user_id: Uuid::nil(),
             project_id: Uuid::nil(),
             resource_type: "system".into(),
             resource_id: Uuid::nil(),
             role_id: None,
-            extra_permissions: serde_json::json!(["containers.exec", "containers.logs.follow"]),
-            denied_permissions: serde_json::json!(["systems.delete"]),
+            extra_permissions: extra,
+            denied_permissions: denied,
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
-        };
-        let view = ResourceAclView::from_row(&row);
+        }
+    }
+
+    #[test]
+    fn from_row_parses_json_arrays() {
+        let row = acl_row(
+            serde_json::json!(["containers.exec", "containers.logs.follow"]),
+            serde_json::json!(["systems.delete"]),
+        );
+        let view = ResourceAclView::from_row(&row).expect("valid ACL row parses");
         assert!(view.extra_permissions.contains("containers.exec"));
         assert!(view.extra_permissions.contains("containers.logs.follow"));
         assert!(view.denied_permissions.contains("systems.delete"));
     }
 
+    // CON-76: a malformed JSONB deny column must fail closed. Silently treating
+    // non-array/non-string content as "no denies" turns a deny row into a deny
+    // bypass, which would defeat the whole point of resource_acls.
+
     #[test]
-    fn from_row_tolerates_non_array_json() {
-        // A malformed row shouldn't crash the resolver — it should simply contribute nothing.
-        let row = ResourceAcl {
-            id: Uuid::nil(),
-            user_id: Uuid::nil(),
-            project_id: Uuid::nil(),
-            resource_type: "system".into(),
-            resource_id: Uuid::nil(),
-            role_id: None,
-            extra_permissions: serde_json::json!({"unexpected": "object"}),
-            denied_permissions: serde_json::json!(42),
-            created_at: chrono::Utc::now(),
-            updated_at: chrono::Utc::now(),
-        };
-        let view = ResourceAclView::from_row(&row);
+    fn from_row_rejects_non_array_denied_permissions() {
+        let row = acl_row(serde_json::json!([]), serde_json::json!(42));
+        let err = ResourceAclView::from_row(&row).expect_err("non-array denied must fail");
+        assert_eq!(err.field, "denied_permissions");
+        assert_eq!(err.row_id, row.id);
+    }
+
+    #[test]
+    fn from_row_rejects_object_denied_permissions() {
+        let row = acl_row(serde_json::json!([]), serde_json::json!({"systems.delete": true}));
+        let err = ResourceAclView::from_row(&row).expect_err("object denied must fail");
+        assert_eq!(err.field, "denied_permissions");
+    }
+
+    #[test]
+    fn from_row_rejects_non_string_element_in_denied_permissions() {
+        let row = acl_row(serde_json::json!([]), serde_json::json!(["systems.delete", 7]));
+        let err = ResourceAclView::from_row(&row).expect_err("non-string element must fail");
+        assert_eq!(err.field, "denied_permissions");
+    }
+
+    #[test]
+    fn from_row_rejects_null_denied_permissions() {
+        let row = acl_row(serde_json::json!([]), JsonValue::Null);
+        let err = ResourceAclView::from_row(&row).expect_err("null denied must fail");
+        assert_eq!(err.field, "denied_permissions");
+    }
+
+    #[test]
+    fn from_row_rejects_malformed_extra_permissions() {
+        // extra_permissions being malformed is also fail-closed: we can't trust
+        // the row, so we refuse to evaluate it rather than partially honouring it.
+        let row = acl_row(serde_json::json!({"unexpected": "object"}), serde_json::json!([]));
+        let err = ResourceAclView::from_row(&row).expect_err("malformed extra must fail");
+        assert_eq!(err.field, "extra_permissions");
+    }
+
+    #[test]
+    fn from_row_accepts_empty_arrays() {
+        let row = acl_row(serde_json::json!([]), serde_json::json!([]));
+        let view = ResourceAclView::from_row(&row).expect("empty arrays are valid");
         assert!(view.extra_permissions.is_empty());
         assert!(view.denied_permissions.is_empty());
     }
