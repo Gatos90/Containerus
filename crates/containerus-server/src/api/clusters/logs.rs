@@ -96,7 +96,7 @@ async fn stream_pod_logs(
     Query(params): Query<LogQuery>,
 ) -> Result<impl IntoResponse, ApiError> {
     let cluster = get_verified_cluster(&state, id).await?;
-    verify_cluster_access(&state, &auth.claims, &cluster, "clusters.view").await?;
+    verify_cluster_access(&state, &auth.claims, &cluster, "clusters.logs.stream").await?;
 
     let client = get_kube_client(&state, &cluster).await?;
     let pods: Api<Pod> = Api::namespaced(client, &ns);

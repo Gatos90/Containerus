@@ -169,7 +169,7 @@ async fn delete_resource(
     Query(params): Query<ResourceQuery>,
 ) -> Result<axum::response::Response, ApiError> {
     let cluster = get_verified_cluster(&state, id).await?;
-    verify_cluster_access(&state, &auth.claims, &cluster, "clusters.delete").await?;
+    verify_cluster_access(&state, &auth.claims, &cluster, "clusters.delete.workload").await?;
 
     let client = get_kube_client(&state, &cluster).await?;
     let ns = params.namespace.as_deref().unwrap_or("default");

@@ -513,7 +513,8 @@ async fn test_connection(
     user: SystemScoped,
     State(state): State<AppState>,
 ) -> Result<axum::response::Response, (StatusCode, Json<serde_json::Value>)> {
-    user.require("systems.connect").map_err(|_| (StatusCode::FORBIDDEN, Json(json!({"error": "Insufficient permissions"}))))?;
+    user.require_for_system("systems.terminal.open", &state).await
+        .map_err(|_| (StatusCode::FORBIDDEN, Json(json!({"error": "Insufficient permissions"}))))?;
     let system = user.system;
 
     // Try connecting via shared connection
@@ -547,7 +548,8 @@ async fn connect_system(
     user: SystemScoped,
     State(state): State<AppState>,
 ) -> Result<axum::response::Response, (StatusCode, Json<serde_json::Value>)> {
-    user.require("systems.connect").map_err(|_| (StatusCode::FORBIDDEN, Json(json!({"error": "Insufficient permissions"}))))?;
+    user.require_for_system("systems.terminal.open", &state).await
+        .map_err(|_| (StatusCode::FORBIDDEN, Json(json!({"error": "Insufficient permissions"}))))?;
     let project_id = user.project_id;
     let caller = user.caller();
     let environment_id = user.environment_id;
@@ -728,7 +730,8 @@ async fn disconnect_system(
     user: SystemScoped,
     State(state): State<AppState>,
 ) -> Result<axum::response::Response, (StatusCode, Json<serde_json::Value>)> {
-    user.require("systems.connect").map_err(|_| (StatusCode::FORBIDDEN, Json(json!({"error": "Insufficient permissions"}))))?;
+    user.require_for_system("systems.terminal.open", &state).await
+        .map_err(|_| (StatusCode::FORBIDDEN, Json(json!({"error": "Insufficient permissions"}))))?;
     let project_id = user.project_id;
     let caller = user.caller();
     let environment_id = user.environment_id;
@@ -759,7 +762,8 @@ async fn trust_host_key(
     user: SystemScoped,
     State(state): State<AppState>,
 ) -> Result<axum::response::Response, (StatusCode, Json<serde_json::Value>)> {
-    user.require("systems.connect").map_err(|_| (StatusCode::FORBIDDEN, Json(json!({"error": "Insufficient permissions"}))))?;
+    user.require_for_system("systems.terminal.open", &state).await
+        .map_err(|_| (StatusCode::FORBIDDEN, Json(json!({"error": "Insufficient permissions"}))))?;
     let project_id = user.project_id;
     let caller = user.caller();
     let environment_id = user.environment_id;

@@ -5,6 +5,7 @@ use serde::Deserialize;
 use serde_json::json;
 use uuid::Uuid;
 
+use crate::auth::resolver::{self, ResolverInput};
 use crate::db::models::ClusterRow;
 use crate::AppState;
 
@@ -95,7 +96,12 @@ pub async fn get_verified_cluster(
         .ok_or_else(|| (StatusCode::NOT_FOUND, Json(json!({"error": "Cluster not found"}))))
 }
 
-/// Verify the user has access to a cluster by checking membership in the cluster's project.
+/// Verify the user has access to a cluster by checking membership in the cluster's
+/// project and consulting per-resource ACLs when `CONTAINERUS_ENFORCE_ACLS` is on.
+///
+/// Rewritten for CON-73 to route the decision through the shared `resolver` so
+/// the deny>allow precedence from CON-63 applies to cluster endpoints in the
+/// same way it already applies to `ProjectScoped`/`SystemScoped` handlers.
 pub async fn verify_cluster_access(
     state: &AppState,
     claims: &crate::auth::jwt::AccessClaims,
@@ -121,12 +127,37 @@ pub async fn verify_cluster_access(
     let role_id = claims.role_for_project(&env.project_id)
         .ok_or_else(|| (StatusCode::FORBIDDEN, Json(json!({"error": "Not a member of this project"}))))?;
 
-    let perms = state.permission_cache.get_permissions(&role_id);
-    if !perms.contains(required_permission) {
-        return Err((StatusCode::FORBIDDEN, Json(json!({"error": "Insufficient permissions"}))));
-    }
+    let role_perms = state.permission_cache.get_permissions(&role_id);
 
-    Ok(())
+    let acl_view = if state.config.enforce_acls {
+        resolver::load_resource_acl_view(
+            &state.db,
+            claims.sub,
+            env.project_id,
+            "cluster",
+            cluster.id,
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to load resource ACL for cluster {}: {e}", cluster.id);
+            (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": "Internal server error"})))
+        })?
+    } else {
+        None
+    };
+
+    let input = ResolverInput {
+        is_company_admin: false,
+        role_permissions: &role_perms,
+        resource_acl: acl_view.as_ref(),
+        env_override: None,
+    };
+
+    if resolver::resolve(&input, required_permission).is_allowed() {
+        Ok(())
+    } else {
+        Err((StatusCode::FORBIDDEN, Json(json!({"error": "Insufficient permissions"}))))
+    }
 }
 
 pub async fn get_kube_client(

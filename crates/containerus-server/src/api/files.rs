@@ -190,7 +190,8 @@ async fn list_directory(
     State(state): State<AppState>,
     Query(query): Query<FileQuery>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
-    user.require("files.view").map_err(|_| (StatusCode::FORBIDDEN, Json(json!({"error": "Insufficient permissions"}))))?;
+    user.require_for_system("files.view", &state).await
+        .map_err(|_| (StatusCode::FORBIDDEN, Json(json!({"error": "Insufficient permissions"}))))?;
 
     validate_path(&query.path)?;
 
@@ -246,7 +247,8 @@ async fn read_file(
     State(state): State<AppState>,
     Query(query): Query<FileQuery>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
-    user.require("files.view").map_err(|_| (StatusCode::FORBIDDEN, Json(json!({"error": "Insufficient permissions"}))))?;
+    user.require_for_system("files.view", &state).await
+        .map_err(|_| (StatusCode::FORBIDDEN, Json(json!({"error": "Insufficient permissions"}))))?;
 
     validate_path(&query.path)?;
 
@@ -295,7 +297,8 @@ async fn write_file(
     State(state): State<AppState>,
     Json(req): Json<WriteRequest>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
-    user.require("files.write").map_err(|_| (StatusCode::FORBIDDEN, Json(json!({"error": "Insufficient permissions"}))))?;
+    user.require_for_system("files.write", &state).await
+        .map_err(|_| (StatusCode::FORBIDDEN, Json(json!({"error": "Insufficient permissions"}))))?;
 
     validate_path(&req.path)?;
 
@@ -334,7 +337,8 @@ async fn create_directory(
     State(state): State<AppState>,
     Json(req): Json<MkdirRequest>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
-    user.require("files.write").map_err(|_| (StatusCode::FORBIDDEN, Json(json!({"error": "Insufficient permissions"}))))?;
+    user.require_for_system("files.write", &state).await
+        .map_err(|_| (StatusCode::FORBIDDEN, Json(json!({"error": "Insufficient permissions"}))))?;
 
     validate_path(&req.path)?;
 
@@ -359,7 +363,8 @@ async fn delete_path(
     State(state): State<AppState>,
     Json(req): Json<DeleteRequest>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
-    user.require("files.delete").map_err(|_| (StatusCode::FORBIDDEN, Json(json!({"error": "Insufficient permissions"}))))?;
+    user.require_for_system("files.delete", &state).await
+        .map_err(|_| (StatusCode::FORBIDDEN, Json(json!({"error": "Insufficient permissions"}))))?;
 
     validate_path(&req.path)?;
 
@@ -401,7 +406,8 @@ async fn rename_path(
     State(state): State<AppState>,
     Json(req): Json<RenameRequest>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
-    user.require("files.write").map_err(|_| (StatusCode::FORBIDDEN, Json(json!({"error": "Insufficient permissions"}))))?;
+    user.require_for_system("files.write", &state).await
+        .map_err(|_| (StatusCode::FORBIDDEN, Json(json!({"error": "Insufficient permissions"}))))?;
 
     validate_path(&req.old_path)?;
     validate_path(&req.new_path)?;
@@ -430,7 +436,8 @@ async fn download_file(
     State(state): State<AppState>,
     Query(query): Query<FileQuery>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
-    user.require("files.view").map_err(|_| (StatusCode::FORBIDDEN, Json(json!({"error": "Insufficient permissions"}))))?;
+    user.require_for_system("files.view", &state).await
+        .map_err(|_| (StatusCode::FORBIDDEN, Json(json!({"error": "Insufficient permissions"}))))?;
 
     validate_path(&query.path)?;
 
@@ -490,7 +497,8 @@ async fn upload_file(
     State(state): State<AppState>,
     Json(req): Json<UploadRequest>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
-    user.require("files.upload").map_err(|_| (StatusCode::FORBIDDEN, Json(json!({"error": "Insufficient permissions"}))))?;
+    user.require_for_system("files.upload", &state).await
+        .map_err(|_| (StatusCode::FORBIDDEN, Json(json!({"error": "Insufficient permissions"}))))?;
 
     validate_path(&req.remote_path)?;
 

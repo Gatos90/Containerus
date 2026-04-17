@@ -49,7 +49,7 @@ async fn apply_yaml(
     Json(req): Json<ApplyYamlRequest>,
 ) -> Result<axum::response::Response, (StatusCode, Json<serde_json::Value>)> {
     let cluster = get_verified_cluster(&state, id).await?;
-    verify_cluster_access(&state, &auth.claims, &cluster, "clusters.manage").await?;
+    verify_cluster_access(&state, &auth.claims, &cluster, "clusters.apply").await?;
 
     let client = get_kube_client(&state, &cluster).await?;
 

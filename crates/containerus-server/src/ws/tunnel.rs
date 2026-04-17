@@ -17,6 +17,7 @@ use uuid::Uuid;
 
 use crate::audit::{log_event, AuditCaller, AuditEvent};
 use crate::auth::jwt::decode_access_token;
+use crate::auth::resolver::{self, ResolverInput};
 use crate::db::models::SystemRow;
 use crate::AppState;
 
@@ -373,22 +374,12 @@ async fn wait_for_tunnel_auth(
                             }
                         };
 
-                        // Check systems.connect permission via role in JWT
+                        // Check systems.tunnel.open permission via role in JWT,
+                        // with per-resource ACL overrides applied when the
+                        // CONTAINERUS_ENFORCE_ACLS flag is on (CON-73).
                         if !claims.is_company_admin {
-                            match claims.role_for_project(&project_id) {
-                                Some(role_id) => {
-                                    let perms = state.permission_cache.get_permissions(&role_id);
-                                    if !perms.contains("systems.connect") {
-                                        let _ = ws_sender
-                                            .send(Message::Text(
-                                                json!({"type": "error", "message": "Insufficient permissions"})
-                                                    .to_string()
-                                                    .into(),
-                                            ))
-                                            .await;
-                                        return Err(());
-                                    }
-                                }
+                            let role_id = match claims.role_for_project(&project_id) {
+                                Some(id) => id,
                                 None => {
                                     let _ = ws_sender
                                         .send(Message::Text(
@@ -399,6 +390,51 @@ async fn wait_for_tunnel_auth(
                                         .await;
                                     return Err(());
                                 }
+                            };
+                            let role_perms = state.permission_cache.get_permissions(&role_id);
+
+                            let acl_view = if state.config.enforce_acls {
+                                match resolver::load_resource_acl_view(
+                                    &state.db,
+                                    claims.sub,
+                                    project_id,
+                                    "system",
+                                    system_id,
+                                )
+                                .await
+                                {
+                                    Ok(v) => v,
+                                    Err(e) => {
+                                        tracing::error!("Failed to load resource ACL for system {system_id}: {e}");
+                                        let _ = ws_sender
+                                            .send(Message::Text(
+                                                json!({"type": "error", "message": "Internal server error"})
+                                                    .to_string()
+                                                    .into(),
+                                            ))
+                                            .await;
+                                        return Err(());
+                                    }
+                                }
+                            } else {
+                                None
+                            };
+
+                            let input = ResolverInput {
+                                is_company_admin: false,
+                                role_permissions: &role_perms,
+                                resource_acl: acl_view.as_ref(),
+                                env_override: None,
+                            };
+                            if !resolver::resolve(&input, "systems.tunnel.open").is_allowed() {
+                                let _ = ws_sender
+                                    .send(Message::Text(
+                                        json!({"type": "error", "message": "Insufficient permissions"})
+                                            .to_string()
+                                            .into(),
+                                    ))
+                                    .await;
+                                return Err(());
                             }
                         }
 

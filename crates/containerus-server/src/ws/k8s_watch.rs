@@ -405,7 +405,7 @@ async fn wait_for_auth(
                             state,
                             &claims,
                             &cluster,
-                            "clusters.view",
+                            "clusters.watch",
                         )
                         .await
                         {

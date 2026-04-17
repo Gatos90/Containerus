@@ -238,7 +238,7 @@ async fn delete_custom_resource(
     Query(params): Query<ResourceQuery>,
 ) -> Result<axum::response::Response, (StatusCode, Json<serde_json::Value>)> {
     let cluster = get_verified_cluster(&state, id).await?;
-    verify_cluster_access(&state, &auth.claims, &cluster, "clusters.delete").await?;
+    verify_cluster_access(&state, &auth.claims, &cluster, "clusters.delete.workload").await?;
 
     let client = get_kube_client(&state, &cluster).await?;
 
@@ -288,7 +288,7 @@ async fn apply_custom_resource(
     Json(req): Json<ApplyCustomResourceRequest>,
 ) -> Result<axum::response::Response, (StatusCode, Json<serde_json::Value>)> {
     let cluster = get_verified_cluster(&state, id).await?;
-    verify_cluster_access(&state, &auth.claims, &cluster, "clusters.manage").await?;
+    verify_cluster_access(&state, &auth.claims, &cluster, "clusters.apply").await?;
 
     let client = get_kube_client(&state, &cluster).await?;
 

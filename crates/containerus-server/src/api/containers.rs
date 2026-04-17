@@ -392,16 +392,18 @@ async fn container_action(
     Path((_sys_id, container_id)): Path<(Uuid, String)>,
     Json(req): Json<ContainerActionRequest>,
 ) -> Result<axum::response::Response, (StatusCode, Json<serde_json::Value>)> {
-    // Determine the required permission based on the action
+    // Determine the required permission based on the action.
+    // `pause`/`unpause` now use the split `containers.pause` key (CON-73).
     let permission = match req.action.as_str() {
         "start" => "containers.start",
         "stop" => "containers.stop",
         "restart" => "containers.restart",
         "remove" => "containers.delete",
-        "pause" | "unpause" => "containers.manage",
+        "pause" | "unpause" => "containers.pause",
         _ => return Ok((StatusCode::BAD_REQUEST, Json(json!({"error": "Unknown container action"}))).into_response()),
     };
-    user.require(permission).map_err(|_| (StatusCode::FORBIDDEN, Json(json!({"error": "Insufficient permissions"}))))?;
+    user.require_for_system(permission, &state).await
+        .map_err(|_| (StatusCode::FORBIDDEN, Json(json!({"error": "Insufficient permissions"}))))?;
     let system = &user.system;
     let system_id = system.id;
 
@@ -455,7 +457,10 @@ async fn container_logs(
     Path((_sys_id, container_id)): Path<(Uuid, String)>,
     Query(query): Query<LogsQuery>,
 ) -> Result<axum::response::Response, (StatusCode, Json<serde_json::Value>)> {
-    user.require("containers.logs").map_err(|_| (StatusCode::FORBIDDEN, Json(json!({"error": "Insufficient permissions"}))))?;
+    // Snapshot log fetch — uses the split `containers.logs.read` key (CON-73).
+    // Streaming/follow via WebSocket (ws/terminal) should gate on `containers.logs.follow`.
+    user.require_for_system("containers.logs.read", &state).await
+        .map_err(|_| (StatusCode::FORBIDDEN, Json(json!({"error": "Insufficient permissions"}))))?;
     let system = &user.system;
     let system_id = system.id;
 
