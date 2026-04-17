@@ -184,6 +184,40 @@ pub async fn log_container_action(
     .await;
 }
 
+/// Convenience helper for RBAC permission-denied audit events (CON-80).
+///
+/// Centralises the `action`/`details` shape for 403s so dashboards and
+/// incident-response queries can grep for a single string. The `reason`
+/// argument is the resolver's `DecisionReason` rendered through
+/// `DecisionReason::as_str` — keeping `audit.rs` free of an `auth` import.
+pub async fn log_permission_denied(
+    db: &PgPool,
+    caller: &AuditCaller,
+    project_id: Option<Uuid>,
+    environment_id: Option<Uuid>,
+    resource_type: &str,
+    resource_id: Option<&str>,
+    permission: &str,
+    reason: &str,
+) {
+    log_event(
+        db,
+        AuditEvent {
+            caller,
+            project_id,
+            environment_id,
+            action: "rbac.permission_denied",
+            resource_type,
+            resource_id,
+            details: Some(serde_json::json!({
+                "permission": permission,
+                "reason": reason,
+            })),
+        },
+    )
+    .await;
+}
+
 /// Convenience helper for member-related audit events.
 pub async fn log_member_action(
     db: &PgPool,

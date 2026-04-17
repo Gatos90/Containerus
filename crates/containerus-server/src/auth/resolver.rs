@@ -116,6 +116,25 @@ pub enum DecisionReason {
     Default,
 }
 
+impl DecisionReason {
+    /// Stable snake_case identifier — kept in sync with the serde
+    /// `rename_all = "snake_case"` representation so audit-log readers and
+    /// JSON consumers see the same string. Used by the auth middleware to
+    /// stamp the resolver's verdict onto `rbac.permission_denied` audit rows
+    /// (CON-80) without dragging serde into the audit module.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            DecisionReason::CompanyAdmin => "company_admin",
+            DecisionReason::ResourceAclDeny => "resource_acl_deny",
+            DecisionReason::ResourceAclAllow => "resource_acl_allow",
+            DecisionReason::EnvOverrideDeny => "env_override_deny",
+            DecisionReason::EnvOverrideAllow => "env_override_allow",
+            DecisionReason::RoleGrant => "role_grant",
+            DecisionReason::Default => "default",
+        }
+    }
+}
+
 /// Full resolver output: the decision plus which layer won.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ResolvedPermission {
@@ -502,6 +521,31 @@ mod tests {
         let row = acl_row(serde_json::json!({"unexpected": "object"}), serde_json::json!([]));
         let err = ResourceAclView::from_row(&row).expect_err("malformed extra must fail");
         assert_eq!(err.field, "extra_permissions");
+    }
+
+    // CON-80: the audit middleware stamps `DecisionReason::as_str()` onto
+    // `rbac.permission_denied` rows. If that string ever drifts from the serde
+    // snake_case rename, audit dashboards and JSON API consumers would disagree
+    // on what a deny "reason" looks like. Pin both representations together.
+    #[test]
+    fn decision_reason_as_str_matches_serde_snake_case() {
+        let reasons = [
+            DecisionReason::CompanyAdmin,
+            DecisionReason::ResourceAclDeny,
+            DecisionReason::ResourceAclAllow,
+            DecisionReason::EnvOverrideDeny,
+            DecisionReason::EnvOverrideAllow,
+            DecisionReason::RoleGrant,
+            DecisionReason::Default,
+        ];
+        for r in reasons {
+            let serde_str = serde_json::to_value(r)
+                .expect("serialize DecisionReason")
+                .as_str()
+                .expect("DecisionReason serializes to a JSON string")
+                .to_owned();
+            assert_eq!(serde_str, r.as_str(), "drift between serde and as_str for {r:?}");
+        }
     }
 
     #[test]

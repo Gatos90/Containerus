@@ -15,7 +15,7 @@ use uuid::Uuid;
 
 use super::jwt::{decode_access_token, AccessClaims};
 use super::resolver::{self, ResolverInput};
-use crate::audit::AuditCaller;
+use crate::audit::{log_permission_denied, AuditCaller};
 use crate::db::models::EffectivePermissions;
 use crate::AppState;
 
@@ -303,6 +303,12 @@ impl ProjectScoped {
     /// `CONTAINERUS_ENFORCE_ACLS` flag is on. When the flag is off this is
     /// identical to [`ProjectScoped::require`] — the ACL table is not read,
     /// preserving Phase A's "enforcement off by default" rollout.
+    ///
+    /// CON-80: on a deny we emit an `rbac.permission_denied` audit row tagged
+    /// with the resolver's [`DecisionReason`] so incident response can tell
+    /// whether the 403 came from a `resource_acls` deny, an env override, or
+    /// a plain default-deny. The audit is best-effort (`log_event` swallows
+    /// DB errors and traces) — the request still gets the 403 either way.
     pub async fn require_for_resource(
         &self,
         perm: &str,
@@ -335,9 +341,22 @@ impl ProjectScoped {
             env_override: None,
         };
 
-        if resolver::resolve(&input, perm).is_allowed() {
+        let resolved = resolver::resolve(&input, perm);
+        if resolved.is_allowed() {
             Ok(())
         } else {
+            let resource_id_str = resource_id.to_string();
+            log_permission_denied(
+                &state.db,
+                &self.caller(),
+                Some(self.project_id),
+                None,
+                resource_type,
+                Some(&resource_id_str),
+                perm,
+                resolved.reason.as_str(),
+            )
+            .await;
             Err(AuthError::InsufficientPermission)
         }
     }
@@ -462,6 +481,11 @@ impl SystemScoped {
     /// Resource-scoped permission check that reads `resource_acls` for this
     /// specific system when `CONTAINERUS_ENFORCE_ACLS` is on. Falls back to
     /// the plain role-grant check when the flag is off.
+    ///
+    /// CON-80: on deny we record an `rbac.permission_denied` audit row that
+    /// includes the resolver's [`DecisionReason`] (`resource_acl_deny`,
+    /// `default`, …) so the audit trail can distinguish an ACL deny from a
+    /// missing role grant when triaging a real-world 403.
     pub async fn require_for_system(
         &self,
         perm: &str,
@@ -491,9 +515,22 @@ impl SystemScoped {
             env_override: None,
         };
 
-        if resolver::resolve(&input, perm).is_allowed() {
+        let resolved = resolver::resolve(&input, perm);
+        if resolved.is_allowed() {
             Ok(())
         } else {
+            let system_id_str = self.system.id.to_string();
+            log_permission_denied(
+                &state.db,
+                &self.caller(),
+                Some(self.project_id),
+                Some(self.environment_id),
+                "system",
+                Some(&system_id_str),
+                perm,
+                resolved.reason.as_str(),
+            )
+            .await;
             Err(AuthError::InsufficientPermission)
         }
     }

@@ -567,3 +567,198 @@ async fn company_admin_short_circuits_acl_deny() {
 
     h.cleanup().await;
 }
+
+/// CON-80: a deny via the resource ACL must surface in `audit_log` as an
+/// `rbac.permission_denied` row whose `details.reason` matches the resolver's
+/// `DecisionReason::ResourceAclDeny`. This is what the audit dashboard reads
+/// to tell an ACL deny apart from a missing role grant during incident
+/// response.
+#[tokio::test]
+async fn require_for_system_acl_deny_emits_audit_with_reason() {
+    let Some(h) = TestHarness::try_new(true).await else {
+        common::skip_without_db("require_for_system_acl_deny_emits_audit_with_reason");
+        return;
+    };
+
+    use containerus_server::auth::jwt::decode_access_token;
+    use containerus_server::auth::middleware::SystemScoped;
+    use containerus_server::db::models::{EffectivePermissions, SystemRow};
+
+    let project_id = h.create_project("audit-deny-acl").await;
+    let viewer = h.create_user("viewer-audit-acl").await;
+    h.add_member(project_id, viewer, ROLE_VIEWER).await;
+
+    let environment_id = h.create_environment(project_id).await;
+    let system_id = h.create_system(environment_id, viewer).await;
+
+    h.set_resource_acl(viewer, project_id, "system", system_id, &[], &["systems.view"])
+        .await;
+
+    let token = h.token_for(viewer, vec![(project_id, ROLE_VIEWER)], false);
+    let claims = decode_access_token(&token, common::JWT_SECRET).expect("decode");
+    let system: SystemRow = sqlx::query_as("SELECT * FROM systems WHERE id = $1")
+        .bind(system_id)
+        .fetch_one(&h.db)
+        .await
+        .expect("load system");
+
+    let scoped = SystemScoped {
+        claims,
+        system,
+        project_id,
+        environment_id,
+        permissions: EffectivePermissions {
+            permissions: h.state.permission_cache.get_permissions(&ROLE_VIEWER),
+            is_company_admin: false,
+        },
+        client_ip: Some("203.0.113.42".into()),
+    };
+
+    let result = scoped.require_for_system("systems.view", &h.state).await;
+    assert!(result.is_err(), "ACL deny must reject the request");
+
+    let row: (Option<uuid::Uuid>, Option<uuid::Uuid>, String, String, Option<String>, serde_json::Value, Option<String>) =
+        sqlx::query_as(
+            "SELECT project_id, environment_id, action, resource_type, resource_id, details, ip_address
+             FROM audit_log
+             WHERE action = 'rbac.permission_denied'
+               AND resource_type = 'system'
+               AND resource_id = $1
+             ORDER BY created_at DESC
+             LIMIT 1",
+        )
+        .bind(system_id.to_string())
+        .fetch_one(&h.db)
+        .await
+        .expect("audit row written");
+
+    let (project, env, action, resource_type, resource_id, details, ip) = row;
+    assert_eq!(project, Some(project_id));
+    assert_eq!(env, Some(environment_id));
+    assert_eq!(action, "rbac.permission_denied");
+    assert_eq!(resource_type, "system");
+    assert_eq!(resource_id.as_deref(), Some(system_id.to_string().as_str()));
+    assert_eq!(ip.as_deref(), Some("203.0.113.42"));
+    assert_eq!(details["permission"], serde_json::json!("systems.view"));
+    assert_eq!(details["reason"], serde_json::json!("resource_acl_deny"));
+
+    h.cleanup().await;
+}
+
+/// CON-80: a default-deny path (no role grant, no ACL row) must also emit
+/// the `rbac.permission_denied` audit row, with `reason = "default"`. This
+/// keeps the audit shape uniform whether the deny came from an ACL layer or
+/// from the bottom of the precedence table.
+#[tokio::test]
+async fn require_for_resource_default_deny_emits_audit_with_reason() {
+    let Some(h) = TestHarness::try_new(true).await else {
+        common::skip_without_db("require_for_resource_default_deny_emits_audit_with_reason");
+        return;
+    };
+
+    use containerus_server::auth::jwt::decode_access_token;
+    use containerus_server::auth::middleware::ProjectScoped;
+    use containerus_server::db::models::EffectivePermissions;
+
+    let project_id = h.create_project("audit-deny-default").await;
+    let viewer = h.create_user("viewer-audit-default").await;
+    h.add_member(project_id, viewer, ROLE_VIEWER).await;
+    let environment_id = h.create_environment(project_id).await;
+    let system_id = h.create_system(environment_id, viewer).await;
+
+    let token = h.token_for(viewer, vec![(project_id, ROLE_VIEWER)], false);
+    let claims = decode_access_token(&token, common::JWT_SECRET).expect("decode");
+
+    let scoped = ProjectScoped {
+        claims,
+        project_id,
+        permissions: EffectivePermissions {
+            permissions: h.state.permission_cache.get_permissions(&ROLE_VIEWER),
+            is_company_admin: false,
+        },
+        client_ip: None,
+    };
+
+    // Viewer lacks `systems.delete` and there is no ACL row for it — must
+    // hit the default-deny tail of the resolver.
+    let result = scoped
+        .require_for_resource("systems.delete", "system", system_id, &h.state)
+        .await;
+    assert!(result.is_err(), "default deny must reject the request");
+
+    let (action, details): (String, serde_json::Value) = sqlx::query_as(
+        "SELECT action, details FROM audit_log
+         WHERE action = 'rbac.permission_denied'
+           AND resource_type = 'system'
+           AND resource_id = $1
+         ORDER BY created_at DESC
+         LIMIT 1",
+    )
+    .bind(system_id.to_string())
+    .fetch_one(&h.db)
+    .await
+    .expect("audit row written");
+
+    assert_eq!(action, "rbac.permission_denied");
+    assert_eq!(details["permission"], serde_json::json!("systems.delete"));
+    assert_eq!(details["reason"], serde_json::json!("default"));
+
+    h.cleanup().await;
+}
+
+/// CON-80: an allow path must NOT write the deny audit row. Guards against a
+/// regression that would flood `audit_log` with false 403 entries on every
+/// successful authorized request.
+#[tokio::test]
+async fn require_for_system_allow_does_not_emit_deny_audit() {
+    let Some(h) = TestHarness::try_new(true).await else {
+        common::skip_without_db("require_for_system_allow_does_not_emit_deny_audit");
+        return;
+    };
+
+    use containerus_server::auth::jwt::decode_access_token;
+    use containerus_server::auth::middleware::SystemScoped;
+    use containerus_server::db::models::{EffectivePermissions, SystemRow};
+
+    let project_id = h.create_project("audit-allow").await;
+    let viewer = h.create_user("viewer-audit-allow").await;
+    h.add_member(project_id, viewer, ROLE_VIEWER).await;
+    let environment_id = h.create_environment(project_id).await;
+    let system_id = h.create_system(environment_id, viewer).await;
+
+    let token = h.token_for(viewer, vec![(project_id, ROLE_VIEWER)], false);
+    let claims = decode_access_token(&token, common::JWT_SECRET).expect("decode");
+    let system: SystemRow = sqlx::query_as("SELECT * FROM systems WHERE id = $1")
+        .bind(system_id)
+        .fetch_one(&h.db)
+        .await
+        .expect("load system");
+
+    let scoped = SystemScoped {
+        claims,
+        system,
+        project_id,
+        environment_id,
+        permissions: EffectivePermissions {
+            permissions: h.state.permission_cache.get_permissions(&ROLE_VIEWER),
+            is_company_admin: false,
+        },
+        client_ip: None,
+    };
+
+    // Viewer role grants `systems.view` — must pass and write nothing to audit.
+    scoped
+        .require_for_system("systems.view", &h.state)
+        .await
+        .expect("viewer role grants systems.view");
+
+    let count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM audit_log WHERE action = 'rbac.permission_denied'",
+    )
+    .fetch_one(&h.db)
+    .await
+    .expect("count deny audits");
+    assert_eq!(count, 0, "an allow must not write a deny audit row");
+
+    h.cleanup().await;
+}
