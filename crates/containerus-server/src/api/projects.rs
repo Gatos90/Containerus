@@ -294,7 +294,7 @@ async fn create_project(
         updated_at: now,
     };
 
-    log_action(&state.db, Some(project.id), Some(auth.claims.sub), "project.create", "project", Some(&project.id.to_string()), Some(serde_json::json!({"name": &project.name})), None, None).await;
+    log_action(&state.db, Some(project.id), Some(auth.claims.sub), "project.create", "project", Some(&project.id.to_string()), Some(serde_json::json!({"name": &project.name})), auth.client_ip.as_deref(), None).await;
 
     Ok((StatusCode::CREATED, Json(project)))
 }
@@ -448,7 +448,7 @@ async fn delete_project(
         )
     })?;
 
-    log_action(&state.db, Some(project_id), Some(scoped.claims.sub), "project.delete", "project", Some(&project_id.to_string()), None, None, None).await;
+    log_action(&state.db, Some(project_id), Some(scoped.claims.sub), "project.delete", "project", Some(&project_id.to_string()), None, scoped.client_ip.as_deref(), None).await;
 
     Ok(Json(json!({ "message": "Project deleted" })))
 }
@@ -587,7 +587,7 @@ async fn invite_member(
         )
     })?;
 
-    log_action(&state.db, Some(project_id), Some(scoped.claims.sub), "member.invite", "member", Some(&target_user_id.to_string()), Some(serde_json::json!({"role_id": req.role_id.to_string()})), None, None).await;
+    log_action(&state.db, Some(project_id), Some(scoped.claims.sub), "member.invite", "member", Some(&target_user_id.to_string()), Some(serde_json::json!({"role_id": req.role_id.to_string()})), scoped.client_ip.as_deref(), None).await;
 
     Ok((
         StatusCode::CREATED,
@@ -680,7 +680,7 @@ async fn update_member_role(
         )
     })?;
 
-    log_action(&state.db, Some(project_id), Some(scoped.claims.sub), "member.role_update", "member", Some(&target_user_id.to_string()), Some(serde_json::json!({"role_id": req.role_id.to_string()})), None, None).await;
+    log_action(&state.db, Some(project_id), Some(scoped.claims.sub), "member.role_update", "member", Some(&target_user_id.to_string()), Some(serde_json::json!({"role_id": req.role_id.to_string()})), scoped.client_ip.as_deref(), None).await;
 
     Ok(Json(json!({ "message": "Role updated successfully" })))
 }
@@ -770,7 +770,7 @@ async fn remove_member(
         ));
     }
 
-    log_action(&state.db, Some(project_id), Some(scoped.claims.sub), "member.remove", "member", Some(&target_user_id.to_string()), None, None, None).await;
+    log_action(&state.db, Some(project_id), Some(scoped.claims.sub), "member.remove", "member", Some(&target_user_id.to_string()), None, scoped.client_ip.as_deref(), None).await;
 
     Ok(Json(json!({ "message": "Member removed successfully" })))
 }

@@ -1,5 +1,8 @@
+use std::net::SocketAddr;
+
 use axum::{
     extract::{
+        connect_info::ConnectInfo,
         ws::{Message, WebSocket, WebSocketUpgrade},
         Path, State,
     },
@@ -12,6 +15,7 @@ use russh::ChannelMsg;
 use serde_json::json;
 use uuid::Uuid;
 
+use crate::audit::{log_event, AuditCaller, AuditEvent};
 use crate::auth::jwt::decode_access_token;
 use crate::db::models::SystemRow;
 use crate::AppState;
@@ -165,9 +169,11 @@ async fn ws_tunnel(
     ws: WebSocketUpgrade,
     State(state): State<AppState>,
     Path(system_id): Path<Uuid>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
 ) -> impl IntoResponse {
+    let client_ip = Some(addr.ip().to_string());
     // Accept WebSocket upgrade unconditionally — auth happens inside the session
-    ws.on_upgrade(move |socket| handle_tunnel_auth(socket, state, system_id))
+    ws.on_upgrade(move |socket| handle_tunnel_auth(socket, state, system_id, client_ip))
 }
 
 /// Handle the WebSocket tunnel: authenticate via first message, then relay.
@@ -175,11 +181,12 @@ async fn handle_tunnel_auth(
     socket: WebSocket,
     state: AppState,
     system_id: Uuid,
+    client_ip: Option<String>,
 ) {
     let (mut ws_sender, mut ws_receiver) = socket.split();
 
     // Wait for auth message (with timeout)
-    let (user_id, remote_host, remote_port) = match tokio::time::timeout(
+    let (user_id, remote_host, remote_port, project_id, environment_id) = match tokio::time::timeout(
         std::time::Duration::from_secs(30),
         wait_for_tunnel_auth(&mut ws_sender, &mut ws_receiver, &state, system_id),
     )
@@ -199,6 +206,26 @@ async fn handle_tunnel_auth(
         }
     };
 
+    let caller = AuditCaller::user(user_id, client_ip.clone());
+    let system_id_str = system_id.to_string();
+    let dest_details = serde_json::json!({
+        "remote_host": &remote_host,
+        "remote_port": remote_port,
+    });
+    log_event(
+        &state.db,
+        AuditEvent {
+            caller: &caller,
+            project_id: Some(project_id),
+            environment_id: Some(environment_id),
+            action: "ws.tunnel.open",
+            resource_type: "system",
+            resource_id: Some(&system_id_str),
+            details: Some(dest_details.clone()),
+        },
+    )
+    .await;
+
     // Send connected confirmation
     let _ = ws_sender
         .send(Message::Text(
@@ -206,7 +233,21 @@ async fn handle_tunnel_auth(
         ))
         .await;
 
-    run_tunnel_relay(ws_sender, ws_receiver, state, user_id, system_id, remote_host, remote_port).await;
+    run_tunnel_relay(ws_sender, ws_receiver, state.clone(), user_id, system_id, remote_host, remote_port).await;
+
+    log_event(
+        &state.db,
+        AuditEvent {
+            caller: &caller,
+            project_id: Some(project_id),
+            environment_id: Some(environment_id),
+            action: "ws.tunnel.close",
+            resource_type: "system",
+            resource_id: Some(&system_id_str),
+            details: Some(dest_details),
+        },
+    )
+    .await;
 }
 
 /// Wait for the auth message containing token, host, and port.
@@ -215,8 +256,8 @@ async fn wait_for_tunnel_auth(
     ws_receiver: &mut futures_util::stream::SplitStream<WebSocket>,
     state: &AppState,
     system_id: Uuid,
-) -> Result<(Uuid, String, u16), ()> {
-    // Returns (user_id, resolved_host, remote_port)
+) -> Result<(Uuid, String, u16, Uuid, Uuid), ()> {
+    // Returns (user_id, resolved_host, remote_port, project_id, environment_id)
     let mut message_count: u32 = 0;
     const MAX_PRE_AUTH_MESSAGES: u32 = 5;
     loop {
@@ -439,7 +480,7 @@ async fn wait_for_tunnel_auth(
                             resolved_host
                         );
 
-                        return Ok((claims.sub, resolved_host, remote_port));
+                        return Ok((claims.sub, resolved_host, remote_port, project_id, environment_id));
                     }
                 }
             }

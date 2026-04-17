@@ -129,7 +129,7 @@ async fn update_company(
     })?
     .ok_or_else(|| (StatusCode::NOT_FOUND, Json(json!({ "error": "Company not configured" }))))?;
 
-    log_action(&state.db, None, Some(auth.claims.sub), "company.update", "company", Some(&company.id.to_string()), Some(json!({"name": &company.name, "slug": &company.slug})), None, None).await;
+    log_action(&state.db, None, Some(auth.claims.sub), "company.update", "company", Some(&company.id.to_string()), Some(json!({"name": &company.name, "slug": &company.slug})), auth.client_ip.as_deref(), None).await;
 
     Ok(Json(company))
 }
@@ -214,7 +214,7 @@ async fn add_admin(
         (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": "Internal server error" })))
     })?;
 
-    log_action(&state.db, None, Some(auth.claims.sub), "admin.add", "company_admin", Some(&req.user_id.to_string()), None, None, None).await;
+    log_action(&state.db, None, Some(auth.claims.sub), "admin.add", "company_admin", Some(&req.user_id.to_string()), None, auth.client_ip.as_deref(), None).await;
 
     Ok((StatusCode::CREATED, Json(json!({ "message": "Admin added successfully" }))))
 }
@@ -286,7 +286,7 @@ async fn remove_admin(
         (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": "Internal server error" })))
     })?;
 
-    log_action(&state.db, None, Some(auth.claims.sub), "admin.remove", "company_admin", Some(&user_id.to_string()), None, None, None).await;
+    log_action(&state.db, None, Some(auth.claims.sub), "admin.remove", "company_admin", Some(&user_id.to_string()), None, auth.client_ip.as_deref(), None).await;
 
     Ok(Json(json!({ "message": "Admin removed successfully" })))
 }

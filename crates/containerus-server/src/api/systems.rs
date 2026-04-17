@@ -293,7 +293,7 @@ async fn create_system(
     log_system_action(
         &state.db,
         project_id,
-        user_id,
+        &user.caller(),
         "system.create",
         system.id,
         Some(serde_json::json!({"name": req.name, "hostname": req.hostname})),
@@ -329,7 +329,7 @@ async fn update_system(
 ) -> Result<axum::response::Response, (StatusCode, Json<serde_json::Value>)> {
     user.require("systems.edit").map_err(|_| (StatusCode::FORBIDDEN, Json(json!({"error": "Insufficient permissions"}))))?;
     let project_id = user.project_id;
-    let user_id = user.claims.sub;
+    let caller = user.caller();
     let environment_id = user.environment_id;
     let id = user.system.id;
     let existing = user.system;
@@ -447,7 +447,7 @@ async fn update_system(
             log_system_action(
                 &state.db,
                 project_id,
-                user_id,
+                &caller,
                 "system.update",
                 id,
                 None,
@@ -469,7 +469,7 @@ async fn delete_system(
 ) -> Result<axum::response::Response, (StatusCode, Json<serde_json::Value>)> {
     user.require("systems.delete").map_err(|_| (StatusCode::FORBIDDEN, Json(json!({"error": "Insufficient permissions"}))))?;
     let project_id = user.project_id;
-    let user_id = user.claims.sub;
+    let caller = user.caller();
     let environment_id = user.environment_id;
     let id = user.system.id;
     let system_name = user.system.name.clone();
@@ -492,7 +492,7 @@ async fn delete_system(
             log_system_action(
                 &state.db,
                 project_id,
-                user_id,
+                &caller,
                 "system.delete",
                 id,
                 Some(serde_json::json!({"name": system_name})),
@@ -549,7 +549,7 @@ async fn connect_system(
 ) -> Result<axum::response::Response, (StatusCode, Json<serde_json::Value>)> {
     user.require("systems.connect").map_err(|_| (StatusCode::FORBIDDEN, Json(json!({"error": "Insufficient permissions"}))))?;
     let project_id = user.project_id;
-    let user_id = user.claims.sub;
+    let caller = user.caller();
     let environment_id = user.environment_id;
     let system = user.system;
     let system_id = system.id;
@@ -571,7 +571,7 @@ async fn connect_system(
             log_system_action(
                 &state.db,
                 project_id,
-                user_id,
+                &caller,
                 "system.connect",
                 system_id,
                 None,
@@ -730,7 +730,7 @@ async fn disconnect_system(
 ) -> Result<axum::response::Response, (StatusCode, Json<serde_json::Value>)> {
     user.require("systems.connect").map_err(|_| (StatusCode::FORBIDDEN, Json(json!({"error": "Insufficient permissions"}))))?;
     let project_id = user.project_id;
-    let user_id = user.claims.sub;
+    let caller = user.caller();
     let environment_id = user.environment_id;
     let id = user.system.id;
 
@@ -739,7 +739,7 @@ async fn disconnect_system(
             log_system_action(
                 &state.db,
                 project_id,
-                user_id,
+                &caller,
                 "system.disconnect",
                 id,
                 None,
@@ -761,7 +761,7 @@ async fn trust_host_key(
 ) -> Result<axum::response::Response, (StatusCode, Json<serde_json::Value>)> {
     user.require("systems.connect").map_err(|_| (StatusCode::FORBIDDEN, Json(json!({"error": "Insufficient permissions"}))))?;
     let project_id = user.project_id;
-    let user_id = user.claims.sub;
+    let caller = user.caller();
     let environment_id = user.environment_id;
     let system = user.system;
 
@@ -794,7 +794,7 @@ async fn trust_host_key(
             log_system_action(
                 &state.db,
                 project_id,
-                user_id,
+                &caller,
                 "system.trust_host_key",
                 system.id,
                 Some(serde_json::json!({"hostname": &system.hostname, "port": port})),

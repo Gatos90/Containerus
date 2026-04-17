@@ -1,5 +1,8 @@
+use std::net::SocketAddr;
+
 use axum::{
     extract::{
+        connect_info::ConnectInfo,
         ws::{Message, WebSocket, WebSocketUpgrade},
         Path, State,
     },
@@ -15,6 +18,7 @@ use serde_json::json;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use uuid::Uuid;
 
+use crate::audit::{log_event, AuditCaller, AuditEvent};
 use crate::auth::jwt::decode_access_token;
 use crate::AppState;
 
@@ -26,8 +30,10 @@ async fn ws_k8s_exec(
     ws: WebSocketUpgrade,
     State(state): State<AppState>,
     Path(cluster_id): Path<Uuid>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
 ) -> impl IntoResponse {
-    ws.on_upgrade(move |socket| handle_k8s_exec_session(socket, state, cluster_id))
+    let client_ip = Some(addr.ip().to_string());
+    ws.on_upgrade(move |socket| handle_k8s_exec_session(socket, state, cluster_id, client_ip))
 }
 
 #[derive(Debug, Deserialize)]
@@ -43,11 +49,11 @@ struct ExecStartMessage {
 
 const ALLOWED_SHELLS: &[&str] = &["/bin/sh", "/bin/bash", "/bin/zsh", "/bin/ash", "/bin/fish"];
 
-async fn handle_k8s_exec_session(socket: WebSocket, state: AppState, cluster_id: Uuid) {
+async fn handle_k8s_exec_session(socket: WebSocket, state: AppState, cluster_id: Uuid, client_ip: Option<String>) {
     let (mut ws_sender, mut ws_receiver) = socket.split();
 
     // Phase 1: Wait for auth message
-    let _user_claims = match tokio::time::timeout(
+    let user_claims = match tokio::time::timeout(
         std::time::Duration::from_secs(30),
         wait_for_auth(&mut ws_sender, &mut ws_receiver, &state, cluster_id),
     )
@@ -167,6 +173,28 @@ async fn handle_k8s_exec_session(socket: WebSocket, state: AppState, cluster_id:
         start_msg.namespace,
         start_msg.pod
     );
+
+    let caller = AuditCaller::user(user_claims.sub, client_ip.clone());
+    let cluster_id_str = cluster_id.to_string();
+    let session_details = serde_json::json!({
+        "namespace": &start_msg.namespace,
+        "pod": &start_msg.pod,
+        "container": start_msg.container.as_deref(),
+        "session_id": &session_id,
+    });
+    log_event(
+        &state.db,
+        AuditEvent {
+            caller: &caller,
+            project_id: None,
+            environment_id: None,
+            action: "ws.k8s_exec.open",
+            resource_type: "cluster",
+            resource_id: Some(&cluster_id_str),
+            details: Some(session_details.clone()),
+        },
+    )
+    .await;
 
     let _ = ws_sender
         .send(Message::Text(
@@ -312,6 +340,20 @@ async fn handle_k8s_exec_session(socket: WebSocket, state: AppState, cluster_id:
         start_msg.namespace,
         start_msg.pod
     );
+
+    log_event(
+        &state.db,
+        AuditEvent {
+            caller: &caller,
+            project_id: None,
+            environment_id: None,
+            action: "ws.k8s_exec.close",
+            resource_type: "cluster",
+            resource_id: Some(&cluster_id_str),
+            details: Some(session_details),
+        },
+    )
+    .await;
 }
 
 /// Wait for auth message, verify JWT, and check cluster access with clusters.exec permission.

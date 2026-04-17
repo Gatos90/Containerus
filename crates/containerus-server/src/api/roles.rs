@@ -230,7 +230,7 @@ async fn create_role(
         updated_at: now,
     };
 
-    log_action(&state.db, None, Some(auth.claims.sub), "role.create", "role", Some(&role.id.to_string()), Some(serde_json::json!({"name": &role.name})), None, None).await;
+    log_action(&state.db, None, Some(auth.claims.sub), "role.create", "role", Some(&role.id.to_string()), Some(serde_json::json!({"name": &role.name})), auth.client_ip.as_deref(), None).await;
 
     Ok((StatusCode::CREATED, Json(RoleWithPermissions {
         role,
@@ -393,7 +393,7 @@ async fn update_role(
         updated_at: now,
     };
 
-    log_action(&state.db, None, Some(auth.claims.sub), "role.update", "role", Some(&role.id.to_string()), Some(serde_json::json!({"name": &role.name})), None, None).await;
+    log_action(&state.db, None, Some(auth.claims.sub), "role.update", "role", Some(&role.id.to_string()), Some(serde_json::json!({"name": &role.name})), auth.client_ip.as_deref(), None).await;
 
     Ok(Json(RoleWithPermissions {
         role,
@@ -479,7 +479,7 @@ async fn delete_role(
         tracing::warn!("Failed to invalidate permission cache for deleted role {id}: {e}");
     }
 
-    log_action(&state.db, None, Some(auth.claims.sub), "role.delete", "role", Some(&id.to_string()), Some(serde_json::json!({"name": &role.name})), None, None).await;
+    log_action(&state.db, None, Some(auth.claims.sub), "role.delete", "role", Some(&id.to_string()), Some(serde_json::json!({"name": &role.name})), auth.client_ip.as_deref(), None).await;
 
     Ok(Json(json!({ "message": "Role deleted successfully" })))
 }

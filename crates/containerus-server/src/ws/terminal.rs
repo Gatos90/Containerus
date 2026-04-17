@@ -1,5 +1,8 @@
+use std::net::SocketAddr;
+
 use axum::{
     extract::{
+        connect_info::ConnectInfo,
         ws::{Message, WebSocket, WebSocketUpgrade},
         Path, State,
     },
@@ -17,6 +20,7 @@ use uuid::Uuid;
 use containerus_core::models::container::ContainerRuntime;
 use containerus_core::runtime::CommandBuilder;
 
+use crate::audit::{log_event, AuditCaller, AuditEvent};
 use crate::auth::jwt::decode_access_token;
 use crate::db::models::SystemRow;
 use crate::AppState;
@@ -41,10 +45,12 @@ async fn ws_terminal(
     ws: WebSocketUpgrade,
     State(state): State<AppState>,
     Path(system_id): Path<Uuid>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
 ) -> impl IntoResponse {
+    let client_ip = Some(addr.ip().to_string());
     // Accept WebSocket upgrade unconditionally — auth happens inside the session
     ws.on_upgrade(move |socket| {
-        handle_terminal_session(socket, state, system_id)
+        handle_terminal_session(socket, state, system_id, client_ip)
     })
 }
 
@@ -95,11 +101,12 @@ async fn handle_terminal_session(
     socket: WebSocket,
     state: AppState,
     system_id: Uuid,
+    client_ip: Option<String>,
 ) {
     let (mut ws_sender, mut ws_receiver) = socket.split();
 
     // Phase 1: Wait for auth message (with timeout)
-    let (user_id, runtime_str) = match tokio::time::timeout(
+    let (user_id, runtime_str, project_id, environment_id) = match tokio::time::timeout(
         std::time::Duration::from_secs(30),
         wait_for_auth(&mut ws_sender, &mut ws_receiver, &state, system_id),
     )
@@ -118,6 +125,22 @@ async fn handle_terminal_session(
             return;
         }
     };
+
+    let caller = AuditCaller::user(user_id, client_ip.clone());
+    let system_id_str = system_id.to_string();
+    log_event(
+        &state.db,
+        AuditEvent {
+            caller: &caller,
+            project_id: Some(project_id),
+            environment_id: Some(environment_id),
+            action: "ws.terminal.open",
+            resource_type: "system",
+            resource_id: Some(&system_id_str),
+            details: None,
+        },
+    )
+    .await;
 
     // Phase 2: Wait for start message (with timeout)
     let start_msg = match tokio::time::timeout(
@@ -141,7 +164,22 @@ async fn handle_terminal_session(
     };
 
     // Proceed with PTY setup (moved from the old inline loop)
-    run_terminal_pty(ws_sender, ws_receiver, state, user_id, system_id, runtime_str, start_msg).await;
+    run_terminal_pty(ws_sender, ws_receiver, state.clone(), user_id, system_id, runtime_str, start_msg).await;
+
+    // Emit session close audit
+    log_event(
+        &state.db,
+        AuditEvent {
+            caller: &caller,
+            project_id: Some(project_id),
+            environment_id: Some(environment_id),
+            action: "ws.terminal.close",
+            resource_type: "system",
+            resource_id: Some(&system_id_str),
+            details: None,
+        },
+    )
+    .await;
 }
 
 /// Wait for the auth message and validate credentials.
@@ -150,8 +188,8 @@ async fn wait_for_auth(
     ws_receiver: &mut futures_util::stream::SplitStream<WebSocket>,
     state: &AppState,
     system_id: Uuid,
-) -> Result<(Uuid, String), ()> {
-    // Returns (user_id, primary_runtime)
+) -> Result<(Uuid, String, Uuid, Uuid), ()> {
+    // Returns (user_id, primary_runtime, project_id, environment_id)
     loop {
         match ws_receiver.next().await {
             Some(Ok(Message::Text(text))) => {
@@ -305,7 +343,7 @@ async fn wait_for_auth(
                             system_id
                         );
 
-                        return Ok((claims.sub, system.primary_runtime.clone()));
+                        return Ok((claims.sub, system.primary_runtime.clone(), project_id, environment_id));
                     }
                 }
             }

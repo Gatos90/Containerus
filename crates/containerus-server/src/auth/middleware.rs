@@ -1,8 +1,9 @@
 use std::collections::HashSet;
+use std::net::SocketAddr;
 use std::sync::Arc;
 
 use axum::{
-    extract::FromRequestParts,
+    extract::{connect_info::ConnectInfo, FromRequestParts},
     http::{header::AUTHORIZATION, request::Parts, StatusCode},
     response::{IntoResponse, Response},
     Json,
@@ -14,8 +15,20 @@ use uuid::Uuid;
 
 use super::jwt::{decode_access_token, AccessClaims};
 use super::resolver::{self, ResolverInput};
+use crate::audit::AuditCaller;
 use crate::db::models::EffectivePermissions;
 use crate::AppState;
+
+/// Pull the client IP off the request parts. The server is bound with
+/// `into_make_service_with_connect_info::<SocketAddr>()`, so every request
+/// carries a `ConnectInfo<SocketAddr>` in its extensions. Returning an owned
+/// string keeps the extractor structs `Clone` without borrowing from Parts.
+fn extract_client_ip(parts: &Parts) -> Option<String> {
+    parts
+        .extensions
+        .get::<ConnectInfo<SocketAddr>>()
+        .map(|ci| ci.0.ip().to_string())
+}
 
 // ============================================================================
 // TokenRevocationCache — in-memory revocation list for access tokens
@@ -148,6 +161,19 @@ impl PermissionCache {
 #[derive(Debug, Clone)]
 pub struct AuthUser {
     pub claims: AccessClaims,
+    /// Remote peer IP resolved via `ConnectInfo<SocketAddr>`. `None` only in
+    /// test harnesses that don't install connect-info — production paths
+    /// always populate it.
+    pub client_ip: Option<String>,
+}
+
+impl AuthUser {
+    /// Build the audit caller for this request. Currently all JWT-authenticated
+    /// callers are `AuditActor::User`; API tokens will pick a different variant
+    /// when CON-62g lands.
+    pub fn caller(&self) -> AuditCaller {
+        AuditCaller::user(self.claims.sub, self.client_ip.clone())
+    }
 }
 
 impl<S> FromRequestParts<S> for AuthUser
@@ -179,7 +205,9 @@ where
             return Err(AuthError::InvalidToken);
         }
 
-        Ok(AuthUser { claims })
+        let client_ip = extract_client_ip(parts);
+
+        Ok(AuthUser { claims, client_ip })
     }
 }
 
@@ -195,6 +223,13 @@ pub struct ProjectScoped {
     pub claims: AccessClaims,
     pub project_id: Uuid,
     pub permissions: EffectivePermissions,
+    pub client_ip: Option<String>,
+}
+
+impl ProjectScoped {
+    pub fn caller(&self) -> AuditCaller {
+        AuditCaller::user(self.claims.sub, self.client_ip.clone())
+    }
 }
 
 impl<S> FromRequestParts<S> for ProjectScoped
@@ -240,6 +275,7 @@ where
             claims: auth.claims,
             project_id,
             permissions,
+            client_ip: auth.client_ip,
         })
     }
 }
@@ -319,6 +355,13 @@ pub struct SystemScoped {
     pub project_id: Uuid,
     pub environment_id: Uuid,
     pub permissions: EffectivePermissions,
+    pub client_ip: Option<String>,
+}
+
+impl SystemScoped {
+    pub fn caller(&self) -> AuditCaller {
+        AuditCaller::user(self.claims.sub, self.client_ip.clone())
+    }
 }
 
 impl<S> FromRequestParts<S> for SystemScoped
@@ -393,6 +436,7 @@ where
             project_id,
             environment_id,
             permissions,
+            client_ip: auth.client_ip,
         })
     }
 }

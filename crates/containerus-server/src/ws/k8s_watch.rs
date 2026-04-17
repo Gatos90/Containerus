@@ -1,5 +1,8 @@
+use std::net::SocketAddr;
+
 use axum::{
     extract::{
+        connect_info::ConnectInfo,
         ws::{Message, WebSocket, WebSocketUpgrade},
         Path, State,
     },
@@ -28,6 +31,7 @@ use serde::Deserialize;
 use serde_json::json;
 use uuid::Uuid;
 
+use crate::audit::{log_event, AuditCaller, AuditEvent};
 use crate::auth::jwt::decode_access_token;
 use crate::AppState;
 
@@ -39,8 +43,10 @@ async fn ws_k8s_watch(
     ws: WebSocketUpgrade,
     State(state): State<AppState>,
     Path(cluster_id): Path<Uuid>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
 ) -> impl IntoResponse {
-    ws.on_upgrade(move |socket| handle_k8s_watch_session(socket, state, cluster_id))
+    let client_ip = Some(addr.ip().to_string());
+    ws.on_upgrade(move |socket| handle_k8s_watch_session(socket, state, cluster_id, client_ip))
 }
 
 #[derive(Debug, Deserialize)]
@@ -50,11 +56,11 @@ struct SubscribeMessage {
     kinds: Vec<String>,
 }
 
-async fn handle_k8s_watch_session(socket: WebSocket, state: AppState, cluster_id: Uuid) {
+async fn handle_k8s_watch_session(socket: WebSocket, state: AppState, cluster_id: Uuid, client_ip: Option<String>) {
     let (mut ws_sender, mut ws_receiver) = socket.split();
 
     // Phase 1: Auth
-    let _claims = match tokio::time::timeout(
+    let claims = match tokio::time::timeout(
         std::time::Duration::from_secs(30),
         wait_for_auth(&mut ws_sender, &mut ws_receiver, &state, cluster_id),
     )
@@ -140,6 +146,26 @@ async fn handle_k8s_watch_session(socket: WebSocket, state: AppState, cluster_id
         sub_msg.kinds
     );
 
+    let caller = AuditCaller::user(claims.sub, client_ip.clone());
+    let cluster_id_str = cluster_id.to_string();
+    let sub_details = serde_json::json!({
+        "namespace": &sub_msg.namespace,
+        "kinds": &sub_msg.kinds,
+    });
+    log_event(
+        &state.db,
+        AuditEvent {
+            caller: &caller,
+            project_id: None,
+            environment_id: None,
+            action: "ws.k8s_watch.open",
+            resource_type: "cluster",
+            resource_id: Some(&cluster_id_str),
+            details: Some(sub_details.clone()),
+        },
+    )
+    .await;
+
     let (tx, mut rx) = tokio::sync::mpsc::channel::<String>(512);
     // Use a watch channel as cancellation signal (true = cancelled)
     let (cancel_tx, cancel_rx) = tokio::sync::watch::channel(false);
@@ -221,6 +247,20 @@ async fn handle_k8s_watch_session(socket: WebSocket, state: AppState, cluster_id
         cluster_id,
         sub_msg.namespace
     );
+
+    log_event(
+        &state.db,
+        AuditEvent {
+            caller: &caller,
+            project_id: None,
+            environment_id: None,
+            action: "ws.k8s_watch.close",
+            resource_type: "cluster",
+            resource_id: Some(&cluster_id_str),
+            details: Some(sub_details),
+        },
+    )
+    .await;
 }
 
 async fn watch_resource<K>(

@@ -156,7 +156,7 @@ async fn create_environment(
 
     match environment {
         Ok(env) => {
-            log_action(&state.db, Some(scoped.project_id), Some(scoped.claims.sub), "environment.create", "environment", Some(&env.id.to_string()), Some(serde_json::json!({"name": &env.name})), None, None).await;
+            log_action(&state.db, Some(scoped.project_id), Some(scoped.claims.sub), "environment.create", "environment", Some(&env.id.to_string()), Some(serde_json::json!({"name": &env.name})), scoped.client_ip.as_deref(), None).await;
             Ok((StatusCode::CREATED, Json(json!(env))).into_response())
         }
         Err(e) => {
@@ -292,7 +292,7 @@ async fn update_environment(
 
     match result {
         Ok(Some(env)) => {
-            log_action(&state.db, Some(scoped.project_id), Some(scoped.claims.sub), "environment.update", "environment", Some(&env.id.to_string()), Some(serde_json::json!({"name": &env.name})), None, None).await;
+            log_action(&state.db, Some(scoped.project_id), Some(scoped.claims.sub), "environment.update", "environment", Some(&env.id.to_string()), Some(serde_json::json!({"name": &env.name})), scoped.client_ip.as_deref(), None).await;
             Ok(Json(json!(env)).into_response())
         }
         Ok(None) => Ok((
@@ -443,7 +443,7 @@ async fn delete_environment(
         )
     })?;
 
-    log_action(&state.db, Some(scoped.project_id), Some(scoped.claims.sub), "environment.delete", "environment", Some(&environment_id.to_string()), Some(serde_json::json!({"name": &environment.name})), None, None).await;
+    log_action(&state.db, Some(scoped.project_id), Some(scoped.claims.sub), "environment.delete", "environment", Some(&environment_id.to_string()), Some(serde_json::json!({"name": &environment.name})), scoped.client_ip.as_deref(), None).await;
 
     Ok(Json(json!({"message": "Environment deleted"})).into_response())
 }

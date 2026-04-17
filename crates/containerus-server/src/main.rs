@@ -280,9 +280,14 @@ async fn main() {
         .await
         .expect("Failed to bind address");
 
-    axum::serve(listener, app)
-        .await
-        .expect("Server error");
+    // Install ConnectInfo<SocketAddr> in request extensions so auth extractors
+    // and WebSocket handlers can read the remote peer IP for audit logging.
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+    )
+    .await
+    .expect("Server error");
 }
 
 /// If ADMIN_EMAIL and ADMIN_PASSWORD env vars are set, create an admin user on first run.

@@ -429,7 +429,7 @@ async fn container_action(
 
     match state.connections.execute_shared(system_id, &cmd).await {
         Ok(result) if result.success() => {
-            log_container_action(&state.db, user.project_id, user.claims.sub, &format!("container.{}", req.action), system_id, &container_id, Some(user.environment_id)).await;
+            log_container_action(&state.db, user.project_id, &user.caller(), &format!("container.{}", req.action), system_id, &container_id, Some(user.environment_id)).await;
             Ok(Json(json!({
                 "status": "ok",
                 "action": req.action,
@@ -653,7 +653,7 @@ async fn pull_image(
 
     match state.connections.execute_shared(system_id, &cmd).await {
         Ok(result) if result.success() => {
-            log_action(&state.db, Some(user.project_id), Some(user.claims.sub), "image.pull", "image", Some(&req.image), Some(serde_json::json!({"systemId": system_id.to_string()})), None, Some(user.environment_id)).await;
+            log_action(&state.db, Some(user.project_id), Some(user.claims.sub), "image.pull", "image", Some(&req.image), Some(serde_json::json!({"systemId": system_id.to_string()})), user.client_ip.as_deref(), Some(user.environment_id)).await;
             Ok(Json(json!({"status": "ok", "output": result.stdout.trim()})).into_response())
         }
         Ok(result) => {
@@ -694,7 +694,7 @@ async fn remove_image(
 
     match state.connections.execute_shared(system_id, &cmd).await {
         Ok(result) if result.success() => {
-            log_action(&state.db, Some(user.project_id), Some(user.claims.sub), "image.remove", "image", Some(&image_id), Some(serde_json::json!({"systemId": system_id.to_string()})), None, Some(user.environment_id)).await;
+            log_action(&state.db, Some(user.project_id), Some(user.claims.sub), "image.remove", "image", Some(&image_id), Some(serde_json::json!({"systemId": system_id.to_string()})), user.client_ip.as_deref(), Some(user.environment_id)).await;
             Ok(Json(json!({"status": "ok"})).into_response())
         }
         Ok(result) => {
@@ -733,7 +733,7 @@ async fn create_volume(
 
     match state.connections.execute_shared(system_id, &cmd).await {
         Ok(result) if result.success() => {
-            log_action(&state.db, Some(user.project_id), Some(user.claims.sub), "volume.create", "volume", Some(&req.name), Some(serde_json::json!({"systemId": system_id.to_string()})), None, Some(user.environment_id)).await;
+            log_action(&state.db, Some(user.project_id), Some(user.claims.sub), "volume.create", "volume", Some(&req.name), Some(serde_json::json!({"systemId": system_id.to_string()})), user.client_ip.as_deref(), Some(user.environment_id)).await;
             Ok(Json(json!({"status": "ok"})).into_response())
         }
         Ok(result) => {
@@ -774,7 +774,7 @@ async fn remove_volume(
 
     match state.connections.execute_shared(system_id, &cmd).await {
         Ok(result) if result.success() => {
-            log_action(&state.db, Some(user.project_id), Some(user.claims.sub), "volume.remove", "volume", Some(&name), Some(serde_json::json!({"systemId": system_id.to_string()})), None, Some(user.environment_id)).await;
+            log_action(&state.db, Some(user.project_id), Some(user.claims.sub), "volume.remove", "volume", Some(&name), Some(serde_json::json!({"systemId": system_id.to_string()})), user.client_ip.as_deref(), Some(user.environment_id)).await;
             Ok(Json(json!({"status": "ok"})).into_response())
         }
         Ok(result) => {
@@ -828,7 +828,7 @@ async fn create_network(
 
     match state.connections.execute_shared(system_id, &cmd).await {
         Ok(result) if result.success() => {
-            log_action(&state.db, Some(user.project_id), Some(user.claims.sub), "network.create", "network", Some(&req.name), Some(serde_json::json!({"systemId": system_id.to_string()})), None, Some(user.environment_id)).await;
+            log_action(&state.db, Some(user.project_id), Some(user.claims.sub), "network.create", "network", Some(&req.name), Some(serde_json::json!({"systemId": system_id.to_string()})), user.client_ip.as_deref(), Some(user.environment_id)).await;
             Ok(Json(json!({"status": "ok"})).into_response())
         }
         Ok(result) => {
@@ -868,7 +868,7 @@ async fn remove_network(
 
     match state.connections.execute_shared(system_id, &cmd).await {
         Ok(result) if result.success() => {
-            log_action(&state.db, Some(user.project_id), Some(user.claims.sub), "network.remove", "network", Some(&name), Some(serde_json::json!({"systemId": system_id.to_string()})), None, Some(user.environment_id)).await;
+            log_action(&state.db, Some(user.project_id), Some(user.claims.sub), "network.remove", "network", Some(&name), Some(serde_json::json!({"systemId": system_id.to_string()})), user.client_ip.as_deref(), Some(user.environment_id)).await;
             Ok(Json(json!({"status": "ok"})).into_response())
         }
         Ok(result) => {
@@ -911,7 +911,7 @@ async fn connect_to_network(
 
     match state.connections.execute_shared(system_id, &cmd).await {
         Ok(result) if result.success() => {
-            log_action(&state.db, Some(user.project_id), Some(user.claims.sub), "network.connect", "network", Some(&name), Some(serde_json::json!({"systemId": system_id.to_string(), "containerId": &req.container_id})), None, Some(user.environment_id)).await;
+            log_action(&state.db, Some(user.project_id), Some(user.claims.sub), "network.connect", "network", Some(&name), Some(serde_json::json!({"systemId": system_id.to_string(), "containerId": &req.container_id})), user.client_ip.as_deref(), Some(user.environment_id)).await;
             Ok(Json(json!({"status": "ok"})).into_response())
         }
         Ok(result) => {
@@ -954,7 +954,7 @@ async fn disconnect_from_network(
 
     match state.connections.execute_shared(system_id, &cmd).await {
         Ok(result) if result.success() => {
-            log_action(&state.db, Some(user.project_id), Some(user.claims.sub), "network.disconnect", "network", Some(&name), Some(serde_json::json!({"systemId": system_id.to_string(), "containerId": &req.container_id})), None, Some(user.environment_id)).await;
+            log_action(&state.db, Some(user.project_id), Some(user.claims.sub), "network.disconnect", "network", Some(&name), Some(serde_json::json!({"systemId": system_id.to_string(), "containerId": &req.container_id})), user.client_ip.as_deref(), Some(user.environment_id)).await;
             Ok(Json(json!({"status": "ok"})).into_response())
         }
         Ok(result) => {
