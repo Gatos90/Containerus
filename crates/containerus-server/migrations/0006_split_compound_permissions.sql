@@ -65,23 +65,38 @@ CROSS JOIN permissions p_new
 WHERE p_new.key = 'containers.pause'
 ON CONFLICT DO NOTHING;
 
--- clusters.manage → clusters.apply + clusters.delete.workload
--- (clusters.manage today lumps apply + workload delete together; preserve for existing holders.)
+-- clusters.manage → clusters.apply + clusters.delete.workload + clusters.watch
+--
+-- `clusters.apply` and `clusters.delete.workload` are the new fine-grained keys
+-- that API handlers (`delete_resource` in api/clusters/resources.rs,
+-- `delete_custom_resource` in api/clusters/discovery.rs) are already gated on.
+-- Those keys did not exist before this migration, so pre-0006 those endpoints
+-- were unreachable; forward-granting to existing `clusters.manage` holders
+-- restores the intended operator capability rather than expanding authority.
+--
+-- `clusters.watch` (the WebSocket resource watch at ws/k8s_watch.rs) is added
+-- here rather than under the `clusters.logs` mapping because the watch handler
+-- exposes arbitrary Kubernetes resources (Secrets, Roles, RoleBindings,
+-- ServiceAccounts, etc.) — i.e. operator-tier access, not log-adjacent read.
 INSERT INTO role_permissions (role_id, permission_id)
 SELECT rp.role_id, p_new.id
 FROM role_permissions rp
 JOIN permissions p_old ON p_old.id = rp.permission_id AND p_old.key = 'clusters.manage'
 CROSS JOIN permissions p_new
-WHERE p_new.key IN ('clusters.apply', 'clusters.delete.workload')
+WHERE p_new.key IN ('clusters.apply', 'clusters.delete.workload', 'clusters.watch')
 ON CONFLICT DO NOTHING;
 
--- clusters.logs → clusters.logs.stream, clusters.watch
+-- clusters.logs → clusters.logs.stream
+-- Intentionally does NOT include `clusters.watch`: the watch WS is not scoped
+-- to log-stream-adjacent resources (see comment on the `clusters.manage` block
+-- above). Granting it via `clusters.logs` would hand viewer/developer roles
+-- read access to Secrets/Roles/RoleBindings.
 INSERT INTO role_permissions (role_id, permission_id)
 SELECT rp.role_id, p_new.id
 FROM role_permissions rp
 JOIN permissions p_old ON p_old.id = rp.permission_id AND p_old.key = 'clusters.logs'
 CROSS JOIN permissions p_new
-WHERE p_new.key IN ('clusters.logs.stream', 'clusters.watch')
+WHERE p_new.key = 'clusters.logs.stream'
 ON CONFLICT DO NOTHING;
 
 -- Tunnel allowlist management is admin-only by default.

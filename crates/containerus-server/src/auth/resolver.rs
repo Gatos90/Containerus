@@ -162,24 +162,24 @@ pub fn resolve(input: &ResolverInput<'_>, permission: &str) -> ResolvedPermissio
 
     // 2. Resource-scoped deny — wins over every lower-precedence allow.
     if let Some(acl) = input.resource_acl {
-        if acl.denied_permissions.contains(permission) {
+        if set_covers(&acl.denied_permissions, permission) {
             return ResolvedPermission { decision: Decision::Deny, reason: DecisionReason::ResourceAclDeny };
         }
     }
 
     // 3. Resource-scoped allow — beats env + role allows, but not a resource deny above.
     if let Some(acl) = input.resource_acl {
-        if acl.extra_permissions.contains(permission) {
+        if set_covers(&acl.extra_permissions, permission) {
             return ResolvedPermission { decision: Decision::Allow, reason: DecisionReason::ResourceAclAllow };
         }
     }
 
     // 4. Environment-scoped override — deny wins over allow within the same layer.
     if let Some(env) = input.env_override {
-        if env.denied_permissions.contains(permission) {
+        if set_covers(&env.denied_permissions, permission) {
             return ResolvedPermission { decision: Decision::Deny, reason: DecisionReason::EnvOverrideDeny };
         }
-        if env.extra_permissions.contains(permission) {
+        if set_covers(&env.extra_permissions, permission) {
             return ResolvedPermission { decision: Decision::Allow, reason: DecisionReason::EnvOverrideAllow };
         }
     }
@@ -221,6 +221,37 @@ pub async fn load_resource_acl_view(
     .await?;
 
     row.as_ref().map(ResourceAclView::from_row).transpose().map_err(Into::into)
+}
+
+/// Coarse permission keys that migration 0006 split into finer keys. A
+/// `resource_acls` / env-override row written against the coarse key must keep
+/// protecting (for denies) and granting (for extras) the split keys, otherwise
+/// every pre-0006 per-resource deny on `containers.logs`, `systems.connect`,
+/// etc. silently becomes a deny bypass once handlers migrate to the split
+/// keys. The mapping mirrors the forward-grant SQL in migration 0006 exactly —
+/// keep them in sync if either side grows.
+const COARSE_SPLIT_MAP: &[(&str, &[&str])] = &[
+    ("systems.connect",   &["systems.terminal.open", "systems.tunnel.open"]),
+    ("containers.logs",   &["containers.logs.read", "containers.logs.follow"]),
+    ("containers.manage", &["containers.pause"]),
+    ("clusters.manage",   &["clusters.apply", "clusters.delete.workload", "clusters.watch"]),
+    ("clusters.logs",     &["clusters.logs.stream"]),
+];
+
+/// Return true if `set` contains `permission` directly, or if it contains any
+/// coarse key whose post-0006 split set includes `permission`. Used by the
+/// resolver for both deny and allow lists so pre-existing ACLs that reference
+/// the coarse key keep their original semantics after the split.
+fn set_covers(set: &HashSet<String>, permission: &str) -> bool {
+    if set.contains(permission) {
+        return true;
+    }
+    for (coarse, splits) in COARSE_SPLIT_MAP {
+        if splits.contains(&permission) && set.contains(*coarse) {
+            return true;
+        }
+    }
+    false
 }
 
 fn parse_permission_array(
@@ -546,6 +577,110 @@ mod tests {
                 .to_owned();
             assert_eq!(serde_str, r.as_str(), "drift between serde and as_str for {r:?}");
         }
+    }
+
+    // CON-74: migration 0006 splits compound permission keys. Pre-0006
+    // `resource_acls` rows that deny (or extra-grant) a coarse key must keep
+    // covering the new split keys, otherwise a tenant who denied
+    // `containers.logs` at resource scope would have that deny bypassed as
+    // soon as handlers move to `containers.logs.read` / `containers.logs.follow`.
+
+    #[test]
+    fn resource_deny_on_coarse_key_blocks_split_key() {
+        let role = perms(&["containers.logs.read"]);
+        let acl_row = acl(&[], &["containers.logs"]);
+        let input = ResolverInput {
+            is_company_admin: false,
+            role_permissions: &role,
+            resource_acl: Some(&acl_row),
+            env_override: None,
+        };
+        let r = resolve(&input, "containers.logs.read");
+        assert_eq!(r.decision, Decision::Deny);
+        assert_eq!(r.reason, DecisionReason::ResourceAclDeny);
+
+        let r = resolve(&input, "containers.logs.follow");
+        assert_eq!(r.decision, Decision::Deny);
+        assert_eq!(r.reason, DecisionReason::ResourceAclDeny);
+    }
+
+    #[test]
+    fn resource_deny_on_unsplit_key_does_not_leak_to_sibling() {
+        // `systems.tunnel.allowlist.manage` is deliberately NOT in the
+        // `systems.connect` split map (admin-only). A deny on `systems.connect`
+        // should still cover `systems.terminal.open` + `systems.tunnel.open`
+        // but not the admin-only key. This pins the split map.
+        let role = perms(&["systems.tunnel.allowlist.manage"]);
+        let acl_row = acl(&[], &["systems.connect"]);
+        let input = ResolverInput {
+            is_company_admin: false,
+            role_permissions: &role,
+            resource_acl: Some(&acl_row),
+            env_override: None,
+        };
+        let r = resolve(&input, "systems.tunnel.allowlist.manage");
+        assert_eq!(r.decision, Decision::Allow);
+        assert_eq!(r.reason, DecisionReason::RoleGrant);
+
+        let r = resolve(&input, "systems.terminal.open");
+        assert_eq!(r.decision, Decision::Deny);
+        assert_eq!(r.reason, DecisionReason::ResourceAclDeny);
+    }
+
+    #[test]
+    fn resource_extra_on_coarse_key_grants_split_keys() {
+        // Symmetric to the deny case: a per-resource extra-grant on the coarse
+        // key keeps granting the split capabilities after 0006, so tenants do
+        // not need a data migration over `extra_permissions`.
+        let role = HashSet::new();
+        let acl_row = acl(&["clusters.logs"], &[]);
+        let input = ResolverInput {
+            is_company_admin: false,
+            role_permissions: &role,
+            resource_acl: Some(&acl_row),
+            env_override: None,
+        };
+        let r = resolve(&input, "clusters.logs.stream");
+        assert_eq!(r.decision, Decision::Allow);
+        assert_eq!(r.reason, DecisionReason::ResourceAclAllow);
+    }
+
+    #[test]
+    fn env_deny_on_coarse_key_blocks_split_key() {
+        let role = perms(&["clusters.delete.workload"]);
+        let env_row = env(&[], &["clusters.manage"]);
+        let input = ResolverInput {
+            is_company_admin: false,
+            role_permissions: &role,
+            resource_acl: None,
+            env_override: Some(&env_row),
+        };
+        let r = resolve(&input, "clusters.delete.workload");
+        assert_eq!(r.decision, Decision::Deny);
+        assert_eq!(r.reason, DecisionReason::EnvOverrideDeny);
+
+        // `clusters.watch` is also under the `clusters.manage` split post-0006.
+        let r = resolve(&input, "clusters.watch");
+        assert_eq!(r.decision, Decision::Deny);
+        assert_eq!(r.reason, DecisionReason::EnvOverrideDeny);
+    }
+
+    #[test]
+    fn coarse_deny_does_not_block_unrelated_permissions() {
+        // A deny on `containers.logs` must not collaterally block
+        // `containers.exec` or other containers.* keys that are not in its
+        // split set.
+        let role = perms(&["containers.exec"]);
+        let acl_row = acl(&[], &["containers.logs"]);
+        let input = ResolverInput {
+            is_company_admin: false,
+            role_permissions: &role,
+            resource_acl: Some(&acl_row),
+            env_override: None,
+        };
+        let r = resolve(&input, "containers.exec");
+        assert_eq!(r.decision, Decision::Allow);
+        assert_eq!(r.reason, DecisionReason::RoleGrant);
     }
 
     #[test]
