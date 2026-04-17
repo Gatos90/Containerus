@@ -29,7 +29,9 @@ pub fn router() -> Router<AppState> {
 // ============================================================================
 
 pub fn permissions_router() -> Router<AppState> {
-    Router::new().route("/", get(list_permissions))
+    Router::new()
+        .route("/", get(list_permissions))
+        .route("/catalog", get(permissions_catalog))
 }
 
 // ============================================================================
@@ -502,4 +504,64 @@ async fn list_permissions(
     })?;
 
     Ok(Json(permissions))
+}
+
+// ============================================================================
+// Handlers — Permission catalog (CON-63)
+// ============================================================================
+
+/// A permission key plus metadata, grouped under its category in the catalog.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CatalogPermission {
+    key: String,
+    description: String,
+}
+
+/// One category entry in the machine-readable catalog response.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CatalogCategory {
+    category: String,
+    permissions: Vec<CatalogPermission>,
+}
+
+/// Machine-readable permission tree for the admin UI to render checkboxes
+/// dynamically. Shape is stable and intentionally simple:
+/// `{ categories: [{ category, permissions: [{ key, description }] }], enforceAcls }`.
+/// `enforceAcls` surfaces the `CONTAINERUS_ENFORCE_ACLS` feature flag so the UI
+/// can warn admins when per-resource ACL enforcement is still off.
+async fn permissions_catalog(
+    State(state): State<AppState>,
+    _auth: AuthUser,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    let rows = sqlx::query_as::<_, Permission>(
+        "SELECT * FROM permissions ORDER BY category, key",
+    )
+    .fetch_all(&state.db)
+    .await
+    .map_err(|e| {
+        tracing::error!("Failed to list permissions for catalog: {e}");
+        (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": "Internal server error" })))
+    })?;
+
+    let mut categories: Vec<CatalogCategory> = Vec::new();
+    for p in rows {
+        match categories.last_mut() {
+            Some(last) if last.category == p.category => {
+                last.permissions.push(CatalogPermission { key: p.key, description: p.description });
+            }
+            _ => {
+                categories.push(CatalogCategory {
+                    category: p.category.clone(),
+                    permissions: vec![CatalogPermission { key: p.key, description: p.description }],
+                });
+            }
+        }
+    }
+
+    Ok(Json(json!({
+        "categories": categories,
+        "enforceAcls": state.config.enforce_acls,
+    })))
 }

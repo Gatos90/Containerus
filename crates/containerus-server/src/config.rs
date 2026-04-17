@@ -19,6 +19,9 @@ pub struct ServerConfig {
     pub encryption_salt: String,
     /// Allowed CORS origins (comma-separated, or "*" for all)
     pub cors_origins: String,
+    /// Enforce `resource_acls` (deny/allow) on per-resource permission checks.
+    /// Default off during Phase A; flipped on after staging burn-in per the CON-62 plan.
+    pub enforce_acls: bool,
 }
 
 impl ServerConfig {
@@ -71,6 +74,16 @@ impl ServerConfig {
         let cors_origins = std::env::var("CORS_ORIGINS")
             .unwrap_or_else(|_| "http://localhost:1420".to_string());
 
+        // Feature flag: wire resource_acls into per-resource permission checks.
+        // Accept "1"/"true"/"yes" (case-insensitive) as on; anything else (including unset) is off.
+        let enforce_acls = match std::env::var("CONTAINERUS_ENFORCE_ACLS") {
+            Ok(raw) => {
+                let v = raw.trim().to_ascii_lowercase();
+                matches!(v.as_str(), "1" | "true" | "yes" | "on")
+            }
+            Err(_) => false,
+        };
+
         Ok(Self {
             bind_addr,
             database_url,
@@ -80,6 +93,7 @@ impl ServerConfig {
             encryption_key,
             encryption_salt,
             cors_origins,
+            enforce_acls,
         })
     }
 }

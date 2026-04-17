@@ -13,6 +13,7 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use super::jwt::{decode_access_token, AccessClaims};
+use super::resolver::{self, ResolverInput};
 use crate::db::models::EffectivePermissions;
 use crate::AppState;
 
@@ -261,6 +262,48 @@ impl ProjectScoped {
             Err(AuthError::InsufficientPermission)
         }
     }
+
+    /// Resource-scoped permission check that consults `resource_acls` when the
+    /// `CONTAINERUS_ENFORCE_ACLS` flag is on. When the flag is off this is
+    /// identical to [`ProjectScoped::require`] — the ACL table is not read,
+    /// preserving Phase A's "enforcement off by default" rollout.
+    pub async fn require_for_resource(
+        &self,
+        perm: &str,
+        resource_type: &str,
+        resource_id: Uuid,
+        state: &AppState,
+    ) -> Result<(), AuthError> {
+        let acl_view = if state.config.enforce_acls {
+            resolver::load_resource_acl_view(
+                &state.db,
+                self.claims.sub,
+                self.project_id,
+                resource_type,
+                resource_id,
+            )
+            .await
+            .map_err(|e| {
+                tracing::error!("Failed to load resource ACL: {e}");
+                AuthError::InternalError
+            })?
+        } else {
+            None
+        };
+
+        let input = ResolverInput {
+            is_company_admin: self.permissions.is_company_admin,
+            role_permissions: &self.permissions.permissions,
+            resource_acl: acl_view.as_ref(),
+            env_override: None,
+        };
+
+        if resolver::resolve(&input, perm).is_allowed() {
+            Ok(())
+        } else {
+            Err(AuthError::InsufficientPermission)
+        }
+    }
 }
 
 // ============================================================================
@@ -365,6 +408,45 @@ impl SystemScoped {
 
     pub fn require_any(&self, perms: &[&str]) -> Result<(), AuthError> {
         if self.permissions.has_any(perms) {
+            Ok(())
+        } else {
+            Err(AuthError::InsufficientPermission)
+        }
+    }
+
+    /// Resource-scoped permission check that reads `resource_acls` for this
+    /// specific system when `CONTAINERUS_ENFORCE_ACLS` is on. Falls back to
+    /// the plain role-grant check when the flag is off.
+    pub async fn require_for_system(
+        &self,
+        perm: &str,
+        state: &AppState,
+    ) -> Result<(), AuthError> {
+        let acl_view = if state.config.enforce_acls {
+            resolver::load_resource_acl_view(
+                &state.db,
+                self.claims.sub,
+                self.project_id,
+                "system",
+                self.system.id,
+            )
+            .await
+            .map_err(|e| {
+                tracing::error!("Failed to load resource ACL: {e}");
+                AuthError::InternalError
+            })?
+        } else {
+            None
+        };
+
+        let input = ResolverInput {
+            is_company_admin: self.permissions.is_company_admin,
+            role_permissions: &self.permissions.permissions,
+            resource_acl: acl_view.as_ref(),
+            env_override: None,
+        };
+
+        if resolver::resolve(&input, perm).is_allowed() {
             Ok(())
         } else {
             Err(AuthError::InsufficientPermission)
