@@ -18,7 +18,7 @@
 //!    `AuthResponse`.
 
 use std::time::{SystemTime, UNIX_EPOCH};
-
+use containerus_rbac_macros::{public_endpoint, require_permissions};
 use axum::{
     extract::{ConnectInfo, State},
     http::{HeaderMap, StatusCode},
@@ -105,6 +105,7 @@ pub struct VerifyLoginRequest {
 ///
 /// If MFA is already enabled, the caller has to disable first — re-enrolling
 /// silently would let a compromised session lock out the real user.
+#[require_permissions("mfa.self.manage")]
 async fn enroll(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -165,6 +166,7 @@ async fn enroll(
 
 /// Confirm enrollment by presenting a valid TOTP, then enable MFA and
 /// return the one-time backup codes.
+#[require_permissions("mfa.self.manage")]
 async fn verify_enrollment(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -238,6 +240,7 @@ async fn verify_enrollment(
 
 /// Disable MFA. Requires a currently-valid TOTP or backup code so that a
 /// stolen session alone can't defeat the mandate.
+#[require_permissions("mfa.self.manage")]
 async fn disable(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -323,6 +326,7 @@ async fn disable(
 /// Complete a login flow that required MFA. Consumes the challenge token
 /// issued by `/auth/login` and the user's TOTP / backup code; on success
 /// mints the real access + refresh pair.
+#[public_endpoint]
 async fn verify_login(
     State(state): State<AppState>,
     ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,

@@ -5,6 +5,7 @@ use axum::{
     routing::{delete, get, post},
     Json, Router,
 };
+use containerus_rbac_macros::require_permissions;
 use serde::Deserialize;
 use serde_json::json;
 use uuid::Uuid;
@@ -261,6 +262,7 @@ fn runtimes_to_query(system: &SystemRow) -> Result<Vec<ContainerRuntime>, (Statu
 // ============================================================================
 
 /// List containers on a system with full inspect details.
+#[require_permissions("containers.view")]
 async fn list_containers(
     user: SystemScoped,
     State(state): State<AppState>,
@@ -343,6 +345,7 @@ async fn list_containers(
 }
 
 /// Inspect a single container for detailed information.
+#[require_permissions("containers.view")]
 async fn inspect_container(
     user: SystemScoped,
     State(state): State<AppState>,
@@ -388,6 +391,13 @@ async fn inspect_container(
 }
 
 /// Perform an action on a container (start, stop, restart, etc.).
+#[require_permissions(
+    "containers.start",
+    "containers.stop",
+    "containers.restart",
+    "containers.delete",
+    "containers.pause"
+)]
 async fn container_action(
     user: SystemScoped,
     State(state): State<AppState>,
@@ -453,6 +463,7 @@ async fn container_action(
 }
 
 /// Get logs for a container.
+#[require_permissions("containers.logs.read")]
 async fn container_logs(
     user: SystemScoped,
     State(state): State<AppState>,
@@ -501,6 +512,7 @@ async fn container_logs(
 }
 
 /// List images on a system.
+#[require_permissions("images.view")]
 async fn list_images(
     user: SystemScoped,
     State(state): State<AppState>,
@@ -545,6 +557,7 @@ async fn list_images(
 }
 
 /// List volumes on a system.
+#[require_permissions("volumes.view")]
 async fn list_volumes(
     user: SystemScoped,
     State(state): State<AppState>,
@@ -589,6 +602,7 @@ async fn list_volumes(
 }
 
 /// List networks on a system.
+#[require_permissions("networks.view")]
 async fn list_networks(
     user: SystemScoped,
     State(state): State<AppState>,
@@ -637,6 +651,7 @@ async fn list_networks(
 // ============================================================================
 
 /// Pull an image on a system.
+#[require_permissions("images.pull")]
 async fn pull_image(
     user: SystemScoped,
     State(state): State<AppState>,
@@ -677,6 +692,7 @@ async fn pull_image(
 }
 
 /// Remove an image from a system.
+#[require_permissions("images.delete")]
 async fn remove_image(
     user: SystemScoped,
     State(state): State<AppState>,
@@ -719,6 +735,7 @@ async fn remove_image(
 }
 
 /// Create a volume on a system.
+#[require_permissions("volumes.create")]
 async fn create_volume(
     user: SystemScoped,
     State(state): State<AppState>,
@@ -759,6 +776,7 @@ async fn create_volume(
 }
 
 /// Remove a volume from a system.
+#[require_permissions("volumes.delete")]
 async fn remove_volume(
     user: SystemScoped,
     State(state): State<AppState>,
@@ -801,6 +819,7 @@ async fn remove_volume(
 }
 
 /// Create a network on a system.
+#[require_permissions("networks.create")]
 async fn create_network(
     user: SystemScoped,
     State(state): State<AppState>,
@@ -856,6 +875,7 @@ async fn create_network(
 }
 
 /// Remove a network from a system.
+#[require_permissions("networks.delete")]
 async fn remove_network(
     user: SystemScoped,
     State(state): State<AppState>,
@@ -897,6 +917,7 @@ async fn remove_network(
 }
 
 /// Connect a container to a network.
+#[require_permissions("networks.manage")]
 async fn connect_to_network(
     user: SystemScoped,
     State(state): State<AppState>,
@@ -941,6 +962,7 @@ async fn connect_to_network(
 }
 
 /// Disconnect a container from a network.
+#[require_permissions("networks.manage")]
 async fn disconnect_from_network(
     user: SystemScoped,
     State(state): State<AppState>,

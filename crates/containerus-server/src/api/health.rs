@@ -1,5 +1,5 @@
 use std::time::Duration;
-
+use containerus_rbac_macros::public_endpoint;
 use axum::{extract::State, http::StatusCode, routing::get, Json, Router};
 use serde_json::{json, Value};
 
@@ -9,6 +9,7 @@ pub fn router() -> Router<AppState> {
     Router::new().route("/", get(health_check))
 }
 
+#[public_endpoint]
 async fn health_check(State(state): State<AppState>) -> (StatusCode, Json<Value>) {
     // Verify database connectivity with a timeout to fail fast
     let db_ok = tokio::time::timeout(

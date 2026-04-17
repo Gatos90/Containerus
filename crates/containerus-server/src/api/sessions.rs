@@ -12,6 +12,7 @@ use axum::{
     routing::{delete, get},
     Json, Router,
 };
+use containerus_rbac_macros::require_permissions;
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 use serde_json::{json, Value};
@@ -45,6 +46,7 @@ pub struct SessionResponse {
     pub is_current: bool,
 }
 
+#[require_permissions("sessions.self.view")]
 async fn list_my_sessions(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -86,6 +88,7 @@ async fn list_my_sessions(
     Ok(Json(sessions))
 }
 
+#[require_permissions("sessions.self.revoke")]
 async fn revoke_my_session(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -128,6 +131,7 @@ async fn revoke_my_session(
 /// not the refresh jti, so we keep the most recently used refresh token on
 /// the assumption it's the caller. Clients that want a hard "sign out
 /// everywhere including me" can follow up with `/auth/logout`.
+#[require_permissions("sessions.self.revoke")]
 async fn revoke_all_my_sessions(
     State(state): State<AppState>,
     auth: AuthUser,

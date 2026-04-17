@@ -1,5 +1,5 @@
 use std::net::SocketAddr;
-
+use containerus_rbac_macros::public_endpoint;
 use axum::{
     extract::{ConnectInfo, State},
     http::{HeaderMap, StatusCode},
@@ -99,6 +99,7 @@ pub struct MeResponse {
 
 /// Register a new user with email + password.
 /// If this is the first user, creates the company row and makes them company admin.
+#[public_endpoint]
 async fn register(
     State(state): State<AppState>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
@@ -263,6 +264,7 @@ async fn register(
 }
 
 /// Login with email + password.
+#[public_endpoint]
 async fn login(
     State(state): State<AppState>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
@@ -436,6 +438,7 @@ async fn login(
 }
 
 /// Refresh an access token using a refresh token.
+#[public_endpoint]
 async fn refresh(
     State(state): State<AppState>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
@@ -591,6 +594,7 @@ async fn refresh(
 
 /// Revoke the current access token so it is rejected immediately on subsequent requests.
 /// Also deletes all stored refresh tokens for the user (forces full re-login on all devices).
+#[public_endpoint]
 async fn logout(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -611,6 +615,7 @@ async fn logout(
 }
 
 /// Get the current authenticated user's info, including permissions across all project memberships.
+#[public_endpoint]
 async fn me(
     State(state): State<AppState>,
     auth: AuthUser,

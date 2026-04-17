@@ -4,6 +4,7 @@ use axum::{
     routing::{delete, get, post, put},
     Json, Router,
 };
+use containerus_rbac_macros::require_permissions;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use uuid::Uuid;
@@ -72,6 +73,7 @@ pub struct MyPermissionsResponse {
 
 /// List projects visible to the authenticated user.
 /// Company admins see ALL projects; regular users see only projects they belong to.
+#[require_permissions("projects.view")]
 async fn list_projects(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -106,6 +108,7 @@ async fn list_projects(
 
 /// Create a new project. Requires company admin or `projects.create` permission.
 /// The creator is added as a member with the Project Admin role.
+#[require_permissions("company.admin")]
 async fn create_project(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -300,6 +303,7 @@ async fn create_project(
 }
 
 /// Get a single project by ID. Requires `projects.view` permission.
+#[require_permissions("projects.view")]
 async fn get_project(
     State(state): State<AppState>,
     scoped: ProjectScoped,
@@ -334,6 +338,7 @@ async fn get_project(
 
 /// Delete a project. Requires `projects.edit` permission (or company admin).
 /// Only allowed when the project has no environments.
+#[require_permissions("projects.edit")]
 async fn delete_project(
     State(state): State<AppState>,
     scoped: ProjectScoped,
@@ -454,6 +459,7 @@ async fn delete_project(
 }
 
 /// List members of a project. Requires `projects.members.view` permission.
+#[require_permissions("projects.members.view")]
 async fn list_members(
     State(state): State<AppState>,
     scoped: ProjectScoped,
@@ -491,6 +497,7 @@ async fn list_members(
 }
 
 /// Invite a user to a project by email. Requires `projects.members.manage` permission.
+#[require_permissions("projects.members.manage")]
 async fn invite_member(
     State(state): State<AppState>,
     scoped: ProjectScoped,
@@ -596,6 +603,7 @@ async fn invite_member(
 }
 
 /// Update a member's role in a project. Requires `projects.members.manage` permission.
+#[require_permissions("projects.members.manage")]
 async fn update_member_role(
     State(state): State<AppState>,
     scoped: ProjectScoped,
@@ -686,6 +694,7 @@ async fn update_member_role(
 }
 
 /// Remove a member from a project. Requires `projects.members.manage` permission.
+#[require_permissions("projects.members.manage")]
 async fn remove_member(
     State(state): State<AppState>,
     scoped: ProjectScoped,
@@ -776,6 +785,7 @@ async fn remove_member(
 }
 
 /// Get the authenticated user's effective permissions for a specific project.
+#[require_permissions("projects.view")]
 async fn get_my_permissions(
     State(state): State<AppState>,
     auth: AuthUser,

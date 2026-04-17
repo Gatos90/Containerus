@@ -5,6 +5,7 @@ use axum::{
     routing::{delete, get, post},
     Json, Router,
 };
+use containerus_rbac_macros::require_permissions;
 use base64::Engine;
 use k8s_openapi::api::core::v1::Pod;
 use kube::api::{Api, AttachParams};
@@ -220,6 +221,7 @@ async fn verify_file_access(
 // Handlers
 // ============================================================================
 
+#[require_permissions("clusters.exec")]
 async fn list_directory(
     auth: AuthUser,
     State(state): State<AppState>,
@@ -277,6 +279,7 @@ async fn list_directory(
     }))
 }
 
+#[require_permissions("clusters.exec")]
 async fn read_file(
     auth: AuthUser,
     State(state): State<AppState>,
@@ -323,6 +326,7 @@ async fn read_file(
     }))
 }
 
+#[require_permissions("clusters.exec")]
 async fn write_file(
     auth: AuthUser,
     State(state): State<AppState>,
@@ -359,6 +363,7 @@ async fn write_file(
     Ok(Json(json!({"ok": true})))
 }
 
+#[require_permissions("clusters.exec")]
 async fn create_directory(
     auth: AuthUser,
     State(state): State<AppState>,
@@ -381,6 +386,7 @@ async fn create_directory(
     Ok(Json(json!({"ok": true})))
 }
 
+#[require_permissions("clusters.exec")]
 async fn delete_path(
     auth: AuthUser,
     State(state): State<AppState>,
@@ -420,6 +426,7 @@ async fn delete_path(
     Ok(Json(json!({"ok": true})))
 }
 
+#[require_permissions("clusters.exec")]
 async fn rename_path(
     auth: AuthUser,
     State(state): State<AppState>,
@@ -443,6 +450,7 @@ async fn rename_path(
     Ok(Json(json!({"ok": true})))
 }
 
+#[require_permissions("clusters.exec")]
 async fn download_file(
     auth: AuthUser,
     State(state): State<AppState>,
@@ -474,6 +482,7 @@ async fn download_file(
     })))
 }
 
+#[require_permissions("clusters.exec")]
 async fn upload_file(
     auth: AuthUser,
     State(state): State<AppState>,

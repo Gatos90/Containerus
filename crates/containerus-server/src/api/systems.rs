@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-
+use containerus_rbac_macros::require_permissions;
 use axum::{
     extract::{Path, State},
     http::StatusCode,
@@ -111,6 +111,7 @@ pub struct SystemWithStatus {
 // ============================================================================
 
 /// List all systems in the given environment.
+#[require_permissions("systems.view")]
 async fn list_systems(
     user: ProjectScoped,
     State(state): State<AppState>,
@@ -146,6 +147,7 @@ async fn list_systems(
 }
 
 /// Create a new system in the environment.
+#[require_permissions("systems.create")]
 async fn create_system(
     user: ProjectScoped,
     State(state): State<AppState>,
@@ -308,6 +310,7 @@ async fn create_system(
 // ============================================================================
 
 /// Get a single system by ID.
+#[require_permissions("systems.view")]
 async fn get_system(
     user: SystemScoped,
     State(state): State<AppState>,
@@ -323,6 +326,7 @@ async fn get_system(
 }
 
 /// Update a system.
+#[require_permissions("systems.edit")]
 async fn update_system(
     user: SystemScoped,
     State(state): State<AppState>,
@@ -465,6 +469,7 @@ async fn update_system(
 }
 
 /// Delete a system and its credentials.
+#[require_permissions("systems.delete")]
 async fn delete_system(
     user: SystemScoped,
     State(state): State<AppState>,
@@ -512,6 +517,7 @@ async fn delete_system(
 }
 
 /// Test connection to a system without persisting the connection.
+#[require_permissions("systems.terminal.open")]
 async fn test_connection(
     user: SystemScoped,
     State(state): State<AppState>,
@@ -547,6 +553,7 @@ async fn test_connection(
 }
 
 /// Connect to a system (persist the connection in the pool).
+#[require_permissions("systems.terminal.open")]
 async fn connect_system(
     user: SystemScoped,
     State(state): State<AppState>,
@@ -683,6 +690,7 @@ pub(crate) async fn detect_and_update_runtimes(state: &AppState, system_id: Uuid
 }
 
 /// Get extended system info (username, CPU, RAM, uptime, containers, etc.)
+#[require_permissions("systems.view")]
 async fn get_system_info(
     user: SystemScoped,
     State(state): State<AppState>,
@@ -710,6 +718,7 @@ async fn get_system_info(
 }
 
 /// Get live system metrics (CPU usage, memory usage, load average)
+#[require_permissions("systems.view")]
 async fn get_live_metrics(
     user: SystemScoped,
     State(state): State<AppState>,
@@ -731,6 +740,7 @@ async fn get_live_metrics(
 }
 
 /// Disconnect from a system.
+#[require_permissions("systems.terminal.open")]
 async fn disconnect_system(
     user: SystemScoped,
     State(state): State<AppState>,
@@ -763,6 +773,7 @@ async fn disconnect_system(
 
 /// Remove a stale known_hosts entry for a system and retry connection.
 /// Used when the server's host key has changed (e.g. server reinstalled).
+#[require_permissions("systems.terminal.open")]
 async fn trust_host_key(
     user: SystemScoped,
     State(state): State<AppState>,

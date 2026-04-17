@@ -4,6 +4,7 @@ use axum::{
     routing::{delete, get, post, put},
     Json, Router,
 };
+use containerus_rbac_macros::require_permissions;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sqlx::PgPool;
@@ -130,6 +131,7 @@ async fn normalize_and_validate(
 // ============================================================================
 
 /// List all resource ACLs for a project. Requires projects.members.manage permission.
+#[require_permissions("projects.members.manage")]
 async fn list_acls(
     State(state): State<AppState>,
     scoped: ProjectScoped,
@@ -153,6 +155,7 @@ async fn list_acls(
 }
 
 /// Create a resource ACL entry. Requires projects.members.manage permission.
+#[require_permissions("projects.members.manage")]
 async fn create_acl(
     State(state): State<AppState>,
     scoped: ProjectScoped,
@@ -228,6 +231,7 @@ async fn create_acl(
 }
 
 /// Update a resource ACL entry. Requires projects.members.manage permission.
+#[require_permissions("projects.members.manage")]
 async fn update_acl(
     State(state): State<AppState>,
     scoped: ProjectScoped,
@@ -316,6 +320,7 @@ async fn update_acl(
 }
 
 /// Delete a resource ACL entry. Requires projects.members.manage permission.
+#[require_permissions("projects.members.manage")]
 async fn delete_acl(
     State(state): State<AppState>,
     scoped: ProjectScoped,

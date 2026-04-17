@@ -4,6 +4,7 @@ use axum::{
     routing::{delete, get, post, put},
     Json, Router,
 };
+use containerus_rbac_macros::require_permissions;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::HashSet;
@@ -61,6 +62,7 @@ pub struct UpdateRoleRequest {
 // ============================================================================
 
 /// List all roles, ordered by system roles first then by name.
+#[require_permissions("roles.view")]
 async fn list_roles(
     State(state): State<AppState>,
     _auth: AuthUser,
@@ -79,6 +81,7 @@ async fn list_roles(
 }
 
 /// Get a single role by ID, including its permission keys.
+#[require_permissions("roles.view")]
 async fn get_role(
     State(state): State<AppState>,
     _auth: AuthUser,
@@ -118,6 +121,7 @@ async fn get_role(
 
 /// Create a new custom role with the given permissions.
 /// Requires company admin.
+#[require_permissions("company.admin")]
 async fn create_role(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -240,6 +244,7 @@ async fn create_role(
 
 /// Update an existing custom role. Cannot modify system roles.
 /// Requires company admin.
+#[require_permissions("company.admin")]
 async fn update_role(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -403,6 +408,7 @@ async fn update_role(
 
 /// Delete a custom role. Cannot delete system roles or roles still in use.
 /// Requires company admin.
+#[require_permissions("company.admin")]
 async fn delete_role(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -489,6 +495,7 @@ async fn delete_role(
 // ============================================================================
 
 /// List all available permissions, ordered by category and key.
+#[require_permissions("roles.view")]
 async fn list_permissions(
     State(state): State<AppState>,
     _auth: AuthUser,
@@ -531,6 +538,7 @@ struct CatalogCategory {
 /// `{ categories: [{ category, permissions: [{ key, description }] }], enforceAcls }`.
 /// `enforceAcls` surfaces the `CONTAINERUS_ENFORCE_ACLS` feature flag so the UI
 /// can warn admins when per-resource ACL enforcement is still off.
+#[require_permissions("roles.view")]
 async fn permissions_catalog(
     State(state): State<AppState>,
     _auth: AuthUser,

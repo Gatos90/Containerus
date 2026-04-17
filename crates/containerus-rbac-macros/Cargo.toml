@@ -1,0 +1,19 @@
+[package]
+name = "containerus-rbac-macros"
+version = "0.1.0"
+edition = "2021"
+description = "Declarative permission-gating attributes for Containerus API handlers (CON-83)."
+
+[lib]
+proc-macro = true
+
+[dependencies]
+proc-macro2 = "1"
+quote = "1"
+syn = { version = "2", features = ["full"] }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt"] }
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(rbac_compile_fail_check)"] }

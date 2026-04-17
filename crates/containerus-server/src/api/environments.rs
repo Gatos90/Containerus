@@ -5,6 +5,7 @@ use axum::{
     routing::{delete, get, post, put},
     Json, Router,
 };
+use containerus_rbac_macros::require_permissions;
 use serde::Deserialize;
 use serde_json::json;
 use uuid::Uuid;
@@ -79,6 +80,7 @@ fn is_valid_slug(s: &str) -> bool {
 // ============================================================================
 
 /// List all environments for a project.
+#[require_permissions("environments.view")]
 async fn list_environments(
     scoped: ProjectScoped,
     State(state): State<AppState>,
@@ -108,6 +110,7 @@ async fn list_environments(
 }
 
 /// Create a new environment in a project.
+#[require_permissions("environments.create")]
 async fn create_environment(
     scoped: ProjectScoped,
     State(state): State<AppState>,
@@ -179,6 +182,7 @@ async fn create_environment(
 }
 
 /// Get a single environment by ID.
+#[require_permissions("environments.view")]
 async fn get_environment(
     scoped: ProjectScoped,
     State(state): State<AppState>,
@@ -217,6 +221,7 @@ async fn get_environment(
 }
 
 /// Update an environment.
+#[require_permissions("environments.edit")]
 async fn update_environment(
     scoped: ProjectScoped,
     State(state): State<AppState>,
@@ -320,6 +325,7 @@ async fn update_environment(
 }
 
 /// Delete an environment. Prevents deletion if it still contains resources.
+#[require_permissions("environments.delete")]
 async fn delete_environment(
     scoped: ProjectScoped,
     State(state): State<AppState>,

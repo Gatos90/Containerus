@@ -5,6 +5,7 @@ use axum::{
     routing::post,
     Json, Router,
 };
+use containerus_rbac_macros::require_permissions;
 use k8s_openapi::api::{
     apps::v1::{DaemonSet, Deployment, StatefulSet},
     autoscaling::v2::HorizontalPodAutoscaler,
@@ -42,6 +43,7 @@ const CLUSTER_SCOPED_KINDS: &[&str] = &[
     "IngressClass",
 ];
 
+#[require_permissions("clusters.apply")]
 async fn apply_yaml(
     auth: AuthUser,
     State(state): State<AppState>,

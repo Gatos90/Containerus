@@ -1016,6 +1016,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "containerus-rbac-macros"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
+ "tokio",
+]
+
+[[package]]
 name = "containerus-server"
 version = "0.1.0"
 dependencies = [
@@ -1026,6 +1036,7 @@ dependencies = [
  "base64 0.22.1",
  "chrono",
  "containerus-core",
+ "containerus-rbac-macros",
  "dashmap",
  "dotenvy",
  "futures-util",
@@ -1033,6 +1044,7 @@ dependencies = [
  "jsonwebtoken",
  "k8s-openapi",
  "kube",
+ "proc-macro2",
  "rand 0.8.5",
  "russh",
  "serde",
@@ -1041,6 +1053,7 @@ dependencies = [
  "sha1 0.10.6",
  "sha2 0.10.9",
  "sqlx",
+ "syn 2.0.117",
  "thiserror 1.0.69",
  "tokio",
  "tower",

@@ -5,6 +5,7 @@ use axum::{
     routing::{delete, get, post},
     Json, Router,
 };
+use containerus_rbac_macros::require_permissions;
 use base64::Engine;
 use serde::Deserialize;
 use serde_json::json;
@@ -185,6 +186,7 @@ async fn execute(
 // Handlers
 // ============================================================================
 
+#[require_permissions("files.view")]
 async fn list_directory(
     user: SystemScoped,
     State(state): State<AppState>,
@@ -242,6 +244,7 @@ async fn list_directory(
     }))
 }
 
+#[require_permissions("files.view")]
 async fn read_file(
     user: SystemScoped,
     State(state): State<AppState>,
@@ -292,6 +295,7 @@ async fn read_file(
     }))
 }
 
+#[require_permissions("files.write")]
 async fn write_file(
     user: SystemScoped,
     State(state): State<AppState>,
@@ -332,6 +336,7 @@ async fn write_file(
     Ok(Json(json!({"ok": true})))
 }
 
+#[require_permissions("files.write")]
 async fn create_directory(
     user: SystemScoped,
     State(state): State<AppState>,
@@ -358,6 +363,7 @@ async fn create_directory(
     Ok(Json(json!({"ok": true})))
 }
 
+#[require_permissions("files.delete")]
 async fn delete_path(
     user: SystemScoped,
     State(state): State<AppState>,
@@ -401,6 +407,7 @@ async fn delete_path(
     Ok(Json(json!({"ok": true})))
 }
 
+#[require_permissions("files.write")]
 async fn rename_path(
     user: SystemScoped,
     State(state): State<AppState>,
@@ -431,6 +438,7 @@ async fn rename_path(
 /// Maximum download file size in bytes (100 MB).
 const MAX_DOWNLOAD_SIZE: u64 = 100 * 1024 * 1024;
 
+#[require_permissions("files.view")]
 async fn download_file(
     user: SystemScoped,
     State(state): State<AppState>,
@@ -492,6 +500,7 @@ async fn download_file(
     })))
 }
 
+#[require_permissions("files.upload")]
 async fn upload_file(
     user: SystemScoped,
     State(state): State<AppState>,

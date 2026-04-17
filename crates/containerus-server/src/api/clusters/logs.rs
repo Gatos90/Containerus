@@ -8,6 +8,7 @@ use axum::{
     routing::get,
     Json, Router,
 };
+use containerus_rbac_macros::require_permissions;
 use futures_util::{io::AsyncBufReadExt, StreamExt};
 use k8s_openapi::api::core::v1::Pod;
 use kube::api::{Api, LogParams};
@@ -46,6 +47,7 @@ pub struct LogQuery {
 // Snapshot logs
 // ============================================================================
 
+#[require_permissions("clusters.view")]
 async fn get_pod_logs(
     auth: AuthUser,
     State(state): State<AppState>,
@@ -89,6 +91,7 @@ async fn get_pod_logs(
 // Streaming logs (SSE)
 // ============================================================================
 
+#[require_permissions("clusters.logs.stream")]
 async fn stream_pod_logs(
     auth: AuthUser,
     State(state): State<AppState>,

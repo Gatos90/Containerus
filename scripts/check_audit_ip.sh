@@ -40,22 +40,12 @@ for ws_file in "$SRV_SRC/ws/terminal.rs" "$SRV_SRC/ws/tunnel.rs" "$SRV_SRC/ws/k8
     fi
 done
 
-echo "==> Checking every API route handler is permission-gated..."
-# Extractor-based permission enforcement: every handler on a project/system-scoped
-# router MUST take ProjectScoped or SystemScoped (company-wide handlers use AuthUser).
-# The grep is approximate: each api/*.rs module must reference one of those extractors.
-# Whitelist: mod.rs (router wiring), health.rs (public liveness), auth.rs (login/register
-# endpoints are unauthenticated by design).
-for api_file in "$SRV_SRC/api/"*.rs; do
-    name="$(basename "$api_file")"
-    case "$name" in
-        mod.rs|health.rs|auth.rs) continue ;;
-    esac
-    if ! grep -qE '(ProjectScoped|SystemScoped|AuthUser|claims\.is_company_admin)' "$api_file"; then
-        echo "  !! API module $name has no permission extractor reference" >&2
-        fail=1
-    fi
-done
+# CON-83: Permission-gating coverage is now enforced at compile/test time by
+# the `rbac_macro_coverage::every_api_handler_is_permission_gated` integration
+# test in `containerus-server`. That scan is syntactically accurate (uses
+# `syn`) and catches the regression this block used to approximate via grep.
+# Run `cargo test -p containerus-server --test rbac_macro_coverage` to invoke
+# it, or rely on the standard test job.
 
 if [ "$fail" -ne 0 ]; then
     echo "Audit/permission guard failed." >&2

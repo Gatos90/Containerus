@@ -5,6 +5,7 @@ use axum::{
     routing::get,
     Json, Router,
 };
+use containerus_rbac_macros::require_permissions;
 use k8s_openapi::api::{
     apps::v1::{DaemonSet, Deployment, ReplicaSet, StatefulSet},
     autoscaling::v2::HorizontalPodAutoscaler,
@@ -40,6 +41,7 @@ pub fn router() -> Router<AppState> {
 // List resources
 // ============================================================================
 
+#[require_permissions("clusters.view")]
 async fn list_resources(
     auth: AuthUser,
     State(state): State<AppState>,
@@ -101,6 +103,7 @@ async fn list_resources(
 // Get single resource
 // ============================================================================
 
+#[require_permissions("clusters.view")]
 async fn get_resource(
     auth: AuthUser,
     State(state): State<AppState>,
@@ -162,6 +165,7 @@ async fn get_resource(
 // Delete resource
 // ============================================================================
 
+#[require_permissions("clusters.delete.workload")]
 async fn delete_resource(
     auth: AuthUser,
     State(state): State<AppState>,

@@ -5,6 +5,7 @@ use axum::{
     routing::get,
     Json, Router,
 };
+use containerus_rbac_macros::require_permissions;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -80,6 +81,7 @@ impl AuditLogEntry {
 }
 
 /// List audit log entries for the project.
+#[require_permissions("audit.view")]
 async fn list_audit_logs(
     user: ProjectScoped,
     State(state): State<AppState>,

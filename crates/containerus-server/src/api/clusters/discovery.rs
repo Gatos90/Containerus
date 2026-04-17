@@ -5,6 +5,7 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
+use containerus_rbac_macros::require_permissions;
 use kube::{
     api::{Api, DeleteParams, DynamicObject, ListParams, Patch, PatchParams},
     discovery::{self, ApiResource, Scope},
@@ -70,6 +71,7 @@ struct ApiResourceInfo {
     scope: String, // "Namespaced" or "Cluster"
 }
 
+#[require_permissions("clusters.view")]
 async fn discover_api_resources(
     auth: AuthUser,
     State(state): State<AppState>,
@@ -123,6 +125,7 @@ async fn discover_api_resources(
 // List custom resources
 // ============================================================================
 
+#[require_permissions("clusters.view")]
 async fn list_custom_resources(
     auth: AuthUser,
     State(state): State<AppState>,
@@ -181,6 +184,7 @@ async fn list_custom_resources(
 // Get single custom resource
 // ============================================================================
 
+#[require_permissions("clusters.view")]
 async fn get_custom_resource(
     auth: AuthUser,
     State(state): State<AppState>,
@@ -231,6 +235,7 @@ async fn get_custom_resource(
 // Delete custom resource
 // ============================================================================
 
+#[require_permissions("clusters.delete.workload")]
 async fn delete_custom_resource(
     auth: AuthUser,
     State(state): State<AppState>,
@@ -281,6 +286,7 @@ struct ApplyCustomResourceRequest {
     yaml: String,
 }
 
+#[require_permissions("clusters.apply")]
 async fn apply_custom_resource(
     auth: AuthUser,
     State(state): State<AppState>,

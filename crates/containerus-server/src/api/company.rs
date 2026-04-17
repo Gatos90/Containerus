@@ -4,6 +4,7 @@ use axum::{
     routing::{delete, get},
     Json, Router,
 };
+use containerus_rbac_macros::require_permissions;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use uuid::Uuid;
@@ -78,6 +79,7 @@ impl<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow> for CompanyAdminResponse {
 // ============================================================================
 
 /// Get the company info (singleton row).
+#[require_permissions("company.view")]
 async fn get_company(
     State(state): State<AppState>,
     _auth: AuthUser,
@@ -97,6 +99,7 @@ async fn get_company(
 }
 
 /// Update the company info. Requires company admin.
+#[require_permissions("company.admin")]
 async fn update_company(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -145,6 +148,7 @@ async fn update_company(
 }
 
 /// List all company admins. Requires company admin.
+#[require_permissions("company.admin")]
 async fn list_admins(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -172,6 +176,7 @@ async fn list_admins(
 }
 
 /// Add a user as a company admin. Requires company admin.
+#[require_permissions("company.admin")]
 async fn add_admin(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -230,6 +235,7 @@ async fn add_admin(
 }
 
 /// Read the company security settings (MFA mandate, etc.). Requires company admin.
+#[require_permissions("company.admin")]
 async fn get_security(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -264,6 +270,7 @@ async fn get_security(
 /// Writing to `settings.security.mfa.require` uses `jsonb_set(..., true)`
 /// so the parent objects are created if absent — no migration is needed
 /// when a customer first turns this on.
+#[require_permissions("company.admin")]
 async fn update_security(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -319,6 +326,7 @@ async fn update_security(
 
 /// Remove a company admin. Cannot remove yourself. At least one admin must remain.
 /// Requires company admin.
+#[require_permissions("company.admin")]
 async fn remove_admin(
     State(state): State<AppState>,
     auth: AuthUser,

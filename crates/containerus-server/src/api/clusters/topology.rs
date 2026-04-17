@@ -5,6 +5,7 @@ use axum::{
     routing::get,
     Json, Router,
 };
+use containerus_rbac_macros::require_permissions;
 use k8s_openapi::api::{
     apps::v1::{Deployment, ReplicaSet, StatefulSet},
     core::v1::{Pod, Service},
@@ -54,6 +55,7 @@ struct TopologyRef {
     name: String,
 }
 
+#[require_permissions("clusters.view")]
 async fn get_topology(
     auth: AuthUser,
     State(state): State<AppState>,

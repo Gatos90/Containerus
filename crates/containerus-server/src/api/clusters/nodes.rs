@@ -5,6 +5,7 @@ use axum::{
     routing::post,
     Json, Router,
 };
+use containerus_rbac_macros::require_permissions;
 use k8s_openapi::api::core::v1::{Node, Pod};
 use kube::api::{Api, EvictParams, ListParams};
 use serde::Deserialize;
@@ -33,6 +34,7 @@ pub struct DrainRequest {
 // Cordon — mark node as unschedulable
 // ============================================================================
 
+#[require_permissions("clusters.manage")]
 async fn cordon_node(
     auth: AuthUser,
     State(state): State<AppState>,
@@ -68,6 +70,7 @@ async fn cordon_node(
 // Uncordon — mark node as schedulable
 // ============================================================================
 
+#[require_permissions("clusters.manage")]
 async fn uncordon_node(
     auth: AuthUser,
     State(state): State<AppState>,
@@ -103,6 +106,7 @@ async fn uncordon_node(
 // Drain — evict all pods from node
 // ============================================================================
 
+#[require_permissions("clusters.manage")]
 async fn drain_node(
     auth: AuthUser,
     State(state): State<AppState>,

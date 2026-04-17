@@ -5,6 +5,7 @@ use axum::{
     routing::post,
     Json, Router,
 };
+use containerus_rbac_macros::require_permissions;
 use k8s_openapi::api::apps::v1::{DaemonSet, Deployment, StatefulSet};
 use kube::api::{Api, Patch, PatchParams};
 use serde_json::json;
@@ -109,6 +110,7 @@ where
 // Deployment handlers
 // ============================================================================
 
+#[require_permissions("clusters.manage")]
 async fn scale_deployment(
     auth: AuthUser,
     State(state): State<AppState>,
@@ -131,6 +133,7 @@ async fn scale_deployment(
         .or_else(|e| Ok(e))
 }
 
+#[require_permissions("clusters.manage")]
 async fn restart_deployment(
     auth: AuthUser,
     State(state): State<AppState>,
@@ -149,6 +152,7 @@ async fn restart_deployment(
 // StatefulSet handlers
 // ============================================================================
 
+#[require_permissions("clusters.manage")]
 async fn scale_statefulset(
     auth: AuthUser,
     State(state): State<AppState>,
@@ -171,6 +175,7 @@ async fn scale_statefulset(
         .or_else(|e| Ok(e))
 }
 
+#[require_permissions("clusters.manage")]
 async fn restart_statefulset(
     auth: AuthUser,
     State(state): State<AppState>,
@@ -189,6 +194,7 @@ async fn restart_statefulset(
 // DaemonSet handlers (restart only — DaemonSets don't have replicas)
 // ============================================================================
 
+#[require_permissions("clusters.manage")]
 async fn restart_daemonset(
     auth: AuthUser,
     State(state): State<AppState>,

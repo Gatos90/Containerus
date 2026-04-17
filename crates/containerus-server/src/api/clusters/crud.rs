@@ -5,6 +5,7 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
+use containerus_rbac_macros::require_permissions;
 use serde_json::json;
 use uuid::Uuid;
 
@@ -32,6 +33,7 @@ pub fn environment_router() -> Router<AppState> {
 // Handlers — environment-scoped (list / create)
 // ============================================================================
 
+#[require_permissions("clusters.view")]
 async fn list_clusters(
     user: ProjectScoped,
     State(state): State<AppState>,
@@ -57,6 +59,7 @@ async fn list_clusters(
     }
 }
 
+#[require_permissions("clusters.create")]
 async fn create_cluster(
     user: ProjectScoped,
     State(state): State<AppState>,
@@ -104,6 +107,7 @@ async fn create_cluster(
 // Handlers — single-cluster operations
 // ============================================================================
 
+#[require_permissions("clusters.view")]
 async fn get_cluster(
     auth: AuthUser,
     State(state): State<AppState>,
@@ -114,6 +118,7 @@ async fn get_cluster(
     Ok(Json(json!(ClusterResponse::from(cluster))).into_response())
 }
 
+#[require_permissions("clusters.edit")]
 async fn update_cluster(
     auth: AuthUser,
     State(state): State<AppState>,
@@ -149,6 +154,7 @@ async fn update_cluster(
     }
 }
 
+#[require_permissions("clusters.delete")]
 async fn delete_cluster(
     auth: AuthUser,
     State(state): State<AppState>,
@@ -175,6 +181,7 @@ async fn delete_cluster(
     }
 }
 
+#[require_permissions("clusters.view")]
 async fn test_cluster(
     auth: AuthUser,
     State(state): State<AppState>,
