@@ -25,6 +25,9 @@ pub struct AuditQuery {
     pub offset: Option<i64>,
     pub action: Option<String>,
     pub resource_type: Option<String>,
+    pub user_id: Option<Uuid>,
+    pub from: Option<DateTime<Utc>>,
+    pub to: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
@@ -102,6 +105,18 @@ async fn list_audit_logs(
         sql.push_str(&format!(" AND resource_type = ${param_idx}"));
         param_idx += 1;
     }
+    if query.user_id.is_some() {
+        sql.push_str(&format!(" AND user_id = ${param_idx}"));
+        param_idx += 1;
+    }
+    if query.from.is_some() {
+        sql.push_str(&format!(" AND created_at >= ${param_idx}"));
+        param_idx += 1;
+    }
+    if query.to.is_some() {
+        sql.push_str(&format!(" AND created_at <= ${param_idx}"));
+        param_idx += 1;
+    }
 
     sql.push_str(&format!(
         " ORDER BY created_at DESC LIMIT ${} OFFSET ${}",
@@ -116,6 +131,15 @@ async fn list_audit_logs(
     }
     if let Some(ref resource_type) = query.resource_type {
         db_query = db_query.bind(resource_type);
+    }
+    if let Some(user_id) = query.user_id {
+        db_query = db_query.bind(user_id);
+    }
+    if let Some(from) = query.from {
+        db_query = db_query.bind(from);
+    }
+    if let Some(to) = query.to {
+        db_query = db_query.bind(to);
     }
 
     db_query = db_query.bind(limit).bind(offset);

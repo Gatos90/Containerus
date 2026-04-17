@@ -1,8 +1,8 @@
-import { Component, inject, signal, Input, OnInit, OnChanges, SimpleChanges } from '@angular/core';
+import { Component, computed, inject, signal, Input, OnInit, OnChanges, SimpleChanges } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { BackendService } from '../../../core/services/backend.service';
 import { AuditLogEntry, Project } from '../../../core/models/backend.model';
-import { LucideAngularModule, ScrollText, ChevronLeft, ChevronRight, Filter } from 'lucide-angular';
+import { LucideAngularModule, ScrollText, ChevronLeft, ChevronRight, Filter, RefreshCw, X } from 'lucide-angular';
 
 @Component({
   selector: 'app-audit-log',
@@ -14,41 +14,118 @@ import { LucideAngularModule, ScrollText, ChevronLeft, ChevronRight, Filter } fr
           <lucide-icon [img]="ScrollText" [size]="20" />
           Audit Log
         </h1>
+        <button
+          (click)="refresh()"
+          [disabled]="loading()"
+          class="text-zinc-300 hover:text-zinc-100 text-sm rounded-lg px-3 py-1.5 flex items-center gap-1.5 bg-zinc-800 hover:bg-zinc-700 transition-colors disabled:opacity-50"
+        >
+          <lucide-icon [img]="RefreshCw" [size]="14" />
+          Refresh
+        </button>
       </div>
 
       <!-- Filters -->
-      <div class="flex items-center gap-3">
-        <div class="flex items-center gap-2">
-          <lucide-icon [img]="Filter" [size]="14" class="text-zinc-400" />
-          <select
-            [ngModel]="selectedProjectId()"
-            (ngModelChange)="onProjectChange($event)"
-            class="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-zinc-100 text-sm"
-          >
-            <option value="" disabled>Select Project</option>
-            @for (project of projects(); track project.id) {
-              <option [value]="project.id">{{ project.name }}</option>
-            }
-          </select>
-          <select
-            [(ngModel)]="actionFilter"
-            (ngModelChange)="onFilterChange()"
-            class="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-zinc-100 text-sm"
-          >
-            <option value="">All Actions</option>
-            <option value="system.create">System Created</option>
-            <option value="system.delete">System Deleted</option>
-            <option value="system.connect">System Connected</option>
-            <option value="container.start">Container Started</option>
-            <option value="container.stop">Container Stopped</option>
-            <option value="container.restart">Container Restarted</option>
-            <option value="container.remove">Container Removed</option>
-            <option value="member.invite">Member Invited</option>
-            <option value="member.remove">Member Removed</option>
-            <option value="member.role_change">Role Changed</option>
-            <option value="cluster.create">Cluster Created</option>
-            <option value="cluster.delete">Cluster Deleted</option>
-          </select>
+      <div class="bg-zinc-900 border border-zinc-800 rounded-xl p-4 space-y-3">
+        <div class="flex items-center gap-2 text-xs uppercase tracking-wide text-zinc-500">
+          <lucide-icon [img]="Filter" [size]="12" />
+          Filters
+          @if (hasActiveFilters()) {
+            <button
+              (click)="clearFilters()"
+              class="ml-auto text-zinc-400 hover:text-zinc-100 flex items-center gap-1"
+            >
+              <lucide-icon [img]="X" [size]="12" />
+              Clear
+            </button>
+          }
+        </div>
+
+        <div class="grid grid-cols-2 md:grid-cols-3 gap-3">
+          <label class="block">
+            <span class="block text-[11px] text-zinc-500 mb-1">Project</span>
+            <select
+              [ngModel]="selectedProjectId()"
+              (ngModelChange)="onProjectChange($event)"
+              class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-zinc-100 text-sm"
+            >
+              <option value="" disabled>Select Project</option>
+              @for (project of projects(); track project.id) {
+                <option [value]="project.id">{{ project.name }}</option>
+              }
+            </select>
+          </label>
+
+          <label class="block">
+            <span class="block text-[11px] text-zinc-500 mb-1">Action</span>
+            <select
+              [(ngModel)]="actionFilter"
+              (ngModelChange)="onFilterChange()"
+              class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-zinc-100 text-sm"
+            >
+              <option value="">All actions</option>
+              <option value="system.create">system.create</option>
+              <option value="system.delete">system.delete</option>
+              <option value="system.connect">system.connect</option>
+              <option value="container.start">container.start</option>
+              <option value="container.stop">container.stop</option>
+              <option value="container.restart">container.restart</option>
+              <option value="container.remove">container.remove</option>
+              <option value="member.invite">member.invite</option>
+              <option value="member.remove">member.remove</option>
+              <option value="member.role_change">member.role_change</option>
+              <option value="cluster.create">cluster.create</option>
+              <option value="cluster.delete">cluster.delete</option>
+            </select>
+          </label>
+
+          <label class="block">
+            <span class="block text-[11px] text-zinc-500 mb-1">Resource type</span>
+            <select
+              [(ngModel)]="resourceTypeFilter"
+              (ngModelChange)="onFilterChange()"
+              class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-zinc-100 text-sm"
+            >
+              <option value="">All types</option>
+              <option value="system">system</option>
+              <option value="container">container</option>
+              <option value="cluster">cluster</option>
+              <option value="member">member</option>
+              <option value="role">role</option>
+              <option value="project">project</option>
+              <option value="environment">environment</option>
+            </select>
+          </label>
+
+          <label class="block">
+            <span class="block text-[11px] text-zinc-500 mb-1">Actor (user id)</span>
+            <input
+              type="text"
+              [(ngModel)]="userIdFilter"
+              (ngModelChange)="onFilterChangeDebounced()"
+              placeholder="UUID — leave blank for all"
+              class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-zinc-100 text-sm font-mono"
+            />
+          </label>
+
+          <label class="block">
+            <span class="block text-[11px] text-zinc-500 mb-1">From</span>
+            <input
+              type="datetime-local"
+              [(ngModel)]="fromFilter"
+              (ngModelChange)="onFilterChange()"
+              class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-zinc-100 text-sm"
+            />
+          </label>
+
+          <label class="block">
+            <span class="block text-[11px] text-zinc-500 mb-1">To</span>
+            <input
+              type="datetime-local"
+              [(ngModel)]="toFilter"
+              (ngModelChange)="onFilterChange()"
+              class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-zinc-100 text-sm"
+            />
+          </label>
         </div>
       </div>
 
@@ -73,6 +150,9 @@ import { LucideAngularModule, ScrollText, ChevronLeft, ChevronRight, Filter } fr
               <th class="px-4 py-3 font-medium">User</th>
               <th class="px-4 py-3 font-medium">Action</th>
               <th class="px-4 py-3 font-medium">Resource</th>
+              @if (showIpColumn()) {
+                <th class="px-4 py-3 font-medium">IP</th>
+              }
               <th class="px-4 py-3 font-medium">Details</th>
             </tr>
           </thead>
@@ -82,7 +162,7 @@ import { LucideAngularModule, ScrollText, ChevronLeft, ChevronRight, Filter } fr
                 <td class="px-4 py-2.5 text-zinc-400 text-xs whitespace-nowrap">
                   {{ formatTime(entry.createdAt) }}
                 </td>
-                <td class="px-4 py-2.5 text-zinc-300 text-xs">
+                <td class="px-4 py-2.5 text-zinc-300 text-xs font-mono">
                   {{ entry.userId ?? 'System' }}
                 </td>
                 <td class="px-4 py-2.5">
@@ -96,14 +176,18 @@ import { LucideAngularModule, ScrollText, ChevronLeft, ChevronRight, Filter } fr
                     {{ entry.resourceId ?? '' }}
                   }
                 </td>
+                @if (showIpColumn()) {
+                  <td class="px-4 py-2.5 text-zinc-400 text-xs font-mono whitespace-nowrap">
+                    {{ entry.ipAddress ?? '—' }}
+                  </td>
+                }
                 <td class="px-4 py-2.5 text-zinc-500 text-xs max-w-xs truncate" [title]="formatDetails(entry.details)">
                   {{ formatDetails(entry.details) }}
                 </td>
-
               </tr>
             } @empty {
               <tr>
-                <td colspan="5" class="text-center py-12 text-zinc-500">
+                <td [attr.colspan]="showIpColumn() ? 6 : 5" class="text-center py-12 text-zinc-500">
                   No audit log entries found
                 </td>
               </tr>
@@ -149,16 +233,40 @@ export class AuditLogComponent implements OnInit, OnChanges {
   readonly ChevronLeft = ChevronLeft;
   readonly ChevronRight = ChevronRight;
   readonly Filter = Filter;
+  readonly RefreshCw = RefreshCw;
+  readonly X = X;
 
   entries = signal<AuditLogEntry[]>([]);
   loadError = signal<string | null>(null);
   loading = signal(false);
   projects = signal<Project[]>([]);
   selectedProjectId = signal<string>('');
+
   actionFilter = '';
+  resourceTypeFilter = '';
+  userIdFilter = '';
+  fromFilter = '';
+  toFilter = '';
+
   readonly pageSize = 50;
   offset = signal(0);
   page = signal(1);
+
+  // Show the IP column if any current row carries one — the server strips
+  // ipAddress when the caller lacks `audit.view_ip`, so this doubles as a
+  // permission-aware toggle.
+  readonly showIpColumn = computed(() =>
+    this.entries().some((e) => e.ipAddress != null && e.ipAddress !== ''),
+  );
+
+  readonly hasActiveFilters = computed(
+    () =>
+      !!this.actionFilter ||
+      !!this.resourceTypeFilter ||
+      !!this.userIdFilter ||
+      !!this.fromFilter ||
+      !!this.toFilter,
+  );
 
   ngOnInit(): void {
     if (!this.connectionId) {
@@ -173,7 +281,7 @@ export class AuditLogComponent implements OnInit, OnChanges {
     if (changes['connectionId'] && !changes['connectionId'].firstChange) {
       this.offset.set(0);
       this.page.set(1);
-      this.actionFilter = '';
+      this.clearFilters();
       this.populateProjects();
       this.loadLogs();
     }
@@ -199,6 +307,25 @@ export class AuditLogComponent implements OnInit, OnChanges {
     this.loadLogs();
   }
 
+  private userIdDebounce: ReturnType<typeof setTimeout> | null = null;
+  onFilterChangeDebounced(): void {
+    if (this.userIdDebounce) clearTimeout(this.userIdDebounce);
+    this.userIdDebounce = setTimeout(() => this.onFilterChange(), 300);
+  }
+
+  clearFilters(): void {
+    this.actionFilter = '';
+    this.resourceTypeFilter = '';
+    this.userIdFilter = '';
+    this.fromFilter = '';
+    this.toFilter = '';
+    this.onFilterChange();
+  }
+
+  refresh(): void {
+    this.loadLogs();
+  }
+
   private loadRequestId = 0;
 
   async loadLogs(): Promise<void> {
@@ -216,6 +343,10 @@ export class AuditLogComponent implements OnInit, OnChanges {
         limit: this.pageSize,
         offset: this.offset(),
         action: this.actionFilter || undefined,
+        resourceType: this.resourceTypeFilter || undefined,
+        userId: this.userIdFilter.trim() || undefined,
+        from: this.localToIso(this.fromFilter),
+        to: this.localToIso(this.toFilter),
       });
       if (currentRequestId !== this.loadRequestId) return;
       this.entries.set(entries);
@@ -228,6 +359,15 @@ export class AuditLogComponent implements OnInit, OnChanges {
         this.loading.set(false);
       }
     }
+  }
+
+  // datetime-local inputs produce "YYYY-MM-DDTHH:mm" without a timezone;
+  // send a full ISO-8601 string so the server can parse it reliably.
+  private localToIso(local: string): string | undefined {
+    if (!local) return undefined;
+    const d = new Date(local);
+    if (isNaN(d.getTime())) return undefined;
+    return d.toISOString();
   }
 
   async nextPage(): Promise<void> {

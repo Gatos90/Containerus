@@ -948,11 +948,23 @@ export class BackendService {
   // Audit (per-connection)
   // ==========================================================================
 
-  async getAuditLogsFor(connectionId: string, projectId: string, params?: { limit?: number; offset?: number; action?: string }): Promise<AuditLogEntry[]> {
+  async getAuditLogsFor(connectionId: string, projectId: string, params?: {
+    limit?: number;
+    offset?: number;
+    action?: string;
+    resourceType?: string;
+    userId?: string;
+    from?: string;
+    to?: string;
+  }): Promise<AuditLogEntry[]> {
     const query = new URLSearchParams();
     if (params?.limit != null) query.set('limit', String(params.limit));
     if (params?.offset != null) query.set('offset', String(params.offset));
     if (params?.action) query.set('action', params.action);
+    if (params?.resourceType) query.set('resourceType', params.resourceType);
+    if (params?.userId) query.set('userId', params.userId);
+    if (params?.from) query.set('from', params.from);
+    if (params?.to) query.set('to', params.to);
     const qs = query.toString();
     return this.requestFor<AuditLogEntry[]>(connectionId, 'GET', `/api/projects/${projectId}/audit${qs ? `?${qs}` : ''}`);
   }
