@@ -265,7 +265,8 @@ async fn list_containers(
     user: SystemScoped,
     State(state): State<AppState>,
 ) -> Result<axum::response::Response, (StatusCode, Json<serde_json::Value>)> {
-    user.require("containers.view").map_err(|_| (StatusCode::FORBIDDEN, Json(json!({"error": "Insufficient permissions"}))))?;
+    user.require_for_system("containers.view", &state).await
+        .map_err(|_| (StatusCode::FORBIDDEN, Json(json!({"error": "Insufficient permissions"}))))?;
     let system = &user.system;
     let system_id = system.id;
 
@@ -348,7 +349,8 @@ async fn inspect_container(
     Path((_sys_id, container_id)): Path<(Uuid, String)>,
     Query(query): Query<ContainerQuery>,
 ) -> Result<axum::response::Response, (StatusCode, Json<serde_json::Value>)> {
-    user.require("containers.view").map_err(|_| (StatusCode::FORBIDDEN, Json(json!({"error": "Insufficient permissions"}))))?;
+    user.require_for_system("containers.view", &state).await
+        .map_err(|_| (StatusCode::FORBIDDEN, Json(json!({"error": "Insufficient permissions"}))))?;
     let system = &user.system;
     let system_id = system.id;
 
@@ -503,7 +505,8 @@ async fn list_images(
     user: SystemScoped,
     State(state): State<AppState>,
 ) -> Result<axum::response::Response, (StatusCode, Json<serde_json::Value>)> {
-    user.require("images.view").map_err(|_| (StatusCode::FORBIDDEN, Json(json!({"error": "Insufficient permissions"}))))?;
+    user.require_for_system("images.view", &state).await
+        .map_err(|_| (StatusCode::FORBIDDEN, Json(json!({"error": "Insufficient permissions"}))))?;
     let system = &user.system;
     let system_id = system.id;
 
@@ -546,7 +549,8 @@ async fn list_volumes(
     user: SystemScoped,
     State(state): State<AppState>,
 ) -> Result<axum::response::Response, (StatusCode, Json<serde_json::Value>)> {
-    user.require("volumes.view").map_err(|_| (StatusCode::FORBIDDEN, Json(json!({"error": "Insufficient permissions"}))))?;
+    user.require_for_system("volumes.view", &state).await
+        .map_err(|_| (StatusCode::FORBIDDEN, Json(json!({"error": "Insufficient permissions"}))))?;
     let system = &user.system;
     let system_id = system.id;
 
@@ -589,7 +593,8 @@ async fn list_networks(
     user: SystemScoped,
     State(state): State<AppState>,
 ) -> Result<axum::response::Response, (StatusCode, Json<serde_json::Value>)> {
-    user.require("networks.view").map_err(|_| (StatusCode::FORBIDDEN, Json(json!({"error": "Insufficient permissions"}))))?;
+    user.require_for_system("networks.view", &state).await
+        .map_err(|_| (StatusCode::FORBIDDEN, Json(json!({"error": "Insufficient permissions"}))))?;
     let system = &user.system;
     let system_id = system.id;
 
@@ -637,7 +642,8 @@ async fn pull_image(
     State(state): State<AppState>,
     Json(req): Json<PullImageRequest>,
 ) -> Result<axum::response::Response, (StatusCode, Json<serde_json::Value>)> {
-    user.require("images.pull").map_err(|_| (StatusCode::FORBIDDEN, Json(json!({"error": "Insufficient permissions"}))))?;
+    user.require_for_system("images.pull", &state).await
+        .map_err(|_| (StatusCode::FORBIDDEN, Json(json!({"error": "Insufficient permissions"}))))?;
     let system = &user.system;
     let system_id = system.id;
 
@@ -677,7 +683,8 @@ async fn remove_image(
     Path((_sys_id, image_id)): Path<(Uuid, String)>,
     Query(query): Query<RemoveImageQuery>,
 ) -> Result<axum::response::Response, (StatusCode, Json<serde_json::Value>)> {
-    user.require("images.delete").map_err(|_| (StatusCode::FORBIDDEN, Json(json!({"error": "Insufficient permissions"}))))?;
+    user.require_for_system("images.delete", &state).await
+        .map_err(|_| (StatusCode::FORBIDDEN, Json(json!({"error": "Insufficient permissions"}))))?;
     let system = &user.system;
     let system_id = system.id;
 
@@ -717,7 +724,8 @@ async fn create_volume(
     State(state): State<AppState>,
     Json(req): Json<CreateVolumeRequest>,
 ) -> Result<axum::response::Response, (StatusCode, Json<serde_json::Value>)> {
-    user.require("volumes.create").map_err(|_| (StatusCode::FORBIDDEN, Json(json!({"error": "Insufficient permissions"}))))?;
+    user.require_for_system("volumes.create", &state).await
+        .map_err(|_| (StatusCode::FORBIDDEN, Json(json!({"error": "Insufficient permissions"}))))?;
     let system = &user.system;
     let system_id = system.id;
 
@@ -757,7 +765,8 @@ async fn remove_volume(
     Path((_sys_id, name)): Path<(Uuid, String)>,
     Query(query): Query<RemoveVolumeQuery>,
 ) -> Result<axum::response::Response, (StatusCode, Json<serde_json::Value>)> {
-    user.require("volumes.delete").map_err(|_| (StatusCode::FORBIDDEN, Json(json!({"error": "Insufficient permissions"}))))?;
+    user.require_for_system("volumes.delete", &state).await
+        .map_err(|_| (StatusCode::FORBIDDEN, Json(json!({"error": "Insufficient permissions"}))))?;
     let system = &user.system;
     let system_id = system.id;
 
@@ -797,7 +806,8 @@ async fn create_network(
     State(state): State<AppState>,
     Json(req): Json<CreateNetworkRequest>,
 ) -> Result<axum::response::Response, (StatusCode, Json<serde_json::Value>)> {
-    user.require("networks.create").map_err(|_| (StatusCode::FORBIDDEN, Json(json!({"error": "Insufficient permissions"}))))?;
+    user.require_for_system("networks.create", &state).await
+        .map_err(|_| (StatusCode::FORBIDDEN, Json(json!({"error": "Insufficient permissions"}))))?;
     let system = &user.system;
     let system_id = system.id;
 
@@ -852,7 +862,8 @@ async fn remove_network(
     Path((_sys_id, name)): Path<(Uuid, String)>,
     Query(query): Query<RemoveNetworkQuery>,
 ) -> Result<axum::response::Response, (StatusCode, Json<serde_json::Value>)> {
-    user.require("networks.delete").map_err(|_| (StatusCode::FORBIDDEN, Json(json!({"error": "Insufficient permissions"}))))?;
+    user.require_for_system("networks.delete", &state).await
+        .map_err(|_| (StatusCode::FORBIDDEN, Json(json!({"error": "Insufficient permissions"}))))?;
     let system = &user.system;
     let system_id = system.id;
 
@@ -892,7 +903,8 @@ async fn connect_to_network(
     Path((_sys_id, name)): Path<(Uuid, String)>,
     Json(req): Json<NetworkContainerRequest>,
 ) -> Result<axum::response::Response, (StatusCode, Json<serde_json::Value>)> {
-    user.require("networks.manage").map_err(|_| (StatusCode::FORBIDDEN, Json(json!({"error": "Insufficient permissions"}))))?;
+    user.require_for_system("networks.manage", &state).await
+        .map_err(|_| (StatusCode::FORBIDDEN, Json(json!({"error": "Insufficient permissions"}))))?;
     let system = &user.system;
     let system_id = system.id;
 
@@ -935,7 +947,8 @@ async fn disconnect_from_network(
     Path((_sys_id, name)): Path<(Uuid, String)>,
     Json(req): Json<NetworkContainerRequest>,
 ) -> Result<axum::response::Response, (StatusCode, Json<serde_json::Value>)> {
-    user.require("networks.manage").map_err(|_| (StatusCode::FORBIDDEN, Json(json!({"error": "Insufficient permissions"}))))?;
+    user.require_for_system("networks.manage", &state).await
+        .map_err(|_| (StatusCode::FORBIDDEN, Json(json!({"error": "Insufficient permissions"}))))?;
     let system = &user.system;
     let system_id = system.id;
 

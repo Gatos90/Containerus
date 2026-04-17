@@ -445,6 +445,83 @@ async fn run_allow_precedence(h: &TestHarness, flag_on: bool) {
     assert!(nope.is_err(), "networks.delete must remain denied for viewer");
 }
 
+/// CON-77: handler-driven ACL enforcement.
+///
+/// Proves the full HTTP path — extractor → `SystemScoped::require_for_system`
+/// → resolver → ACL table — fails closed on a deny row when the flag is on,
+/// and keeps the role grant untouched when the flag is off. This is the
+/// assertion CON-72's suite deferred ("no handlers have been migrated yet");
+/// once CON-77 migrates `get_system` off plain `.require()`, the same
+/// `GET /api/systems/{id}` request now consults the ACL table and the deny
+/// row must override the viewer's role grant.
+#[tokio::test]
+async fn handler_acl_deny_blocks_systems_view_when_flag_on() {
+    let Some(h) = TestHarness::try_new(true).await else {
+        common::skip_without_db("handler_acl_deny_blocks_systems_view_when_flag_on");
+        return;
+    };
+    run_handler_deny(&h, true).await;
+    h.cleanup().await;
+}
+
+#[tokio::test]
+async fn handler_acl_deny_is_ignored_when_flag_off() {
+    let Some(h) = TestHarness::try_new(false).await else {
+        common::skip_without_db("handler_acl_deny_is_ignored_when_flag_off");
+        return;
+    };
+    run_handler_deny(&h, false).await;
+    h.cleanup().await;
+}
+
+async fn run_handler_deny(h: &TestHarness, flag_on: bool) {
+    let project_id = h.create_project("handler-deny").await;
+    let viewer = h.create_user("viewer-handler-deny").await;
+    h.add_member(project_id, viewer, ROLE_VIEWER).await;
+
+    let environment_id = h.create_environment(project_id).await;
+    let system_id = h.create_system(environment_id, viewer).await;
+
+    // Deny `systems.view` on this specific system for the viewer. The role
+    // still grants `systems.view` project-wide — the ACL row must override
+    // it when enforcement is on.
+    h.set_resource_acl(viewer, project_id, "system", system_id, &[], &["systems.view"])
+        .await;
+
+    let token = h.token_for(viewer, vec![(project_id, ROLE_VIEWER)], false);
+    let uri = format!("/api/systems/{system_id}");
+    let (status, body) = call(&h.router, Method::GET, &uri, Some(&token), None).await;
+
+    if flag_on {
+        assert_eq!(
+            status,
+            StatusCode::FORBIDDEN,
+            "flag on: handler must honor the deny ACL. body={}",
+            String::from_utf8_lossy(&body)
+        );
+    } else {
+        assert_eq!(
+            status,
+            StatusCode::OK,
+            "flag off: the deny ACL must be ignored so the role grant still passes. body={}",
+            String::from_utf8_lossy(&body)
+        );
+    }
+
+    // Second system on the same project, no ACL row — the viewer must still
+    // be allowed either way. Proves the deny is scoped to the specific
+    // resource, not the whole role grant.
+    let unscoped_system = h.create_system(environment_id, viewer).await;
+    let uri2 = format!("/api/systems/{unscoped_system}");
+    let (status2, body2) = call(&h.router, Method::GET, &uri2, Some(&token), None).await;
+    assert_eq!(
+        status2,
+        StatusCode::OK,
+        "sibling system without an ACL row must remain readable. body={}",
+        String::from_utf8_lossy(&body2)
+    );
+}
+
 /// Company admins short-circuit the resolver — even when both the ACL says
 /// deny AND the flag is on, the caller still passes. This is the "impossible
 /// to lock yourself out" invariant and it applies across both scopes.

@@ -312,7 +312,8 @@ async fn get_system(
     user: SystemScoped,
     State(state): State<AppState>,
 ) -> Result<axum::response::Response, (StatusCode, Json<serde_json::Value>)> {
-    user.require("systems.view").map_err(|_| (StatusCode::FORBIDDEN, Json(json!({"error": "Insufficient permissions"}))))?;
+    user.require_for_system("systems.view", &state).await
+        .map_err(|_| (StatusCode::FORBIDDEN, Json(json!({"error": "Insufficient permissions"}))))?;
 
     let connected = state.connections.is_system_connected(user.system.id);
     Ok(Json(json!(SystemWithStatus {
@@ -327,7 +328,8 @@ async fn update_system(
     State(state): State<AppState>,
     Json(req): Json<UpdateSystemRequest>,
 ) -> Result<axum::response::Response, (StatusCode, Json<serde_json::Value>)> {
-    user.require("systems.edit").map_err(|_| (StatusCode::FORBIDDEN, Json(json!({"error": "Insufficient permissions"}))))?;
+    user.require_for_system("systems.edit", &state).await
+        .map_err(|_| (StatusCode::FORBIDDEN, Json(json!({"error": "Insufficient permissions"}))))?;
     let project_id = user.project_id;
     let caller = user.caller();
     let environment_id = user.environment_id;
@@ -467,7 +469,8 @@ async fn delete_system(
     user: SystemScoped,
     State(state): State<AppState>,
 ) -> Result<axum::response::Response, (StatusCode, Json<serde_json::Value>)> {
-    user.require("systems.delete").map_err(|_| (StatusCode::FORBIDDEN, Json(json!({"error": "Insufficient permissions"}))))?;
+    user.require_for_system("systems.delete", &state).await
+        .map_err(|_| (StatusCode::FORBIDDEN, Json(json!({"error": "Insufficient permissions"}))))?;
     let project_id = user.project_id;
     let caller = user.caller();
     let environment_id = user.environment_id;
@@ -684,7 +687,8 @@ async fn get_system_info(
     user: SystemScoped,
     State(state): State<AppState>,
 ) -> Result<axum::response::Response, (StatusCode, Json<serde_json::Value>)> {
-    user.require("systems.view").map_err(|_| (StatusCode::FORBIDDEN, Json(json!({"error": "Insufficient permissions"}))))?;
+    user.require_for_system("systems.view", &state).await
+        .map_err(|_| (StatusCode::FORBIDDEN, Json(json!({"error": "Insufficient permissions"}))))?;
     let system = user.system;
 
     let runtime = match system.primary_runtime.as_str() {
@@ -710,7 +714,8 @@ async fn get_live_metrics(
     user: SystemScoped,
     State(state): State<AppState>,
 ) -> Result<axum::response::Response, (StatusCode, Json<serde_json::Value>)> {
-    user.require("systems.view").map_err(|_| (StatusCode::FORBIDDEN, Json(json!({"error": "Insufficient permissions"}))))?;
+    user.require_for_system("systems.view", &state).await
+        .map_err(|_| (StatusCode::FORBIDDEN, Json(json!({"error": "Insufficient permissions"}))))?;
     let id = user.system.id;
 
     let cmd = CommandBuilder::get_live_metrics_for_remote();
