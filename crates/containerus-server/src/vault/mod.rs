@@ -63,24 +63,40 @@ impl ServerVault {
     ) -> Result<Uuid, VaultError> {
         let (encrypted_data, nonce) = self.encrypt(plaintext.as_bytes())?;
 
-        // Upsert: insert or update if exists
-        let row = sqlx::query_scalar::<_, Uuid>(
+        // Upsert targets one of two partial unique indexes from migration
+        // 0004 (`idx_system_credentials_unique_with_jump` /
+        // `..._without_jump`), depending on whether `jump_host_key` is set.
+        // A single COALESCE-based ON CONFLICT no longer matches either
+        // index.
+        let sql = if jump_host_key.is_some() {
             r#"
             INSERT INTO system_credentials (system_id, credential_type, encrypted_data, nonce, jump_host_key)
             VALUES ($1, $2, $3, $4, $5)
-            ON CONFLICT (system_id, credential_type, COALESCE(jump_host_key, ''))
+            ON CONFLICT (system_id, credential_type, jump_host_key)
+            WHERE jump_host_key IS NOT NULL
             DO UPDATE SET encrypted_data = $3, nonce = $4, updated_at = now()
             RETURNING id
-            "#,
-        )
-        .bind(system_id)
-        .bind(credential_type)
-        .bind(&encrypted_data)
-        .bind(&nonce)
-        .bind(jump_host_key)
-        .fetch_one(db)
-        .await
-        .map_err(|e| VaultError::Database(e.to_string()))?;
+            "#
+        } else {
+            r#"
+            INSERT INTO system_credentials (system_id, credential_type, encrypted_data, nonce, jump_host_key)
+            VALUES ($1, $2, $3, $4, $5)
+            ON CONFLICT (system_id, credential_type)
+            WHERE jump_host_key IS NULL
+            DO UPDATE SET encrypted_data = $3, nonce = $4, updated_at = now()
+            RETURNING id
+            "#
+        };
+
+        let row = sqlx::query_scalar::<_, Uuid>(sql)
+            .bind(system_id)
+            .bind(credential_type)
+            .bind(&encrypted_data)
+            .bind(&nonce)
+            .bind(jump_host_key)
+            .fetch_one(db)
+            .await
+            .map_err(|e| VaultError::Database(e.to_string()))?;
 
         Ok(row)
     }
