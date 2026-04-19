@@ -67,3 +67,7 @@ validator = { version = "0.18", features = ["derive"] }
 [dev-dependencies]
 syn = { version = "2", features = ["full", "visit"] }
 proc-macro2 = { version = "1", features = ["span-locations"] }
+# WebSocket client for end-to-end handler tests (CON-85).
+tokio-tungstenite = "0.24"
+# Isolated $HOME for known_hosts during mock-SSH tests (CON-85).
+tempfile = "3"

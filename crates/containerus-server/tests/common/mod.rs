@@ -15,6 +15,10 @@
 
 #![allow(dead_code)]
 
+pub mod mock_kube;
+pub mod mock_ssh;
+pub mod ws_harness;
+
 use std::str::FromStr;
 use std::sync::Arc;
 
