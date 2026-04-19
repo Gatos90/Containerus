@@ -9,31 +9,30 @@ RUN apt-get update && apt-get install -y pkg-config libssl-dev && rm -rf /var/li
 # Copy workspace manifests for every member referenced by the root Cargo.toml.
 # The workspace declares src-tauri, containerus-core, containerus-rbac-macros,
 # and containerus-server — cargo refuses to load the workspace if any manifest
-# is missing, so all four must be present before we can prime the dep cache.
+# is missing.
 COPY Cargo.toml Cargo.lock ./
 COPY crates/containerus-core/Cargo.toml crates/containerus-core/Cargo.toml
 COPY crates/containerus-rbac-macros/Cargo.toml crates/containerus-rbac-macros/Cargo.toml
 COPY crates/containerus-server/Cargo.toml crates/containerus-server/Cargo.toml
 
-# Create dummy src files to cache dependencies
-RUN mkdir -p crates/containerus-core/src && echo "pub fn lib() {}" > crates/containerus-core/src/lib.rs
-RUN mkdir -p crates/containerus-rbac-macros/src && echo "" > crates/containerus-rbac-macros/src/lib.rs
-RUN mkdir -p crates/containerus-server/src && echo "fn main() {}" > crates/containerus-server/src/main.rs
-RUN mkdir -p src-tauri/src && echo "pub fn lib() {}" > src-tauri/src/lib.rs
+# Replace src-tauri with a stub crate so the desktop app's Tauri/system
+# dependencies do not need to resolve in the server image. The stub keeps the
+# workspace member valid; the server build only consumes containerus-core and
+# containerus-rbac-macros.
+RUN mkdir -p src-tauri/src \
+ && echo "pub fn lib() {}" > src-tauri/src/lib.rs \
+ && printf '[package]\nname = "containerus"\nversion = "0.1.0"\nedition = "2021"\n[lib]\nname = "containerus_lib"\npath = "src/lib.rs"\n' > src-tauri/Cargo.toml
 
-# Create a minimal Cargo.toml for src-tauri that skips tauri deps
-RUN printf '[package]\nname = "containerus"\nversion = "0.1.0"\nedition = "2021"\n[lib]\nname = "containerus_lib"\npath = "src/lib.rs"' > src-tauri/Cargo.toml
-
-# Build dependencies (cached layer)
-RUN cargo build --release -p containerus-server 2>/dev/null || true
-
-# Copy actual source code
-COPY crates/containerus-core/src crates/containerus-core/src
-COPY crates/containerus-rbac-macros/src crates/containerus-rbac-macros/src
+# Copy the real source for every crate the server actually depends on.
+# We rely on the BuildKit / GHA layer cache (configured in the workflow) to
+# avoid recompiling cargo deps on every push; the dummy-src "deps cache trick"
+# silently produced a stale build because cargo did not detect the real source
+# as newer than the cached dummy artifacts.
+COPY crates/containerus-core crates/containerus-core
+COPY crates/containerus-rbac-macros crates/containerus-rbac-macros
 COPY crates/containerus-server/src crates/containerus-server/src
 COPY crates/containerus-server/migrations crates/containerus-server/migrations
 
-# Build the server
 RUN cargo build --release -p containerus-server
 
 # Runtime image
