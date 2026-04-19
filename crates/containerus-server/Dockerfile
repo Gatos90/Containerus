@@ -6,13 +6,18 @@ WORKDIR /app
 # Install build dependencies
 RUN apt-get update && apt-get install -y pkg-config libssl-dev && rm -rf /var/lib/apt/lists/*
 
-# Copy workspace files
+# Copy workspace manifests for every member referenced by the root Cargo.toml.
+# The workspace declares src-tauri, containerus-core, containerus-rbac-macros,
+# and containerus-server — cargo refuses to load the workspace if any manifest
+# is missing, so all four must be present before we can prime the dep cache.
 COPY Cargo.toml Cargo.lock ./
 COPY crates/containerus-core/Cargo.toml crates/containerus-core/Cargo.toml
+COPY crates/containerus-rbac-macros/Cargo.toml crates/containerus-rbac-macros/Cargo.toml
 COPY crates/containerus-server/Cargo.toml crates/containerus-server/Cargo.toml
 
 # Create dummy src files to cache dependencies
 RUN mkdir -p crates/containerus-core/src && echo "pub fn lib() {}" > crates/containerus-core/src/lib.rs
+RUN mkdir -p crates/containerus-rbac-macros/src && echo "" > crates/containerus-rbac-macros/src/lib.rs
 RUN mkdir -p crates/containerus-server/src && echo "fn main() {}" > crates/containerus-server/src/main.rs
 RUN mkdir -p src-tauri/src && echo "pub fn lib() {}" > src-tauri/src/lib.rs
 
@@ -24,6 +29,7 @@ RUN cargo build --release -p containerus-server 2>/dev/null || true
 
 # Copy actual source code
 COPY crates/containerus-core/src crates/containerus-core/src
+COPY crates/containerus-rbac-macros/src crates/containerus-rbac-macros/src
 COPY crates/containerus-server/src crates/containerus-server/src
 COPY crates/containerus-server/migrations crates/containerus-server/migrations
 
