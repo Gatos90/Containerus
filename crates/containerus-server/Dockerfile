@@ -35,8 +35,11 @@ COPY crates/containerus-server/migrations crates/containerus-server/migrations
 
 RUN cargo build --release -p containerus-server
 
-# Runtime image
-FROM debian:bookworm-slim
+# Runtime image — must match the builder's Debian release so glibc versions
+# line up. rust:1.90-slim is based on debian:trixie-slim (glibc 2.39); using
+# bookworm-slim here (glibc 2.36) caused the binary to fail at startup with
+# "GLIBC_2.38 not found".
+FROM debian:trixie-slim
 
 RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/* \
     && groupadd --system containerus && useradd --system --gid containerus --no-create-home containerus
