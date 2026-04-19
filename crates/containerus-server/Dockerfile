@@ -1,5 +1,5 @@
 # Multi-stage build for Containerus Server
-FROM rust:1.85-slim AS builder
+FROM rust:1.90-slim AS builder
 
 WORKDIR /app
 
