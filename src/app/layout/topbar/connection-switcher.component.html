@@ -37,8 +37,6 @@
       [id]="listboxId"
       role="listbox"
       aria-label="Connections"
-      tabindex="-1"
-      (keydown)="onListKeydown($event)"
       class="absolute left-0 top-[calc(100%+4px)] min-w-[18rem] max-h-80 overflow-auto rounded-lg bg-zinc-900 border border-zinc-700 shadow-xl z-50 py-1 focus:outline-none"
     >
       @for (opt of options(); track opt.id; let i = $index) {

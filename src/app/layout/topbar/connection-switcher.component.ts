@@ -75,7 +75,7 @@ export class ConnectionSwitcherComponent {
   });
 
   readonly accentColor = computed(() => {
-    if (this.ui.disableConnectionTint()) return null;
+    if (!this.ui.showConnectionTint()) return null;
     const active = this.activeOption();
     if (active.id === LOCAL_CONNECTION_ID) return null;
     return paletteFor(active.id).ring;
@@ -138,51 +138,56 @@ export class ConnectionSwitcherComponent {
     this.close();
   }
 
+  /**
+   * Single keydown handler. Select-Only Combobox keeps focus on the trigger
+   * (`<ul>` is never focused), so all navigation keys must route through here —
+   * they don't bubble from the button to its sibling listbox.
+   */
   onTriggerKeydown(event: KeyboardEvent): void {
-    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-      event.preventDefault();
-      if (!this.open()) this.openList();
-    } else if (event.key === 'Enter' || event.key === ' ') {
-      event.preventDefault();
-      this.toggle();
-    } else if (event.key === 'Escape' && this.open()) {
-      event.preventDefault();
-      this.close();
-    }
-  }
-
-  onListKeydown(event: KeyboardEvent): void {
     const max = this.options().length - 1;
+
+    if (this.open()) {
+      switch (event.key) {
+        case 'ArrowDown':
+          event.preventDefault();
+          this.activeIndex.update((i) => Math.min(max, i + 1));
+          return;
+        case 'ArrowUp':
+          event.preventDefault();
+          this.activeIndex.update((i) => Math.max(0, i - 1));
+          return;
+        case 'Home':
+          event.preventDefault();
+          this.activeIndex.set(0);
+          return;
+        case 'End':
+          event.preventDefault();
+          this.activeIndex.set(max);
+          return;
+        case 'Enter':
+        case ' ':
+          event.preventDefault();
+          this.selectIndex(this.activeIndex());
+          return;
+        case 'Escape':
+          event.preventDefault();
+          this.close();
+          return;
+        case 'Tab':
+          this.close(false);
+          return;
+      }
+      return;
+    }
+
     switch (event.key) {
       case 'ArrowDown':
-        event.preventDefault();
-        this.activeIndex.update((i) => Math.min(max, i + 1));
-        break;
       case 'ArrowUp':
-        event.preventDefault();
-        this.activeIndex.update((i) => Math.max(0, i - 1));
-        break;
-      case 'Home':
-        event.preventDefault();
-        this.activeIndex.set(0);
-        break;
-      case 'End':
-        event.preventDefault();
-        this.activeIndex.set(max);
-        break;
       case 'Enter':
       case ' ':
         event.preventDefault();
-        this.selectIndex(this.activeIndex());
-        break;
-      case 'Escape':
-        event.preventDefault();
-        this.close();
-        break;
-      case 'Tab':
-        // Natural tab closes, lets user move on.
-        this.close(false);
-        break;
+        this.openList();
+        return;
     }
   }
 

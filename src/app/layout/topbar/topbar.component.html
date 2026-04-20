@@ -63,16 +63,14 @@
   </div>
 
   @if (fallbackBanner()) {
-    <div
-      role="status"
-      aria-live="polite"
-      class="flex items-center justify-between gap-2 px-4 py-1.5 bg-amber-950/60 border-t border-amber-900 text-amber-200 text-xs"
-    >
-      <span>{{ fallbackBanner() }}</span>
+    <div class="flex items-center justify-between gap-2 px-4 py-1.5 bg-amber-950/60 border-t border-amber-900 text-amber-200 text-xs">
+      <p role="status" aria-atomic="true" class="m-0">
+        {{ fallbackBanner() }}
+      </p>
       <button
         type="button"
         (click)="dismissBanner()"
-        class="px-2 py-0.5 rounded bg-amber-900/50 hover:bg-amber-900 text-amber-100"
+        class="px-2 py-0.5 rounded bg-amber-900/50 hover:bg-amber-900 text-amber-100 focus:outline-none focus:ring-2 focus:ring-amber-300 focus:ring-offset-1 focus:ring-offset-amber-950"
       >
         Dismiss
       </button>

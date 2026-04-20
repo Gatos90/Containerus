@@ -117,28 +117,27 @@
 
       <div class="flex items-start justify-between gap-4">
         <div class="flex-1 min-w-0">
-          <label for="disable-connection-tint" class="text-sm font-medium text-zinc-200">
-            Disable per-connection tint
-          </label>
+          <span id="connection-tint-label" class="text-sm font-medium text-zinc-200">
+            Per-connection tint
+          </span>
           <p class="text-xs text-zinc-500 mt-1">
-            Turns off the colored accent that identifies the active backend connection in the topbar and per-row badges. Connection labels and glyphs remain visible so identity never relies on color alone.
+            Shows a colored accent that identifies the active backend connection in the topbar and per-row badges. Connection labels and glyphs stay visible whether or not the tint is on, so identity never relies on color alone.
           </p>
         </div>
         <button
-          id="disable-connection-tint"
           type="button"
           role="switch"
-          [attr.aria-checked]="uiPreferences.disableConnectionTint()"
-          (click)="uiPreferences.setDisableConnectionTint(!uiPreferences.disableConnectionTint())"
+          aria-labelledby="connection-tint-label"
+          [attr.aria-checked]="uiPreferences.showConnectionTint()"
+          (click)="uiPreferences.setShowConnectionTint(!uiPreferences.showConnectionTint())"
           class="relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-zinc-900"
-          [class.bg-blue-600]="uiPreferences.disableConnectionTint()"
-          [class.bg-zinc-700]="!uiPreferences.disableConnectionTint()"
+          [class.bg-blue-600]="uiPreferences.showConnectionTint()"
+          [class.bg-zinc-700]="!uiPreferences.showConnectionTint()"
         >
-          <span class="sr-only">Toggle per-connection tint</span>
           <span
             class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform"
-            [class.translate-x-6]="uiPreferences.disableConnectionTint()"
-            [class.translate-x-1]="!uiPreferences.disableConnectionTint()"
+            [class.translate-x-6]="uiPreferences.showConnectionTint()"
+            [class.translate-x-1]="!uiPreferences.showConnectionTint()"
           ></span>
         </button>
       </div>

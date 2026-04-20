@@ -1,8 +1,17 @@
-<div class="flex h-screen bg-zinc-950 text-zinc-100">
-  <app-sidebar></app-sidebar>
+<div class="flex flex-col h-screen bg-zinc-950 text-zinc-100">
+  <a
+    href="#main-content"
+    class="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[100] focus:px-3 focus:py-2 focus:rounded-lg focus:bg-blue-600 focus:text-white focus:outline-none focus:ring-2 focus:ring-blue-300"
+  >
+    Skip to main content
+  </a>
 
-  <main class="flex-1 flex flex-col overflow-hidden">
-    <app-topbar class="hidden md:block"></app-topbar>
+  <app-topbar class="hidden md:block flex-shrink-0"></app-topbar>
+
+  <div class="flex flex-1 overflow-hidden">
+    <app-sidebar></app-sidebar>
+
+    <main id="main-content" tabindex="-1" class="flex-1 flex flex-col overflow-hidden focus:outline-none">
 
     @if (updateState.updateAvailable()) {
       <div role="status" aria-live="polite" aria-atomic="true" class="bg-blue-900/50 border-b border-blue-800 px-4 py-2 flex items-center justify-between">
@@ -109,7 +118,8 @@
         <router-outlet></router-outlet>
       </div>
     }
-  </main>
+    </main>
+  </div>
 
   @if (changelogState.showModal()) {
     <app-whats-new-modal

@@ -22,7 +22,7 @@ import { paletteFor } from '../../shared/components/a11y';
  * neutral regardless of tint (SC 2.4.11).
  *
  * Unreachable-fallback rule (§8 Q2): when switching connections, if the
- * persisted project/env selection is no longer accessible the picker falls
+ * persisted project/env selection is no longer available the picker falls
  * back to the first accessible option and surfaces a `role="status"` banner
  * naming what changed.
  */
@@ -56,7 +56,7 @@ export class TopbarComponent {
   });
 
   readonly accentRing = computed(() => {
-    if (this.ui.disableConnectionTint()) return null;
+    if (!this.ui.showConnectionTint()) return null;
     const id = this.ui.activeConnectionId();
     if (id === LOCAL_CONNECTION_ID) return null;
     return paletteFor(id).ring;
@@ -124,7 +124,7 @@ export class TopbarComponent {
     this.ui.setProject(connectionId, first?.id ?? null);
     if (persisted && !projects.some((p) => p.id === persisted)) {
       this.fallbackBanner.set(
-        `Previous project is no longer accessible${first ? `; switched to ${first.name}.` : '.'}`,
+        `Previous project is no longer available${first ? `; switched to ${first.name}.` : '.'}`,
       );
     }
   }
@@ -136,7 +136,7 @@ export class TopbarComponent {
     this.ui.setEnv(connectionId, projectId, first?.id ?? null);
     if (persisted && !envs.some((e) => e.id === persisted)) {
       this.fallbackBanner.set(
-        `Previous environment is no longer accessible${first ? `; switched to ${first.name}.` : '.'}`,
+        `Previous environment is no longer available${first ? `; switched to ${first.name}.` : '.'}`,
       );
     }
   }

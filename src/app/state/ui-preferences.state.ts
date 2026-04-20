@@ -8,8 +8,10 @@ import { Injectable, computed, effect, signal } from '@angular/core';
  *   in focus. Drives the topbar tint + project/env pickers.
  * - `projectByConnection`: the last-picked project per connection.
  * - `envByConnection`: the last-picked environment per (connection, project).
- * - `disableConnectionTint`: opt-out toggle for the accent tint, surfaced in
- *   Settings → My account per CON-115 §8 Q6.
+ * - `showConnectionTint`: toggle for the accent tint, surfaced as a positive
+ *   affordance in Settings → General per CON-115 §8 Q6. Defaults to `true`
+ *   so color identity is on by default; users who find the tint distracting
+ *   can switch it off (labels + glyphs continue to carry connection identity).
  */
 
 const STORAGE_KEY = 'containerus_ui_preferences_v1';
@@ -20,14 +22,14 @@ export interface UiPreferences {
   activeConnectionId: string;
   projectByConnection: Record<string, string>;
   envByConnection: Record<string, Record<string, string>>;
-  disableConnectionTint: boolean;
+  showConnectionTint: boolean;
 }
 
 const DEFAULT_PREFS: UiPreferences = {
   activeConnectionId: LOCAL_CONNECTION_ID,
   projectByConnection: {},
   envByConnection: {},
-  disableConnectionTint: false,
+  showConnectionTint: true,
 };
 
 @Injectable({ providedIn: 'root' })
@@ -35,7 +37,7 @@ export class UiPreferencesState {
   private readonly _prefs = signal<UiPreferences>(this.load());
 
   readonly activeConnectionId = computed(() => this._prefs().activeConnectionId);
-  readonly disableConnectionTint = computed(() => this._prefs().disableConnectionTint);
+  readonly showConnectionTint = computed(() => this._prefs().showConnectionTint);
   readonly isLocalMode = computed(() => this._prefs().activeConnectionId === LOCAL_CONNECTION_ID);
 
   constructor() {
@@ -88,8 +90,8 @@ export class UiPreferencesState {
     });
   }
 
-  setDisableConnectionTint(disabled: boolean): void {
-    this._prefs.update((p) => ({ ...p, disableConnectionTint: disabled }));
+  setShowConnectionTint(show: boolean): void {
+    this._prefs.update((p) => ({ ...p, showConnectionTint: show }));
   }
 
   private load(): UiPreferences {
@@ -101,7 +103,7 @@ export class UiPreferencesState {
         activeConnectionId: parsed.activeConnectionId ?? DEFAULT_PREFS.activeConnectionId,
         projectByConnection: parsed.projectByConnection ?? {},
         envByConnection: parsed.envByConnection ?? {},
-        disableConnectionTint: parsed.disableConnectionTint ?? false,
+        showConnectionTint: parsed.showConnectionTint ?? DEFAULT_PREFS.showConnectionTint,
       };
     } catch {
       return { ...DEFAULT_PREFS };
