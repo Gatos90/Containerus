@@ -1,4 +1,4 @@
-import { Component, computed, inject, signal, OnInit } from '@angular/core';
+import { Component, ElementRef, computed, inject, signal, viewChild, OnInit } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { BackendService } from '../../../core/services/backend.service';
@@ -75,6 +75,7 @@ type Mode = 'login' | 'register' | 'forgot';
               <div>
                 <label for="displayName" class="block text-sm font-medium text-zinc-300 mb-1.5">Display Name</label>
                 <input
+                  #displayNameInput
                   id="displayName"
                   name="displayName"
                   type="text"
@@ -89,6 +90,7 @@ type Mode = 'login' | 'register' | 'forgot';
             <div>
               <label for="email" class="block text-sm font-medium text-zinc-300 mb-1.5">Email</label>
               <input
+                #emailInput
                 id="email"
                 name="email"
                 type="email"
@@ -203,6 +205,13 @@ export class LoginComponent implements OnInit {
   email = '';
   password = '';
   displayName = '';
+
+  // Focus targets for mode transitions. When `switchMode()` flips `mode()`,
+  // the button or panel that triggered the change often unmounts, dropping
+  // focus to <body>. We re-anchor focus to the primary input of the next
+  // mode so keyboard/SR users aren't dumped to the top of the document.
+  private readonly emailInputEl = viewChild<ElementRef<HTMLInputElement>>('emailInput');
+  private readonly displayNameInputEl = viewChild<ElementRef<HTMLInputElement>>('displayNameInput');
   loading = signal(false);
   error = signal<string | null>(null);
   mode = signal<Mode>('login');
@@ -289,11 +298,19 @@ export class LoginComponent implements OnInit {
     this.mode.set(next);
     this.error.set(null);
     this.resetRequested.set(false);
+    // Move focus to the first input of the new mode. Same pattern as the
+    // MFA drawer in account-security (CON-132): schedule a microtask so
+    // Angular has flushed the signal-driven view change.
+    queueMicrotask(() => {
+      const target =
+        next === 'register' ? this.displayNameInputEl() : this.emailInputEl();
+      target?.nativeElement.focus();
+    });
   }
 
   returnToLogin(): void {
-    this.switchMode('login');
     this.password = '';
+    this.switchMode('login');
   }
 
   async submit(): Promise<void> {

@@ -1,10 +1,12 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  ElementRef,
   computed,
   inject,
   OnInit,
   signal,
+  viewChild,
 } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
@@ -120,14 +122,18 @@ type PageState = 'form' | 'success' | 'error';
             <div class="bg-zinc-900 rounded-xl border border-zinc-800 p-6 space-y-4">
               @if (reasonDescriptor(); as reason) {
                 <div role="alert" class="space-y-3">
-                  <div class="flex items-start gap-2">
+                  <h2
+                    #errorHeading
+                    id="reset-error-heading"
+                    tabindex="-1"
+                    class="text-zinc-100 font-medium flex items-center gap-2 focus:outline-none"
+                  >
                     <span
-                      class="bg-red-700 text-white text-[11px] font-semibold tracking-wide uppercase rounded px-2 py-0.5 flex items-center gap-1"
-                    >
-                      <span aria-hidden="true">■</span>
-                      <span>{{ reason.label }}</span>
-                    </span>
-                  </div>
+                      aria-hidden="true"
+                      class="bg-red-700 text-white text-[11px] font-semibold tracking-wide uppercase rounded px-2 py-0.5 inline-flex items-center"
+                    >■</span>
+                    {{ reason.label }}
+                  </h2>
                   <p class="text-sm text-zinc-300">{{ reason.explanation }}</p>
                 </div>
 
@@ -198,6 +204,7 @@ type PageState = 'form' | 'success' | 'error';
                   New password
                 </label>
                 <input
+                  #newPasswordInput
                   id="reset-new-password"
                   name="new-password"
                   type="password"
@@ -288,6 +295,17 @@ export class ResetPasswordComponent implements OnInit {
   newPassword = '';
   confirmPassword = '';
 
+  // Focus targets for state transitions. Flipping `state()` between
+  // `form` / `error` unmounts the previously-focused control (submit
+  // button on error, "Try again" on retry), so we re-anchor focus.
+  // `role="alert"` only announces dynamic insertions; moving focus to
+  // the heading ensures SR users hear the failure reason on direct
+  // navigation to an already-error page (no-token case).
+  private readonly newPasswordInputEl =
+    viewChild<ElementRef<HTMLInputElement>>('newPasswordInput');
+  private readonly errorHeadingEl =
+    viewChild<ElementRef<HTMLHeadingElement>>('errorHeading');
+
   readonly token = signal<string>('');
   readonly connectionId = signal<string | null>(null);
   readonly connection = signal<BackendConnection | null>(null);
@@ -323,6 +341,7 @@ export class ResetPasswordComponent implements OnInit {
     if (!token) {
       this.errorReason.set('token_invalid_or_expired');
       this.state.set('error');
+      this.focusErrorHeading();
       return;
     }
     if (!connId) {
@@ -336,6 +355,11 @@ export class ResetPasswordComponent implements OnInit {
     this.state.set('form');
     this.errorReason.set(null);
     this.formError.set(null);
+    queueMicrotask(() => this.newPasswordInputEl()?.nativeElement.focus());
+  }
+
+  private focusErrorHeading(): void {
+    queueMicrotask(() => this.errorHeadingEl()?.nativeElement.focus());
   }
 
   async submit(): Promise<void> {
@@ -377,6 +401,7 @@ export class ResetPasswordComponent implements OnInit {
         );
       this.errorReason.set(isNetwork ? 'network_error' : 'token_invalid_or_expired');
       this.state.set('error');
+      this.focusErrorHeading();
     } finally {
       this.busy.set(false);
     }
