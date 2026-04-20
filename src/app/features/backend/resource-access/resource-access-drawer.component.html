@@ -131,7 +131,7 @@
                 <div
                   [id]="'container-list-' + titleId()"
                   role="radiogroup"
-                  [attr.aria-label]="'Containers on ' + (containerSystemId() ? 'selected system' : '')"
+                  [attr.aria-label]="containerSystemLabel() ? 'Containers on ' + containerSystemLabel() : 'Containers'"
                   class="border border-zinc-800 rounded divide-y divide-zinc-800 max-h-64 overflow-y-auto"
                 >
                   @for (c of containerPageSlice(); track c.id) {
@@ -156,7 +156,8 @@
                   <span aria-live="polite">
                     Showing
                     {{ (containerPage() - 1) * 25 + 1 }}–{{ (containerPage() - 1) * 25 + containerPageSlice().length }}
-                    of {{ filteredContainers().length }}
+                    of {{ filteredContainers().length }}, page
+                    {{ containerPage() }} of {{ containerPageCount() }}
                   </span>
                   <span class="flex items-center gap-2">
                     <button
@@ -166,7 +167,7 @@
                       class="px-2 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 disabled:opacity-40"
                       aria-label="Previous page of containers"
                     >Prev</button>
-                    <span>Page {{ containerPage() }} / {{ containerPageCount() }}</span>
+                    <span aria-hidden="true">Page {{ containerPage() }} / {{ containerPageCount() }}</span>
                     <button
                       type="button"
                       (click)="onContainerPage(1)"

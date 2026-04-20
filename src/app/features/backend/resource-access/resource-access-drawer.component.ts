@@ -124,6 +124,12 @@ export class ResourceAccessDrawerComponent implements OnInit {
     }
   });
 
+  readonly containerSystemLabel = computed<string>(() => {
+    const id = this.containerSystemId();
+    if (!id) return '';
+    return this.systems().find((s) => s.id === id)?.label ?? '';
+  });
+
   readonly filteredContainers = computed<readonly Container[]>(() => {
     const q = this.containerSearch().trim().toLowerCase();
     if (!q) return this.containers();
