@@ -6,9 +6,11 @@
       class="inline-flex h-5 w-5 items-center justify-center rounded-full border border-zinc-600 text-[10px] text-zinc-300 hover:border-zinc-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
       [attr.aria-expanded]="open()"
       [attr.aria-controls]="popoverIdSignal()"
+      [attr.aria-describedby]="open() ? popoverIdSignal() : null"
       [attr.aria-label]="'Description for ' + value()"
       (click)="toggle($event)"
       (keydown)="onKey($event)"
+      (blur)="onBlur()"
     >
       i
     </button>

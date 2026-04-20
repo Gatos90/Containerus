@@ -4,6 +4,8 @@ import {
   booleanAttribute,
   computed,
   input,
+  isDevMode,
+  OnInit,
   output,
 } from '@angular/core';
 import { paletteFor, glyphFor } from '../connection-palette';
@@ -28,7 +30,7 @@ export type ConnectionBadgeSize = 'sm' | 'md';
   templateUrl: './connection-badge.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class ConnectionBadgeComponent {
+export class ConnectionBadgeComponent implements OnInit {
   readonly connectionId = input.required<string>();
   /** Optional label surfaced only for `interactive=true` aria-label text. */
   readonly connectionLabel = input<string | null>(null);
@@ -54,17 +56,21 @@ export class ConnectionBadgeComponent {
     return label ? `Connection ${label}` : `Connection ${id}`;
   });
 
+  ngOnInit(): void {
+    // Enforce WCAG 2.5.8 AA: 24 CSS px minimum hit target. `sm` (16px) is
+    // below the minimum and is documented as decorative-only — throwing in
+    // dev mode keeps call sites honest instead of relying on a docstring.
+    if (isDevMode() && this.size() === 'sm' && this.interactive()) {
+      throw new Error(
+        'ConnectionBadge: size="sm" is decorative-only (16px < WCAG 2.5.8 minimum). ' +
+          'Use size="md" when interactive=true.',
+      );
+    }
+  }
+
   onClick(event: MouseEvent): void {
     if (!this.interactive()) return;
     event.stopPropagation();
     this.activated.emit();
-  }
-
-  onKeydown(event: KeyboardEvent): void {
-    if (!this.interactive()) return;
-    if (event.key === 'Enter' || event.key === ' ') {
-      event.preventDefault();
-      this.activated.emit();
-    }
   }
 }

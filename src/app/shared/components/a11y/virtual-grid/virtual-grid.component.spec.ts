@@ -21,7 +21,7 @@ function makeComponent(rows: Row[] = stub()): VirtualGridComponent<Row> {
   (c.rowHeight as any) = () => 40;
   (c.viewportHeight as any) = () => 200;
   (c.overscan as any) = () => 2;
-  (c.keyboardModel as any) = () => 'grid';
+  (c.keyboardModel as any) = () => 'listbox';
   (c.ariaLabel as any) = () => 'Audit log';
   return c;
 }
@@ -122,6 +122,32 @@ describe('VirtualGridComponent', () => {
       c.onKeydown(ev);
       expect(c.focusedIndex()).toBe(2);
       expect(ev.preventDefault).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('single-tab-stop listbox model', () => {
+    it('activeDescendantId points at the focused row while it is mounted', () => {
+      const c = makeComponent(stub(1000));
+      c.focusedIndex.set(2);
+      expect(c.activeDescendantId()).toBe(c.rowId(2));
+    });
+
+    it('activeDescendantId returns null once the focused row is scrolled out of the window', () => {
+      const c = makeComponent(stub(1000));
+      c.focusedIndex.set(2);
+      c.scrollTop.set(10_000); // window shifts far past row 2
+      expect(c.activeDescendantId()).toBeNull();
+    });
+
+    it('activeDescendantId returns null for an empty dataset (nothing to point at)', () => {
+      const c = makeComponent([]);
+      expect(c.activeDescendantId()).toBeNull();
+    });
+
+    it('rowId is unique per component instance to avoid aria-activedescendant collisions', () => {
+      const a = makeComponent();
+      const b = makeComponent();
+      expect(a.rowId(0)).not.toBe(b.rowId(0));
     });
   });
 

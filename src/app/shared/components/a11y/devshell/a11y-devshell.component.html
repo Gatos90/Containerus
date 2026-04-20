@@ -43,12 +43,13 @@
     <app-drawer-dialog
       [open]="drawerOpen()"
       [dirty]="drawerDirty()"
+      [titleId]="'drawer-demo-title'"
       [restoreFocusTo]="drawerTrigger()?.nativeElement ?? null"
       (closed)="closeDrawer()"
       (dirtyCloseAttempt)="confirmDiscard()"
     >
       <div class="p-4 space-y-3">
-        <h2 class="text-lg font-semibold">Edit access rule</h2>
+        <h2 id="drawer-demo-title" class="text-lg font-semibold">Edit access rule</h2>
         <p class="text-sm text-zinc-400">Focus is trapped inside this panel. Esc closes.</p>
         <button type="button" class="rounded bg-zinc-700 px-3 py-1.5 text-sm" (click)="closeDrawer()">Close</button>
       </div>

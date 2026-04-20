@@ -5,7 +5,6 @@ import {
   computed,
   effect,
   ElementRef,
-  inject,
   input,
   OnDestroy,
   output,
@@ -20,24 +19,34 @@ export interface VirtualGridRow {
   readonly id: string | number;
 }
 
-/** Keyboard model name — only `grid` is implemented today. */
-export type KeyboardModel = 'grid';
+/** Keyboard model name — only `listbox` is implemented today. */
+export type KeyboardModel = 'listbox';
+
+let gridSeq = 0;
 
 /**
- * Virtualized table with a full grid keyboard model.
+ * Virtualized scrolling list with a single-tab-stop listbox keyboard model.
  *
  * Accessibility contract (§5, informed by §6.2):
- * - The outer element has `role=grid` and `aria-rowcount` equal to the full
- *   dataset (not just the visible window). `aria-rowindex` on each row uses
- *   the 1-based *real-dataset* index so AT announces "row 4,218 of 10,000"
- *   even when only rows 4,200–4,220 are mounted.
+ * - The outer element has `role=listbox` and is the single Tab stop. Child
+ *   rows render as `role=option` with `aria-setsize`/`aria-posinset` keyed
+ *   against the real dataset, so AT announces "option 4,218 of 10,000" even
+ *   when only rows 4,200–4,220 are mounted. Selection is tracked via
+ *   `aria-activedescendant` so focus never leaves the shell during arrow
+ *   navigation — rows themselves remain `tabindex="-1"`.
  * - Keyboard: Arrow Up/Down moves focus ±1. Home/End = start/end of visible
  *   window; Ctrl+Home / Ctrl+End = absolute start/end. PageUp/PageDown scrolls
  *   ±pageSize. After any key that moves focus out of the currently-rendered
- *   window (PageUp/PageDown, Ctrl+Home/End) we scroll *first*, then focus
- *   inside `requestAnimationFrame` — §6.2 "scroll-before-focus" rule.
+ *   window (PageUp/PageDown, Ctrl+Home/End) we scroll *first*, then realign
+ *   `aria-activedescendant` inside `requestAnimationFrame` — §6.2
+ *   "scroll-before-focus" rule.
  * - Row render is opaque — callers pass a `TemplateRef`. The shell owns ARIA
  *   attrs so screens never re-implement row semantics.
+ *
+ * We deliberately picked listbox/option over grid/gridcell: the body is a
+ * single-column identity list (one row = one pickable thing) and ARIA 1.2
+ * forbids `role=grid` without `role=gridcell` children. Grid mode can come
+ * back when a caller actually needs multi-column cell navigation.
  */
 @Component({
   selector: 'app-virtual-grid',
@@ -53,7 +62,7 @@ export class VirtualGridComponent<T extends VirtualGridRow> implements AfterView
   readonly viewportHeight = input<number>(400);
   /** Number of rows to render above/below the visible window as a buffer. */
   readonly overscan = input<number>(4);
-  readonly keyboardModel = input<KeyboardModel>('grid');
+  readonly keyboardModel = input<KeyboardModel>('listbox');
   readonly rowTemplate = input.required<TemplateRef<{ $implicit: T; index: number }>>();
   /** aria-label applied to the grid shell. Must name the data in context. */
   readonly ariaLabel = input.required<string>();
@@ -61,11 +70,29 @@ export class VirtualGridComponent<T extends VirtualGridRow> implements AfterView
   readonly rowActivated = output<T>();
 
   private readonly scroller = viewChild<ElementRef<HTMLElement>>('scroller');
+  private readonly instanceId = `virtual-grid-${++gridSeq}`;
 
   readonly scrollTop = signal(0);
   readonly focusedIndex = signal(0);
 
   readonly rowCount = computed(() => this.rows().length);
+
+  /** Stable DOM id for the row at `index`. */
+  rowId(index: number): string {
+    return `${this.instanceId}-row-${index}`;
+  }
+
+  /**
+   * `aria-activedescendant` target — only valid when the focused row is
+   * mounted in the current window. Returns null otherwise so AT falls back
+   * to the listbox label rather than pointing at a stale id.
+   */
+  readonly activeDescendantId = computed<string | null>(() => {
+    const idx = this.focusedIndex();
+    const [start, end] = this.window();
+    if (this.rowCount() === 0 || idx < start || idx >= end) return null;
+    return this.rowId(idx);
+  });
 
   /** Visible window [start, end). `end` is exclusive. Clamped to row count. */
   readonly window = computed<[number, number]>(() => {
@@ -142,10 +169,9 @@ export class VirtualGridComponent<T extends VirtualGridRow> implements AfterView
 
   /**
    * Move logical focus to `index`, scrolling first if the target is outside
-   * the current render window. Focus is applied on the next animation frame
-   * so the row DOM has a chance to mount — if we focused synchronously, AT
-   * would announce the old row for a frame because the new row doesn't exist
-   * in the DOM yet.
+   * the current render window. DOM focus stays on the scroller (single tab
+   * stop); `aria-activedescendant` is updated by the computed, so AT tracks
+   * the logical focus without moving the tab ring off the listbox.
    */
   private moveFocus(index: number): void {
     this.focusedIndex.set(index);
@@ -154,18 +180,6 @@ export class VirtualGridComponent<T extends VirtualGridRow> implements AfterView
     const el = this.scroller()?.nativeElement;
     if (needsScroll && el) {
       el.scrollTop = index * this.rowHeight();
-      // scrollTop assignment will fire onScroll and update window() on the
-      // next tick. Focus after a frame so the new row is in the DOM.
-      requestAnimationFrame(() => this.focusRowElement(index));
-      return;
     }
-    this.focusRowElement(index);
-  }
-
-  private focusRowElement(index: number): void {
-    const el = this.scroller()?.nativeElement;
-    if (!el) return;
-    const row = el.querySelector<HTMLElement>(`[data-grid-row="${index}"]`);
-    row?.focus({ preventScroll: true });
   }
 }

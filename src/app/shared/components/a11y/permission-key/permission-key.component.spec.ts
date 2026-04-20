@@ -64,6 +64,24 @@ describe('PermissionKeyComponent', () => {
     });
   });
 
+  describe('Tab-away close', () => {
+    it('closes when the button is blurred (Tab-away or outside click moves focus)', () => {
+      const c = makeComponent({ 'x': 'y' });
+      (c.value as any) = () => 'x';
+      c.toggle({ stopPropagation: vi.fn() } as unknown as MouseEvent);
+      expect(c.open()).toBe(true);
+      c.onBlur();
+      expect(c.open()).toBe(false);
+    });
+
+    it('onBlur is a no-op when popover is already closed', () => {
+      const c = makeComponent({ 'x': 'y' });
+      (c.value as any) = () => 'x';
+      c.onBlur();
+      expect(c.open()).toBe(false);
+    });
+  });
+
   describe('lifecycle', () => {
     it('calls ensureLoaded() on init', () => {
       const load = vi.fn().mockResolvedValue(undefined);

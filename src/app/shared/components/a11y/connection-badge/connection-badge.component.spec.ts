@@ -62,17 +62,38 @@ describe('ConnectionBadgeComponent', () => {
       expect(spy).not.toHaveBeenCalled();
     });
 
-    it('activates on Enter and Space keys', () => {
+    it('relies on the native <button> for Enter/Space activation (no custom keydown handler)', () => {
+      // Enter/Space on a <button> synthesize a click event in every browser;
+      // a custom (keydown) handler would double-emit. We assert the method is
+      // gone so a future edit doesn't silently add it back.
+      const c = makeComponent();
+      expect((c as unknown as { onKeydown?: unknown }).onKeydown).toBeUndefined();
+    });
+  });
+
+  describe('sm + interactive guard', () => {
+    it('throws in ngOnInit when size=sm is paired with interactive=true', () => {
       const c = makeComponent();
       (c.connectionId as any) = () => 'c1';
+      (c.size as any) = () => 'sm';
       (c.interactive as any) = () => true;
-      const spy = vi.fn();
-      c.activated.subscribe(spy);
-      const ev = (key: string) => ({ key, preventDefault: vi.fn() }) as unknown as KeyboardEvent;
-      c.onKeydown(ev('Enter'));
-      c.onKeydown(ev(' '));
-      c.onKeydown(ev('Tab'));
-      expect(spy).toHaveBeenCalledTimes(2);
+      expect(() => c.ngOnInit()).toThrow(/decorative-only/i);
+    });
+
+    it('does not throw for sm when non-interactive', () => {
+      const c = makeComponent();
+      (c.connectionId as any) = () => 'c1';
+      (c.size as any) = () => 'sm';
+      (c.interactive as any) = () => false;
+      expect(() => c.ngOnInit()).not.toThrow();
+    });
+
+    it('does not throw for md + interactive', () => {
+      const c = makeComponent();
+      (c.connectionId as any) = () => 'c1';
+      (c.size as any) = () => 'md';
+      (c.interactive as any) = () => true;
+      expect(() => c.ngOnInit()).not.toThrow();
     });
   });
 

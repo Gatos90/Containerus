@@ -20,9 +20,11 @@ let popoverSeq = 0;
  * - If no description is available, the affordance is OMITTED. No hover-only
  *   tooltips, no `title=` attributes, no disabled-looking icons. The rest of
  *   the UI must not rely on hover to expose meaning.
- * - The popover is opened by Click/Enter/Space and closed by Esc. It is
- *   positioned *next to* the key, not overlaid on it — SRs announce the
- *   description as part of the button's `aria-describedby`.
+ * - The popover is opened by Click/Enter/Space, closed by Esc, and also
+ *   closed on blur (Tab-away) so stale popovers don't follow the user across
+ *   the form. It is positioned *next to* the key, not overlaid on it — when
+ *   open, the button sets `aria-describedby` to the popover id so SRs
+ *   announce the description as part of the button's accessible name/desc.
  * - Rendered as `<code>` for monospace alignment in permission tables.
  */
 @Component({
@@ -66,5 +68,15 @@ export class PermissionKeyComponent implements OnInit {
 
   close(): void {
     this.open.set(false);
+  }
+
+  /**
+   * Close on Tab-away. We can't use `focusout` relatedTarget checks reliably
+   * in jsdom, and the popover body is a sibling `<span>` — it never receives
+   * focus — so collapsing on blur is safe and matches platform norms for
+   * inline info popovers.
+   */
+  onBlur(): void {
+    if (this.open()) this.open.set(false);
   }
 }
