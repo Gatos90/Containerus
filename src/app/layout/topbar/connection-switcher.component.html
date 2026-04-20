@@ -23,12 +23,20 @@
       />
     }
     <span class="flex-1 text-left truncate">{{ activeOption().label }}</span>
-    <span
-      class="w-1.5 h-1.5 rounded-full flex-shrink-0"
-      [ngClass]="statusDotClass(activeOption().status)"
-      aria-hidden="true"
-    ></span>
-    <span class="sr-only">, {{ statusLabel(activeOption().status) }}</span>
+    <!--
+      CON-126 §3.1: status transitions are SR-announced via role="status". The
+      dot carries the visual channel; the sr-only span carries the announced
+      content. Wrapping both in one live region avoids label re-announcement
+      and keeps the trigger's accessible name stable.
+    -->
+    <span role="status" aria-live="polite" aria-atomic="true" class="inline-flex items-center">
+      <span
+        class="w-1.5 h-1.5 rounded-full flex-shrink-0"
+        [ngClass]="statusDotClass(activeOption().status)"
+        aria-hidden="true"
+      ></span>
+      <span class="sr-only">, {{ statusLabel(activeOption().status) }}</span>
+    </span>
     <svg aria-hidden="true" class="w-3 h-3 text-zinc-500" viewBox="0 0 12 12"><path fill="currentColor" d="M3 4.5L6 7.5L9 4.5"/></svg>
   </button>
 
@@ -45,8 +53,8 @@
           role="option"
           [attr.aria-selected]="activeIndex() === i"
           (mouseenter)="activeIndex.set(i)"
-          (mousedown)="$event.preventDefault(); selectIndex(i)"
-          class="flex items-center gap-2 px-3 py-2 cursor-pointer"
+          (mousedown)="$event.preventDefault(); activateOption(i)"
+          class="flex items-center gap-2 flex-wrap px-3 py-2 cursor-pointer"
           [class.bg-zinc-800]="activeIndex() === i"
         >
           @if (opt.id === 'local') {
@@ -60,10 +68,22 @@
               <span class="block text-[11px] text-zinc-500 truncate">{{ opt.sub }}</span>
             }
           </span>
-          <span class="flex items-center gap-1.5 text-[11px] text-zinc-400">
-            <span class="w-1.5 h-1.5 rounded-full" [ngClass]="statusDotClass(opt.status)" aria-hidden="true"></span>
-            {{ statusLabel(opt.status) }}
-          </span>
+          @if (opt.errorReason) {
+            <app-connection-reason-chip
+              [reason]="opt.errorReason"
+              [connectionLabel]="opt.label"
+            />
+          } @else {
+            <span
+              role="status"
+              aria-live="polite"
+              aria-atomic="true"
+              class="flex items-center gap-1.5 text-[11px] text-zinc-400"
+            >
+              <span class="w-1.5 h-1.5 rounded-full" [ngClass]="statusDotClass(opt.status)" aria-hidden="true"></span>
+              {{ statusLabel(opt.status) }}
+            </span>
+          }
         </li>
       }
     </ul>

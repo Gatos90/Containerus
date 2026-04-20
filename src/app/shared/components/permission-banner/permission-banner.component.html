@@ -1,0 +1,27 @@
+@if (visible()) {
+  <div
+    role="status"
+    aria-atomic="true"
+    class="flex items-center gap-3 px-4 py-2 bg-amber-900/40 border-b border-amber-700 text-amber-100 text-sm"
+  >
+    <span class="flex-1">
+      Permissions changed on {{ connectionLabel() || 'this connection' }}. Refresh to apply the new access.
+    </span>
+    <button
+      type="button"
+      (click)="refresh()"
+      [attr.aria-label]="'Refresh permissions for ' + (connectionLabel() || 'this connection')"
+      class="px-2.5 py-1 rounded bg-amber-700 hover:bg-amber-600 text-amber-50 font-medium focus:outline-none focus:ring-2 focus:ring-amber-400 focus:ring-offset-2 focus:ring-offset-zinc-950"
+    >
+      Refresh
+    </button>
+    <button
+      type="button"
+      (click)="dismiss()"
+      aria-label="Dismiss permissions changed banner"
+      class="px-2 py-1 rounded text-amber-200 hover:text-amber-100 focus:outline-none focus:ring-2 focus:ring-amber-400"
+    >
+      &times;
+    </button>
+  </div>
+}

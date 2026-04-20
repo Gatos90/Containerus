@@ -10,9 +10,11 @@ import {
   signal,
 } from '@angular/core';
 import { BackendService } from '../../core/services/backend.service';
+import { ConnectionErrorReason } from '../../core/models/backend.model';
 import { UiPreferencesState, LOCAL_CONNECTION_ID } from '../../state/ui-preferences.state';
 import {
   ConnectionBadgeComponent,
+  ConnectionReasonChipComponent,
   paletteFor,
   glyphFor,
 } from '../../shared/components/a11y';
@@ -22,6 +24,7 @@ interface SwitcherOption {
   label: string;
   sub?: string;
   status: 'connected' | 'connecting' | 'disconnected' | 'error' | 'local';
+  errorReason: ConnectionErrorReason | null;
 }
 
 /**
@@ -35,7 +38,7 @@ interface SwitcherOption {
 @Component({
   selector: 'app-connection-switcher',
   standalone: true,
-  imports: [CommonModule, ConnectionBadgeComponent],
+  imports: [CommonModule, ConnectionBadgeComponent, ConnectionReasonChipComponent],
   templateUrl: './connection-switcher.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -53,7 +56,7 @@ export class ConnectionSwitcherComponent {
 
   readonly options = computed<SwitcherOption[]>(() => {
     const opts: SwitcherOption[] = [
-      { id: LOCAL_CONNECTION_ID, label: 'Local', sub: 'This machine', status: 'local' },
+      { id: LOCAL_CONNECTION_ID, label: 'Local', sub: 'This machine', status: 'local', errorReason: null },
     ];
     for (const conn of this.backend.connections()) {
       opts.push({
@@ -61,6 +64,7 @@ export class ConnectionSwitcherComponent {
         label: conn.label,
         sub: conn.user?.displayName ?? conn.serverUrl,
         status: conn.status,
+        errorReason: conn.errorReason,
       });
     }
     return opts;
@@ -139,6 +143,46 @@ export class ConnectionSwitcherComponent {
   }
 
   /**
+   * Route Enter/Space (and row click) on an option. Errored rows invoke the
+   * reason-chip's action — this keeps a single keyboard model for the
+   * listbox and avoids putting a focusable button inside `role="option"`,
+   * which ARIA 1.2 forbids.
+   */
+  activateOption(index: number): void {
+    const opt = this.options()[index];
+    if (!opt) return;
+    if (opt.errorReason) {
+      this.onReasonCta(opt.id, opt.errorReason);
+      return;
+    }
+    this.selectIndex(index);
+  }
+
+  /**
+   * Handle a reason action for a connection row. The switcher is a thin
+   * dispatcher — concrete re-login / trust-modal / details navigation lives
+   * elsewhere and is wired up when CON-125 lands.
+   */
+  onReasonCta(connectionId: string, reason: ConnectionErrorReason): void {
+    this.ui.setActiveConnection(connectionId);
+    this.close();
+    switch (reason) {
+      case 'refresh_token_expired':
+      case 'rejected_by_server':
+        // Route through the auth flow for re-login / details.
+        // TODO(CON-125): open login dialog for this connection.
+        break;
+      case 'server_unreachable':
+        // Let BackendService's reconnect loop retry immediately.
+        void this.backend.waitForReady();
+        break;
+      case 'trust_required':
+        // TODO(CON-110/111): open trust modal for this connection.
+        break;
+    }
+  }
+
+  /**
    * Single keydown handler. Select-Only Combobox keeps focus on the trigger
    * (`<ul>` is never focused), so all navigation keys must route through here —
    * they don't bubble from the button to its sibling listbox.
@@ -167,7 +211,7 @@ export class ConnectionSwitcherComponent {
         case 'Enter':
         case ' ':
           event.preventDefault();
-          this.selectIndex(this.activeIndex());
+          this.activateOption(this.activeIndex());
           return;
         case 'Escape':
           event.preventDefault();

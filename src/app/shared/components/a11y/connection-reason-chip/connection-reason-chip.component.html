@@ -1,0 +1,6 @@
+<span class="inline-flex items-center gap-1.5 flex-wrap">
+  <app-status-chip status="failing" [label]="descriptor().label" />
+  <span class="text-[11px] text-red-200" [attr.aria-label]="ctaAriaLabel()">
+    <span aria-hidden="true">· Enter to {{ descriptor().ctaText }}</span>
+  </span>
+</span>

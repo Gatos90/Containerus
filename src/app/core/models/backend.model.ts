@@ -7,6 +7,17 @@ import { ContainerSystem, SshAuthMethod } from './system.model';
 
 export type ConnectionStatus = 'connected' | 'connecting' | 'disconnected' | 'error';
 
+/**
+ * CON-126 §3.1 — named reason codes that pair with coarse status to drive the
+ * reason-chip + CTA. Status still handles routing/color; errorReason
+ * disambiguates it for SR users and gives each failure an actionable button.
+ */
+export type ConnectionErrorReason =
+  | 'refresh_token_expired'
+  | 'server_unreachable'
+  | 'rejected_by_server'
+  | 'trust_required';
+
 export interface BackendConnection {
   id: string;
   serverUrl: string;
@@ -17,6 +28,7 @@ export interface BackendConnection {
   /** Per-project permissions, keyed by project ID */
   projectPermissions: Record<string, EffectivePermissions>;
   status: ConnectionStatus;
+  errorReason: ConnectionErrorReason | null;
 }
 
 export interface SavedBackendConnection {
@@ -106,6 +118,22 @@ export interface ProjectMember {
 export interface InviteMemberRequest {
   email: string;
   roleId: string;
+}
+
+/**
+ * CON-115 §3.3 — pending invite issued from the People screen. Backend
+ * GET/POST/DELETE `/api/projects/{id}/invites*` is a Phase-1 follow-up
+ * (tracked in the BackendEngineer subtask spawned from CON-125); the
+ * frontend renders a graceful empty state when the endpoint 404s.
+ */
+export interface PendingInvite {
+  id: string;
+  email: string;
+  roleId: string;
+  roleName: string;
+  invitedAt: string;
+  invitedBy?: string | null;
+  expiresAt?: string | null;
 }
 
 // ============================================================================

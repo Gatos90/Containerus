@@ -21,3 +21,9 @@ export { MfaCodeInputComponent } from './mfa-code-input/mfa-code-input.component
 
 export { paletteFor, glyphFor, PALETTE, GLYPHS } from './connection-palette';
 export type { ConnectionPaletteEntry } from './connection-palette';
+
+export {
+  ConnectionReasonChipComponent,
+  CONNECTION_REASON_DESCRIPTORS,
+} from './connection-reason-chip/connection-reason-chip.component';
+export type { ReasonDescriptor } from './connection-reason-chip/connection-reason-chip.component';

@@ -1,5 +1,7 @@
-import { Injectable, signal, computed } from '@angular/core';
+import { Injectable, ProviderToken, inject, signal, computed } from '@angular/core';
 import { invoke } from '@tauri-apps/api/core';
+import { ToastState } from '../../state/toast.state';
+import { PermissionBannerState } from '../../state/permission-banner.state';
 import {
   AuthTokens,
   BackendConnection,
@@ -10,6 +12,7 @@ import {
   EffectivePermissions,
   Environment,
   InviteMemberRequest,
+  PendingInvite,
   K8sCluster,
   K8sDeployment,
   K8sNamespace,
@@ -43,6 +46,19 @@ import { ExtendedSystemInfo, LiveSystemMetrics } from '../models/system.model';
 
 const STORAGE_KEY = 'containerus_backend_connections';
 
+/**
+ * Run `inject(token)` if we're inside an Angular injection context; return null
+ * otherwise. Lets this service be `new`'d by legacy specs without crashing,
+ * while still wiring up toast/banner collaborators when used from the app.
+ */
+function tryInject<T>(token: ProviderToken<T>): T | null {
+  try {
+    return inject(token, { optional: true }) ?? null;
+  } catch {
+    return null;
+  }
+}
+
 @Injectable({ providedIn: 'root' })
 export class BackendService {
   private _connections = signal<BackendConnection[]>([]);
@@ -61,6 +77,21 @@ export class BackendService {
 
   /** Periodic reconnect timer handle */
   private _reconnectInterval: ReturnType<typeof setInterval> | null = null;
+
+  /**
+   * CON-126 §4.7: coalesces 403-triggered permission refreshes per connection
+   * so a burst of denied requests only causes one `/auth/me` round-trip.
+   */
+  private readonly _permissionRefreshPromises = new Map<string, Promise<void>>();
+
+  /**
+   * Toast + banner are resolved defensively so the service can still be
+   * constructed via `new BackendService()` in unit tests that don't bootstrap
+   * Angular DI. When absent, 403 handling still flushes the cache and
+   * refetches — it just skips the user-facing notification.
+   */
+  private readonly toast = tryInject(ToastState);
+  private readonly permissionBanner = tryInject(PermissionBannerState);
 
   readonly connections = this._connections.asReadonly();
   readonly isBackendMode = computed(() => this._connections().some(c => c.status === 'connected'));
@@ -105,7 +136,7 @@ export class BackendService {
         }
       } catch {
         console.warn(`Backend ${conn.label} is unreachable, marking disconnected`);
-        this.updateConnection(conn.id, { status: 'disconnected' });
+        this.updateConnection(conn.id, { status: 'disconnected', errorReason: 'server_unreachable' });
       }
     }
 
@@ -116,15 +147,20 @@ export class BackendService {
     for (const conn of disconnected) {
       if (this._refreshPromises.has(conn.id)) continue;
 
-      this.updateConnection(conn.id, { status: 'connecting' });
+      this.updateConnection(conn.id, { status: 'connecting', errorReason: null });
       try {
         await this.refreshTokenFor(conn.id);
         const user = await this.requestFor<UserProfile>(conn.id, 'GET', '/api/auth/me');
-        this.updateConnection(conn.id, { user, status: 'connected' });
+        this.updateConnection(conn.id, { user, status: 'connected', errorReason: null });
         await this.loadProjectsFor(conn.id);
         console.info(`Auto-reconnected to backend: ${conn.label}`);
       } catch {
-        this.updateConnection(conn.id, { status: 'disconnected' });
+        // Keep whatever errorReason refreshTokenFor set (refresh_token_expired) or fall back.
+        const c = this.getConnection(conn.id);
+        this.updateConnection(conn.id, {
+          status: 'disconnected',
+          errorReason: c?.errorReason ?? 'server_unreachable',
+        });
       }
     }
   }
@@ -163,6 +199,7 @@ export class BackendService {
       projects: [],
       projectPermissions: {},
       status: 'disconnected',
+      errorReason: null,
     };
 
     this._connections.update(list => [...list, conn]);
@@ -200,7 +237,7 @@ export class BackendService {
 
   async loginToBackend(connectionId: string, req: LoginRequest): Promise<void> {
     this._userLoggedOut.delete(connectionId);
-    this.updateConnection(connectionId, { status: 'connecting' });
+    this.updateConnection(connectionId, { status: 'connecting', errorReason: null });
     try {
       const data = await this.requestFor<AuthTokens & { user: UserProfile }>(
         connectionId, 'POST', '/api/auth/login', req
@@ -209,18 +246,19 @@ export class BackendService {
         tokens: { accessToken: data.accessToken, refreshToken: data.refreshToken },
         user: data.user,
         status: 'connected',
+        errorReason: null,
       });
       this.persistConnections();
       await this.loadProjectsFor(connectionId);
     } catch (e) {
-      this.updateConnection(connectionId, { status: 'error' });
+      this.updateConnection(connectionId, { status: 'error', errorReason: 'rejected_by_server' });
       throw e;
     }
   }
 
   async registerOnBackend(connectionId: string, req: RegisterRequest): Promise<void> {
     this._userLoggedOut.delete(connectionId);
-    this.updateConnection(connectionId, { status: 'connecting' });
+    this.updateConnection(connectionId, { status: 'connecting', errorReason: null });
     try {
       const data = await this.requestFor<AuthTokens & { user: UserProfile }>(
         connectionId, 'POST', '/api/auth/register', req
@@ -229,11 +267,12 @@ export class BackendService {
         tokens: { accessToken: data.accessToken, refreshToken: data.refreshToken },
         user: data.user,
         status: 'connected',
+        errorReason: null,
       });
       this.persistConnections();
       await this.loadProjectsFor(connectionId);
     } catch (e) {
-      this.updateConnection(connectionId, { status: 'error' });
+      this.updateConnection(connectionId, { status: 'error', errorReason: 'rejected_by_server' });
       throw e;
     }
   }
@@ -249,6 +288,7 @@ export class BackendService {
       projects: [],
       projectPermissions: {},
       status: 'disconnected',
+      errorReason: null,
     });
     this.persistConnections();
   }
@@ -306,10 +346,29 @@ export class BackendService {
 
   async updateMemberRoleFor(connectionId: string, projectId: string, userId: string, roleId: string): Promise<void> {
     await this.requestFor(connectionId, 'PUT', `/api/projects/${projectId}/members/${userId}/role`, { roleId });
+    this.notifyLocalPermissionEdit(connectionId);
   }
 
   async removeMemberFor(connectionId: string, projectId: string, userId: string): Promise<void> {
     await this.requestFor(connectionId, 'DELETE', `/api/projects/${projectId}/members/${userId}`);
+    this.notifyLocalPermissionEdit(connectionId);
+  }
+
+  /**
+   * CON-115 §3.3 — pending invites. The backend endpoint is tracked as a
+   * follow-up (BackendEngineer subtask from CON-125); callers must catch and
+   * degrade gracefully when it 404s.
+   */
+  async listInvitesFor(connectionId: string, projectId: string): Promise<PendingInvite[]> {
+    return this.requestFor<PendingInvite[]>(connectionId, 'GET', `/api/projects/${projectId}/invites`);
+  }
+
+  async resendInviteFor(connectionId: string, projectId: string, inviteId: string): Promise<void> {
+    await this.requestFor(connectionId, 'POST', `/api/projects/${projectId}/invites/${inviteId}/resend`);
+  }
+
+  async revokeInviteFor(connectionId: string, projectId: string, inviteId: string): Promise<void> {
+    await this.requestFor(connectionId, 'DELETE', `/api/projects/${projectId}/invites/${inviteId}`);
   }
 
   async loadPermissionsFor(connectionId: string, projectId: string): Promise<EffectivePermissions> {
@@ -374,11 +433,18 @@ export class BackendService {
   }
 
   async updateRoleFor(connectionId: string, roleId: string, data: { name?: string; slug?: string; description?: string; permissions?: string[] }): Promise<Role> {
-    return this.requestFor<Role>(connectionId, 'PUT', `/api/roles/${roleId}`, data);
+    const role = await this.requestFor<Role>(connectionId, 'PUT', `/api/roles/${roleId}`, data);
+    // Only a permission-set change can affect what the current user can do;
+    // renaming or re-describing a role cannot, so skip the banner for those.
+    if (data.permissions) {
+      this.notifyLocalPermissionEdit(connectionId);
+    }
+    return role;
   }
 
   async deleteRoleFor(connectionId: string, roleId: string): Promise<void> {
     await this.requestFor(connectionId, 'DELETE', `/api/roles/${roleId}`);
+    this.notifyLocalPermissionEdit(connectionId);
   }
 
   async listPermissionDefsFor(connectionId: string): Promise<PermissionDef[]> {
@@ -418,15 +484,20 @@ export class BackendService {
   }
 
   async createAclFor(connectionId: string, projectId: string, data: { userId: string; resourceType: string; resourceId: string; roleId?: string; extraPermissions: string[]; deniedPermissions: string[] }): Promise<ResourceAcl> {
-    return this.requestFor<ResourceAcl>(connectionId, 'POST', `/api/projects/${projectId}/acls`, data);
+    const acl = await this.requestFor<ResourceAcl>(connectionId, 'POST', `/api/projects/${projectId}/acls`, data);
+    this.notifyLocalPermissionEdit(connectionId);
+    return acl;
   }
 
   async updateAclFor(connectionId: string, projectId: string, aclId: string, data: { roleId?: string; extraPermissions?: string[]; deniedPermissions?: string[] }): Promise<ResourceAcl> {
-    return this.requestFor<ResourceAcl>(connectionId, 'PUT', `/api/projects/${projectId}/acls/${aclId}`, data);
+    const acl = await this.requestFor<ResourceAcl>(connectionId, 'PUT', `/api/projects/${projectId}/acls/${aclId}`, data);
+    this.notifyLocalPermissionEdit(connectionId);
+    return acl;
   }
 
   async deleteAclFor(connectionId: string, projectId: string, aclId: string): Promise<void> {
     await this.requestFor(connectionId, 'DELETE', `/api/projects/${projectId}/acls/${aclId}`);
+    this.notifyLocalPermissionEdit(connectionId);
   }
 
   // ==========================================================================
@@ -1044,7 +1115,10 @@ export class BackendService {
       clearTimeout(timeoutId);
       // Server unreachable — mark disconnected so reconnect loop picks it up
       if (conn.status === 'connected') {
-        this.updateConnection(connectionId, { status: 'disconnected' });
+        this.updateConnection(connectionId, {
+          status: 'disconnected',
+          errorReason: 'server_unreachable',
+        });
       }
       if (e instanceof Error && e.name === 'AbortError') {
         throw new Error(`Request to ${path} timed out`);
@@ -1068,7 +1142,9 @@ export class BackendService {
         await refreshPromise;
       } catch (refreshError) {
         console.warn('Token refresh failed:', refreshError);
-        // Keep refresh token so the reconnect loop can retry later
+        // Keep refresh token so the reconnect loop can retry later. If refreshTokenFor
+        // already identified this as an expired refresh token it will have set the
+        // reason on the connection — preserve it; otherwise default to unreachable.
         const currentConn = this.getConnection(connectionId);
         const refreshToken = currentConn?.tokens?.refreshToken ?? null;
         this.updateConnection(connectionId, {
@@ -1076,6 +1152,7 @@ export class BackendService {
           user: null,
           projectPermissions: {},
           status: 'disconnected',
+          errorReason: currentConn?.errorReason ?? 'server_unreachable',
         });
         this.persistConnections();
         throw new Error('Session expired. Reconnecting automatically...');
@@ -1114,6 +1191,16 @@ export class BackendService {
       return JSON.parse(retryText) as T;
     }
 
+    // CON-126 §4.7 stop-gap: on 403 the server told us the user's permissions
+    // no longer include this action. Flush the cached permissions and refetch
+    // so subsequent navigation reflects reality; the original request still
+    // fails (we don't retry it — the user may have lost access deliberately).
+    if (resp.status === 403) {
+      this.schedulePermissionRefreshFor(connectionId, /* fromDenial */ true);
+      const err = await resp.json().catch(() => ({ error: resp.statusText }));
+      throw new Error(err.error || resp.statusText);
+    }
+
     if (!resp.ok) {
       const err = await resp.json().catch(() => ({ error: resp.statusText }));
       throw new Error(err.error || resp.statusText);
@@ -1122,6 +1209,61 @@ export class BackendService {
     const text = await resp.text();
     if (!text) return undefined as unknown as T;
     return JSON.parse(text) as T;
+  }
+
+  /**
+   * CON-126 §4.7: refetch `/auth/me` + project permissions after a permission
+   * event (403 response, manual refresh, or — once CON-122 lands — a server
+   * push). Coalesces concurrent calls per-connection so a burst of 403s still
+   * only causes one round-trip.
+   */
+  refreshPermissionsFor(connectionId: string): Promise<void> {
+    return this.schedulePermissionRefreshFor(connectionId, false);
+  }
+
+  private schedulePermissionRefreshFor(
+    connectionId: string,
+    fromDenial: boolean,
+  ): Promise<void> {
+    const existing = this._permissionRefreshPromises.get(connectionId);
+    if (existing) return existing;
+
+    const conn = this.getConnection(connectionId);
+    if (!conn || conn.status !== 'connected') return Promise.resolve();
+
+    if (fromDenial && this.toast) {
+      this.toast.info('Your permissions changed — refreshing.');
+    }
+
+    // Flush cached permissions synchronously so callers making back-to-back
+    // checks don't see stale positives while the refetch is in flight.
+    this.updateConnection(connectionId, { projectPermissions: {} });
+
+    const task = (async () => {
+      try {
+        const user = await this.requestFor<UserProfile>(connectionId, 'GET', '/api/auth/me');
+        this.updateConnection(connectionId, { user });
+        await this.loadProjectsFor(connectionId);
+      } catch (err) {
+        console.warn('Permission refresh failed:', err);
+      }
+    })().finally(() => {
+      this._permissionRefreshPromises.delete(connectionId);
+    });
+
+    this._permissionRefreshPromises.set(connectionId, task);
+    return task;
+  }
+
+  /**
+   * CON-126 §4.7: the caller just performed a role/ACL mutation from this
+   * client, so the *current* user's permissions may have changed. Show the
+   * in-page banner so they can opt into a refresh. We intentionally don't
+   * auto-refresh — role edits are infrequent, and a surprise signal flip in
+   * the middle of a review flow is jarring.
+   */
+  notifyLocalPermissionEdit(connectionId: string): void {
+    this.permissionBanner?.show(connectionId);
   }
 
   async refreshTokenFor(connectionId: string): Promise<void> {
@@ -1140,7 +1282,13 @@ export class BackendService {
 
       if (resp.status === 401) {
         // Refresh token itself is expired/revoked — clear everything
-        this.updateConnection(connectionId, { tokens: null, user: null, projectPermissions: {}, status: 'disconnected' });
+        this.updateConnection(connectionId, {
+          tokens: null,
+          user: null,
+          projectPermissions: {},
+          status: 'disconnected',
+          errorReason: 'refresh_token_expired',
+        });
         this.persistConnections();
         throw new Error('Refresh token expired');
       }
@@ -1206,6 +1354,7 @@ export class BackendService {
           projects: [],
           projectPermissions: {},
           status: hasTokens ? 'connecting' as const : 'disconnected' as const,
+          errorReason: null,
         };
       });
       this._connections.set(connections);
@@ -1243,6 +1392,7 @@ export class BackendService {
         projects: [],
         projectPermissions: {},
         status: s.tokens ? 'connecting' as const : 'disconnected' as const,
+        errorReason: null,
       }));
       this._connections.set(connections);
 
@@ -1283,6 +1433,7 @@ export class BackendService {
         projects: [],
         projectPermissions: {},
         status: tokens ? 'connecting' : 'disconnected',
+        errorReason: null,
       };
 
       this._connections.set([conn]);
@@ -1306,11 +1457,12 @@ export class BackendService {
       await this.refreshTokenFor(connectionId);
       // Load user profile
       const user = await this.requestFor<UserProfile>(connectionId, 'GET', '/api/auth/me');
-      this.updateConnection(connectionId, { user, status: 'connected' });
+      this.updateConnection(connectionId, { user, status: 'connected', errorReason: null });
       await this.loadProjectsFor(connectionId);
     } catch (err) {
       console.warn('Auto-reconnect failed:', err);
-      // Keep refresh token so the periodic reconnect loop can retry
+      // Keep refresh token so the periodic reconnect loop can retry.
+      // Preserve any errorReason set by refreshTokenFor (e.g. refresh_token_expired).
       const conn = this.getConnection(connectionId);
       const refreshToken = conn?.tokens?.refreshToken ?? null;
       this.updateConnection(connectionId, {
@@ -1318,6 +1470,7 @@ export class BackendService {
         user: null,
         projectPermissions: {},
         status: 'disconnected',
+        errorReason: conn?.errorReason ?? 'server_unreachable',
       });
       this.persistConnections();
     }
