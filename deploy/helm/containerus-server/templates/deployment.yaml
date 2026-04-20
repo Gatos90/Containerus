@@ -34,54 +34,10 @@ spec:
       serviceAccountName: {{ include "containerus-server.serviceAccountName" . }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
-      initContainers:
-        - name: run-migrations
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
-          imagePullPolicy: {{ .Values.image.pullPolicy }}
-          command: ["containerus-server", "--migrate-only"]
-          envFrom:
-            - configMapRef:
-                name: {{ include "containerus-server.fullname" . }}-config
-          env:
-            - name: DATABASE_URL
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "containerus-server.secretName" . }}
-                  key: DATABASE_URL
-            - name: JWT_SECRET
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "containerus-server.secretName" . }}
-                  key: JWT_SECRET
-            - name: ENCRYPTION_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "containerus-server.secretName" . }}
-                  key: ENCRYPTION_KEY
-            - name: ENCRYPTION_SALT
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "containerus-server.secretName" . }}
-                  key: ENCRYPTION_SALT
-            - name: ADMIN_EMAIL
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "containerus-server.secretName" . }}
-                  key: ADMIN_EMAIL
-            - name: ADMIN_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "containerus-server.secretName" . }}
-                  key: ADMIN_PASSWORD
-          securityContext:
-            {{- toYaml .Values.securityContext | nindent 12 }}
-          resources:
-            requests:
-              cpu: 50m
-              memory: 64Mi
-            limits:
-              cpu: 200m
-              memory: 128Mi
+      # Migrations are embedded via sqlx::migrate! and run automatically on
+      # main-container startup — no init container needed. (The image does not
+      # honour an explicit --migrate-only flag; it always boots into the HTTP
+      # listener after migrations.)
       containers:
         - name: {{ .Chart.Name }}
           securityContext:
