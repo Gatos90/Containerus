@@ -84,16 +84,21 @@ type PodTab = 'describe' | 'logs' | 'events';
                 [attr.aria-labelledby]="tabId('describe')"
                 class="space-y-2 text-sm text-zinc-200"
               >
+                <!--
+                  min-w-0 + break-all on the value column let long mono tokens
+                  (node DNS names, IPv6 pod IPs) wrap at 320 CSS px instead of
+                  overflowing the drawer — WCAG 1.4.10 reflow.
+                -->
                 <div class="grid grid-cols-[10rem_1fr] gap-y-1.5 text-xs">
-                  <div class="text-zinc-500">Phase</div><div class="font-mono">{{ p.status }}</div>
-                  <div class="text-zinc-500">Ready</div><div class="font-mono">{{ p.ready }}</div>
-                  <div class="text-zinc-500">Restarts</div><div class="font-mono">{{ p.restarts }}</div>
-                  <div class="text-zinc-500">Age</div><div class="font-mono">{{ p.age }}</div>
+                  <div class="text-zinc-500">Phase</div><div class="min-w-0 break-all font-mono">{{ p.status }}</div>
+                  <div class="text-zinc-500">Ready</div><div class="min-w-0 break-all font-mono">{{ p.ready }}</div>
+                  <div class="text-zinc-500">Restarts</div><div class="min-w-0 break-all font-mono">{{ p.restarts }}</div>
+                  <div class="text-zinc-500">Age</div><div class="min-w-0 break-all font-mono">{{ p.age }}</div>
                   @if (p.ip) {
-                    <div class="text-zinc-500">Pod IP</div><div class="font-mono">{{ p.ip }}</div>
+                    <div class="text-zinc-500">Pod IP</div><div class="min-w-0 break-all font-mono">{{ p.ip }}</div>
                   }
                   @if (p.node) {
-                    <div class="text-zinc-500">Node</div><div class="font-mono">{{ p.node }}</div>
+                    <div class="text-zinc-500">Node</div><div class="min-w-0 break-all font-mono">{{ p.node }}</div>
                   }
                 </div>
                 @if (p.containerNames && p.containerNames.length > 0) {
