@@ -177,6 +177,73 @@ describe('AccountSecurityComponent', () => {
     expect(fixture.componentInstance.mfaEnabled()).toBe(false);
   });
 
+  describe('accessibility wiring', () => {
+    it('renders the current-session revoke button as aria-disabled but still focusable', async () => {
+      const { fixture } = configure();
+      await fixture.componentInstance.ngOnInit();
+      fixture.detectChanges();
+      const buttons = (fixture.nativeElement as HTMLElement).querySelectorAll<HTMLButtonElement>(
+        'button[aria-label^="Revoke session"]',
+      );
+      expect(buttons.length).toBe(2);
+      const current = buttons[0];
+      expect(current.hasAttribute('disabled')).toBe(false);
+      expect(current.getAttribute('aria-disabled')).toBe('true');
+      // `disabled` would pull it out of the tab order — verify it is still
+      // reachable so SR users can hear the explanatory title/aria-label.
+      expect(current.tabIndex).toBeGreaterThanOrEqual(0);
+    });
+
+    it('pairs the visible label with the inner input via matching id/for during verify', async () => {
+      const { fixture } = configure();
+      await fixture.componentInstance.ngOnInit();
+      await fixture.componentInstance.openEnableMfa({ currentTarget: null } as unknown as Event);
+      fixture.detectChanges();
+      const root = fixture.nativeElement as HTMLElement;
+      const label = root.querySelector<HTMLLabelElement>('label[for="mfa-verify-code"]');
+      expect(label).not.toBeNull();
+      const input = root.querySelector<HTMLInputElement>('input#mfa-verify-code');
+      expect(input).not.toBeNull();
+      // With inputId set, the component must drop its aria-label fallback so
+      // the visible label owns the accessible name.
+      expect(input?.hasAttribute('aria-label')).toBe(false);
+    });
+
+    it('points aria-describedby at a live error element after a failed verify', async () => {
+      const { fixture } = configure({ verify: () => Promise.reject(new Error('Invalid code')) });
+      await fixture.componentInstance.ngOnInit();
+      await fixture.componentInstance.openEnableMfa({ currentTarget: null } as unknown as Event);
+      fixture.componentInstance.onMfaCodeChanged('654321');
+      await fixture.componentInstance.submitVerify();
+      fixture.detectChanges();
+      const root = fixture.nativeElement as HTMLElement;
+      const input = root.querySelector<HTMLInputElement>('input#mfa-verify-code');
+      const describedBy = input?.getAttribute('aria-describedby');
+      expect(describedBy).toBe('mfa-verify-error');
+      const errorEl = describedBy ? root.querySelector(`#${describedBy}`) : null;
+      expect(errorEl).not.toBeNull();
+      expect(errorEl?.getAttribute('role')).toBe('alert');
+    });
+
+    it('scopes the error id to the disable flow when disabling MFA', async () => {
+      const { fixture } = configure({
+        mfaEnabled: true,
+        disable: () => Promise.reject(new Error('Invalid code')),
+      });
+      await fixture.componentInstance.ngOnInit();
+      await fixture.componentInstance.openDisableMfa({ currentTarget: null } as unknown as Event);
+      fixture.componentInstance.onMfaCodeChanged('999999');
+      await fixture.componentInstance.submitDisable();
+      fixture.detectChanges();
+      const root = fixture.nativeElement as HTMLElement;
+      const input = root.querySelector<HTMLInputElement>('input#mfa-disable-code');
+      expect(input?.getAttribute('aria-describedby')).toBe('mfa-disable-error');
+      expect(root.querySelector('#mfa-disable-error')?.getAttribute('role')).toBe('alert');
+      // And the verify-flow id MUST NOT be live at the same time.
+      expect(root.querySelector('#mfa-verify-error')).toBeNull();
+    });
+  });
+
   it('disables MFA and flips the flag off', async () => {
     const { fixture, backend } = configure({ mfaEnabled: true });
     await fixture.componentInstance.ngOnInit();

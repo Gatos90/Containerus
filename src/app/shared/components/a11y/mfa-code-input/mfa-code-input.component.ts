@@ -22,8 +22,10 @@ import {
  * - `inputmode="numeric"` brings up the numeric keypad on mobile;
  *   `pattern="[0-9]{6}"` gates non-numeric chars.
  *
- * The caller is expected to provide a label via `aria-label` since MFA codes
- * are usually shown in-context and don't need a visible `<label>`.
+ * Labelling: callers should pass `inputId` and pair it with a visible
+ * `<label for="…">` so the visible text becomes the accessible name. If no
+ * `inputId` is provided we fall back to the `label` input as `aria-label`,
+ * which covers in-context uses where a visible label would be redundant.
  */
 @Component({
   selector: 'app-mfa-code-input',
@@ -38,6 +40,17 @@ export class MfaCodeInputComponent {
   readonly disabled = input<boolean>(false);
   /** Optional id linked to an error message for `aria-describedby`. */
   readonly describedById = input<string | null>(null);
+  /**
+   * Optional id assigned to the inner `<input>`. When set, a paired
+   * `<label for="…">` outside the component owns the accessible name and
+   * the `aria-label` fallback is suppressed so the visible text wins.
+   */
+  readonly inputId = input<string | null>(null);
+
+  /** Accessible name: defer to a paired `<label for>` when `inputId` is set. */
+  readonly ariaLabelAttr = computed(() =>
+    this.inputId() ? null : this.label(),
+  );
 
   readonly codeEntered = output<string>();
   readonly valueChanged = output<string>();

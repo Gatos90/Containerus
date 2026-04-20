@@ -113,6 +113,21 @@ export class AccountSecurityComponent implements OnInit {
     () => this.sessions().filter((s) => !s.isCurrent).length,
   );
 
+  /**
+   * Id for the drawer's error container. Mirrors the `describedById` the MFA
+   * input consumes so `aria-describedby` actually resolves to a live element.
+   */
+  readonly mfaErrorId = computed(() => {
+    switch (this.mfaStep()) {
+      case 'verify':
+        return 'mfa-verify-error';
+      case 'disabling':
+        return 'mfa-disable-error';
+      default:
+        return null;
+    }
+  });
+
   async ngOnInit(): Promise<void> {
     const conn = this.backend.connectedBackends()[0];
     if (!conn) {

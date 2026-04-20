@@ -86,4 +86,20 @@ describe('MfaCodeInputComponent', () => {
       expect(c.value()).toBe('');
     });
   });
+
+  describe('accessible name', () => {
+    it('falls back to the label when no inputId is provided', () => {
+      const c = makeComponent();
+      (c.label as any) = () => 'One-time code';
+      (c.inputId as any) = () => null;
+      expect(c.ariaLabelAttr()).toBe('One-time code');
+    });
+
+    it('suppresses aria-label when inputId is set so a paired <label for> wins', () => {
+      const c = makeComponent();
+      (c.label as any) = () => 'One-time code';
+      (c.inputId as any) = () => 'mfa-verify-code';
+      expect(c.ariaLabelAttr()).toBeNull();
+    });
+  });
 });

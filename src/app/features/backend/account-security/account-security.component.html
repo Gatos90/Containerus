@@ -66,8 +66,7 @@
                     @if (session.isCurrent) {
                       <span
                         class="text-[10px] uppercase tracking-wide bg-emerald-500/20 text-emerald-300 rounded px-1.5 py-0.5"
-                        aria-label="This is your current session"
-                      >current</span>
+                      >current<span class="sr-only"> session (this device)</span></span>
                     }
                   </div>
                 </td>
@@ -83,8 +82,7 @@
                   <button
                     type="button"
                     (click)="revokeSession(session)"
-                    [disabled]="session.isCurrent"
-                    class="text-zinc-400 hover:text-red-400 disabled:text-zinc-700 disabled:cursor-not-allowed p-1.5 rounded hover:bg-zinc-800 disabled:hover:bg-transparent"
+                    class="text-zinc-400 hover:text-red-400 p-1.5 rounded hover:bg-zinc-800 aria-disabled:text-zinc-700 aria-disabled:cursor-not-allowed aria-disabled:hover:bg-transparent aria-disabled:hover:text-zinc-700"
                     [attr.aria-label]="'Revoke session ' + sessionLabel(session)"
                     [attr.aria-disabled]="session.isCurrent ? 'true' : null"
                     [attr.title]="session.isCurrent ? 'Use sign out to end the current session' : null"
@@ -193,7 +191,11 @@
 
       <div class="flex-1 overflow-y-auto px-4 py-4 space-y-4 text-sm text-zinc-200">
         @if (mfaError(); as err) {
-          <div role="alert" class="bg-red-950/30 text-red-300 rounded-lg p-3 flex items-start gap-2">
+          <div
+            role="alert"
+            [attr.id]="mfaErrorId()"
+            class="bg-red-950/30 text-red-300 rounded-lg p-3 flex items-start gap-2"
+          >
             <lucide-icon [img]="AlertTriangle" [size]="14" aria-hidden="true" class="mt-0.5" />
             <span>{{ err }}</span>
           </div>
@@ -227,6 +229,7 @@
               <div class="space-y-2">
                 <label for="mfa-verify-code" class="text-xs text-zinc-400">6-digit code</label>
                 <app-mfa-code-input
+                  inputId="mfa-verify-code"
                   [invalid]="!!mfaError()"
                   [disabled]="mfaBusy()"
                   [describedById]="mfaError() ? 'mfa-verify-error' : null"
@@ -287,6 +290,7 @@
             <div class="space-y-2">
               <label for="mfa-disable-code" class="text-xs text-zinc-400">Code</label>
               <app-mfa-code-input
+                inputId="mfa-disable-code"
                 [length]="6"
                 label="Current TOTP or backup code"
                 [invalid]="!!mfaError()"
