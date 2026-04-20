@@ -520,19 +520,29 @@ export class SystemState {
     // Clear immediately — if retry hits another host key mismatch (e.g. jump host),
     // user must provide credentials again (intentional single-trust-per-action).
     this._pendingCredentials = null;
+    this._hostKeyMismatch.set(null);
+    this._connectionStates.update((states) => ({
+      ...states,
+      [mismatch.systemId]: 'connecting',
+    }));
     try {
-      await this.systemService.removeKnownHost(mismatch.hostname, mismatch.port);
-      this._hostKeyMismatch.set(null);
-      await this.connectSystem(
+      const nextState = await this.systemService.trustHostKey(
         mismatch.systemId,
         creds?.password,
         creds?.passphrase,
         creds?.privateKey,
         creds?.jumpHostCredentials,
       );
+      this._connectionStates.update((states) => ({
+        ...states,
+        [mismatch.systemId]: nextState,
+      }));
     } catch (err) {
-      this._error.set(this.extractError(err) || 'Failed to remove known host');
-      this._hostKeyMismatch.set(null);
+      this._connectionStates.update((states) => ({
+        ...states,
+        [mismatch.systemId]: 'error',
+      }));
+      this._error.set(this.extractError(err) || 'Failed to trust host key');
     }
   }
 

@@ -68,6 +68,17 @@ impl ConnectionManager {
         db: &PgPool,
         system: &SystemRow,
     ) -> Result<SshClient, ContainerError> {
+        self.create_ssh_client_with_trust(db, system, false).await
+    }
+
+    /// Fetch credentials and create an SSH client, optionally in "trust new
+    /// host key" mode (persists an Unknown host key via `add_host_key`).
+    async fn create_ssh_client_with_trust(
+        &self,
+        db: &PgPool,
+        system: &SystemRow,
+        trust_unknown: bool,
+    ) -> Result<SshClient, ContainerError> {
         let password = self
             .vault
             .get_credential(db, system.id, "password", None)
@@ -123,17 +134,38 @@ impl ConnectionManager {
             if let Some(ref jump_hosts) = ssh_config.proxy_jump {
                 if !jump_hosts.is_empty() {
                     tracing::info!(
-                        "Connecting via ProxyJump ({} hop(s)) to system {}",
+                        "Connecting via ProxyJump ({} hop(s)) to system {} (trust_unknown={})",
                         jump_hosts.len(),
-                        system.id
+                        system.id,
+                        trust_unknown,
                     );
-                    SshClient::connect_via_jump(
+                    if trust_unknown {
+                        SshClient::connect_via_jump_trusting(
+                            &container_system,
+                            jump_hosts,
+                            password.as_deref(),
+                            passphrase.as_deref(),
+                            private_key.as_deref(),
+                            &jump_host_creds,
+                        )
+                        .await?
+                    } else {
+                        SshClient::connect_via_jump(
+                            &container_system,
+                            jump_hosts,
+                            password.as_deref(),
+                            passphrase.as_deref(),
+                            private_key.as_deref(),
+                            &jump_host_creds,
+                        )
+                        .await?
+                    }
+                } else if trust_unknown {
+                    SshClient::connect_trusting(
                         &container_system,
-                        jump_hosts,
                         password.as_deref(),
                         passphrase.as_deref(),
                         private_key.as_deref(),
-                        &jump_host_creds,
                     )
                     .await?
                 } else {
@@ -147,12 +179,32 @@ impl ConnectionManager {
                 }
             } else if let Some(ref proxy_command) = ssh_config.proxy_command {
                 tracing::info!(
-                    "Connecting via ProxyCommand to system {}",
-                    system.id
+                    "Connecting via ProxyCommand to system {} (trust_unknown={})",
+                    system.id,
+                    trust_unknown,
                 );
-                SshClient::connect_via_proxy_command(
+                if trust_unknown {
+                    SshClient::connect_via_proxy_command_trusting(
+                        &container_system,
+                        proxy_command,
+                        password.as_deref(),
+                        passphrase.as_deref(),
+                        private_key.as_deref(),
+                    )
+                    .await?
+                } else {
+                    SshClient::connect_via_proxy_command(
+                        &container_system,
+                        proxy_command,
+                        password.as_deref(),
+                        passphrase.as_deref(),
+                        private_key.as_deref(),
+                    )
+                    .await?
+                }
+            } else if trust_unknown {
+                SshClient::connect_trusting(
                     &container_system,
-                    proxy_command,
                     password.as_deref(),
                     passphrase.as_deref(),
                     private_key.as_deref(),
@@ -167,6 +219,14 @@ impl ConnectionManager {
                 )
                 .await?
             }
+        } else if trust_unknown {
+            SshClient::connect_trusting(
+                &container_system,
+                password.as_deref(),
+                passphrase.as_deref(),
+                private_key.as_deref(),
+            )
+            .await?
         } else {
             SshClient::connect(
                 &container_system,
@@ -190,17 +250,46 @@ impl ConnectionManager {
         db: &PgPool,
         system: &SystemRow,
     ) -> Result<(), ContainerError> {
-        // Fast path: already connected
-        if self.shared_connections.contains_key(&system.id) {
+        self.connect_shared_with_trust(db, system, false).await
+    }
+
+    /// Connect the shared connection in "trust new host key" mode: persists an
+    /// Unknown host key during the handshake via `known_hosts::add_host_key`.
+    /// Any prior shared connection is dropped first so the new handshake runs.
+    pub async fn connect_shared_trusting(
+        &self,
+        db: &PgPool,
+        system: &SystemRow,
+    ) -> Result<(), ContainerError> {
+        self.shared_connections.remove(&system.id);
+        self.connect_shared_with_trust(db, system, true).await
+    }
+
+    async fn connect_shared_with_trust(
+        &self,
+        db: &PgPool,
+        system: &SystemRow,
+        trust_unknown: bool,
+    ) -> Result<(), ContainerError> {
+        // Fast path: already connected (only when not trusting — trusting always
+        // runs a fresh handshake so the new key is persisted).
+        if !trust_unknown && self.shared_connections.contains_key(&system.id) {
             return Ok(());
         }
 
-        let client = self.create_ssh_client(db, system).await?;
+        let client = self
+            .create_ssh_client_with_trust(db, system, trust_unknown)
+            .await?;
 
         // Atomic check-and-insert to avoid race conditions
         match self.shared_connections.entry(system.id) {
+            dashmap::mapref::entry::Entry::Occupied(mut occ) if trust_unknown => {
+                // We ran the trust handshake and want this fresh client to win.
+                occ.insert(ConnectionEntry {
+                    client: Arc::new(Mutex::new(client)),
+                });
+            }
             dashmap::mapref::entry::Entry::Occupied(_) => {
-                // Another task connected while we were creating the client
                 tracing::debug!("Discarding duplicate shared connection for system {}", system.id);
                 return Ok(());
             }

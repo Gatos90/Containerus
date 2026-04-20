@@ -792,7 +792,11 @@ async fn trust_host_key(
         }
     };
 
-    // Remove old host key from server's known_hosts
+    // Remove any stale known_hosts entries for this host (handles the Mismatch
+    // case). For the Unknown case this is a no-op. The actual trust — fetching
+    // the server's current key and persisting it — happens during the
+    // `connect_shared_trusting` handshake below via the one-shot trust flag on
+    // `SshHandler`.
     match containerus_core::ssh::known_hosts::remove_host_key(&system.hostname, port) {
         Ok(removed) => {
             tracing::info!("Removed {} known_hosts entries for {}:{}", removed, system.hostname, port);
@@ -803,8 +807,9 @@ async fn trust_host_key(
         }
     }
 
-    // Retry connection — the new key will be auto-accepted
-    match state.connections.connect_shared(&state.db, &system).await {
+    // Retry connection in "trust new key" mode — the handshake will accept the
+    // server's current key and persist it via `known_hosts::add_host_key`.
+    match state.connections.connect_shared_trusting(&state.db, &system).await {
         Ok(()) => {
             let _ = sqlx::query("UPDATE systems SET last_connected_at = now() WHERE id = $1")
                 .bind(system.id)

@@ -235,6 +235,28 @@ export class SystemService {
     return this.tauri.invoke<number>('remove_known_host', { hostname, port });
   }
 
+  /**
+   * Trust the server's current host key and reconnect in one call.
+   * The backend removes any stale known_hosts entry, then runs a fresh SSH
+   * handshake that accepts and persists the presented key. Credentials fall
+   * back to the stored values when omitted, matching `connectSystem`.
+   */
+  trustHostKey(
+    systemId: string,
+    password?: string,
+    passphrase?: string,
+    privateKey?: string,
+    jumpHostCredentials?: Record<string, JumpHostCredentials>,
+  ): Promise<ConnectionState> {
+    return this.tauri.invoke<ConnectionState>('trust_host_key', {
+      systemId,
+      password,
+      passphrase,
+      privateKey,
+      jumpHostCredentials,
+    });
+  }
+
   // ========================================================================
   // SSH Config Methods — always local
   // ========================================================================

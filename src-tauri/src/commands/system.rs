@@ -55,6 +55,80 @@ pub async fn connect_system(
     private_key: Option<String>,
     jump_host_credentials: Option<HashMap<String, JumpHostCredentials>>,
 ) -> Result<ConnectionState, ContainerError> {
+    connect_system_inner(
+        state,
+        system_id,
+        password,
+        passphrase,
+        private_key,
+        jump_host_credentials,
+        false,
+    )
+    .await
+}
+
+/// Trust and persist the server's current host key, then reconnect.
+///
+/// Fixes the flow where the user clicked "Trust" on a host key mismatch or
+/// unknown-host modal: we remove the stale known_hosts entry (if any), drop
+/// any prior SSH connection, and reconnect in trust mode so the handshake
+/// accepts the server's current key and writes it via
+/// `known_hosts::add_host_key`. Credentials fall back to the cache/DB when
+/// not provided, matching `connect_system`.
+#[tauri::command]
+pub async fn trust_host_key(
+    state: State<'_, AppState>,
+    system_id: String,
+    password: Option<String>,
+    passphrase: Option<String>,
+    private_key: Option<String>,
+    jump_host_credentials: Option<HashMap<String, JumpHostCredentials>>,
+) -> Result<ConnectionState, ContainerError> {
+    let system = state
+        .get_system(&system_id)
+        .await
+        .ok_or_else(|| ContainerError::SystemNotFound(system_id.clone()))?;
+
+    if system.connection_type == ConnectionType::Remote {
+        if let Some(ssh_cfg) = &system.ssh_config {
+            match crate::ssh::known_hosts::remove_host_key(&system.hostname, ssh_cfg.port) {
+                Ok(removed) => tracing::info!(
+                    "trust_host_key: removed {} known_hosts entries for {}:{}",
+                    removed,
+                    system.hostname,
+                    ssh_cfg.port
+                ),
+                Err(e) => {
+                    tracing::error!("trust_host_key: failed to remove known host key: {}", e);
+                    return Err(e);
+                }
+            }
+        }
+        // Drop any pool entry so the next connect runs a fresh handshake.
+        let _ = crate::ssh::disconnect(&system_id).await;
+    }
+
+    connect_system_inner(
+        state,
+        system_id,
+        password,
+        passphrase,
+        private_key,
+        jump_host_credentials,
+        true,
+    )
+    .await
+}
+
+async fn connect_system_inner(
+    state: State<'_, AppState>,
+    system_id: String,
+    password: Option<String>,
+    passphrase: Option<String>,
+    private_key: Option<String>,
+    jump_host_credentials: Option<HashMap<String, JumpHostCredentials>>,
+    trust_unknown: bool,
+) -> Result<ConnectionState, ContainerError> {
     let system = state
         .get_system(&system_id)
         .await
@@ -173,14 +247,28 @@ pub async fn connect_system(
                     }
                 };
 
-            // For remote, establish SSH connection
-            match crate::ssh::connect(
-                &system,
-                effective_password.as_deref(),
-                effective_passphrase.as_deref(),
-                effective_private_key.as_deref(),
-                &jump_host_creds,
-            ).await {
+            // For remote, establish SSH connection. Use the "trust" variant
+            // only when the user just clicked Trust on the host-key modal.
+            let connect_result = if trust_unknown {
+                crate::ssh::connect_trusting(
+                    &system,
+                    effective_password.as_deref(),
+                    effective_passphrase.as_deref(),
+                    effective_private_key.as_deref(),
+                    &jump_host_creds,
+                )
+                .await
+            } else {
+                crate::ssh::connect(
+                    &system,
+                    effective_password.as_deref(),
+                    effective_passphrase.as_deref(),
+                    effective_private_key.as_deref(),
+                    &jump_host_creds,
+                )
+                .await
+            };
+            match connect_result {
                 Ok(()) => {
                     state.set_connection_state(&system_id, ConnectionState::Connected);
                     Ok(ConnectionState::Connected)

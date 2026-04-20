@@ -8,7 +8,7 @@
 
 use std::fs;
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use hmac::{Hmac, Mac};
 use sha1::Sha1;
@@ -132,19 +132,29 @@ pub fn add_host_key(
     port: u16,
     server_key: &RusshPublicKey,
 ) -> Result<(), ContainerError> {
-    let known_hosts_path = known_hosts_path()?;
+    let path = known_hosts_path()?;
+    add_host_key_to_path(&path, hostname, port, server_key)
+}
 
-    // Ensure ~/.ssh directory exists with correct permissions
-    if let Some(parent) = known_hosts_path.parent() {
+/// Append a new host key entry to the given known_hosts file path.
+/// Creates the parent directory and file as needed. Separated from `add_host_key`
+/// so tests can target a temp path without touching the user's real file.
+fn add_host_key_to_path(
+    path: &Path,
+    hostname: &str,
+    port: u16,
+    server_key: &RusshPublicKey,
+) -> Result<(), ContainerError> {
+    if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|e| ContainerError::HostKeyVerificationFailed {
             hostname: hostname.to_string(),
-            reason: format!("Failed to create ~/.ssh directory: {}", e),
+            reason: format!("Failed to create known_hosts parent directory: {}", e),
         })?;
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
             if let Err(e) = fs::set_permissions(parent, fs::Permissions::from_mode(0o700)) {
-                tracing::warn!("Failed to set ~/.ssh directory permissions: {}", e);
+                tracing::warn!("Failed to set known_hosts parent directory permissions: {}", e);
             }
         }
     }
@@ -162,7 +172,7 @@ pub fn add_host_key(
     let mut file = fs::OpenOptions::new()
         .create(true)
         .append(true)
-        .open(&known_hosts_path)
+        .open(path)
         .map_err(|e| ContainerError::HostKeyVerificationFailed {
             hostname: hostname.to_string(),
             reason: format!("Failed to open known_hosts for writing: {}", e),
@@ -177,7 +187,7 @@ pub fn add_host_key(
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        if let Err(e) = fs::set_permissions(&known_hosts_path, fs::Permissions::from_mode(0o644)) {
+        if let Err(e) = fs::set_permissions(path, fs::Permissions::from_mode(0o644)) {
             tracing::warn!("Failed to set known_hosts file permissions: {}", e);
         }
     }
@@ -658,6 +668,74 @@ mod tests {
         let (remaining, removed) = remove_host_key_from_content("myhost.com", 22, &content);
         assert_eq!(removed, 0);
         assert!(remaining.contains("other.com"));
+    }
+
+    #[test]
+    fn test_add_host_key_appends_and_matches_on_check() {
+        let tmpdir = tempfile::tempdir().unwrap();
+        let path = tmpdir.path().join("nested").join("known_hosts");
+
+        let key = russh::keys::PrivateKey::random(&mut OsRng, russh::keys::Algorithm::Ed25519).unwrap();
+        let pub_key = key.public_key().clone();
+
+        add_host_key_to_path(&path, "myhost.com", 22, &pub_key).expect("add should succeed");
+
+        assert!(path.exists(), "known_hosts file should be created");
+        let content = fs::read_to_string(&path).unwrap();
+        assert!(content.starts_with("myhost.com "), "line should start with hostname: {content}");
+        assert!(content.ends_with('\n'), "line should be newline-terminated: {content}");
+
+        let result = check_host_key_against_content("myhost.com", 22, &pub_key, &content).unwrap();
+        assert!(matches!(result, HostKeyCheckResult::Matched));
+    }
+
+    #[test]
+    fn test_add_host_key_nonstandard_port_uses_bracket_format() {
+        let tmpdir = tempfile::tempdir().unwrap();
+        let path = tmpdir.path().join("known_hosts");
+
+        let key = russh::keys::PrivateKey::random(&mut OsRng, russh::keys::Algorithm::Ed25519).unwrap();
+        let pub_key = key.public_key().clone();
+
+        add_host_key_to_path(&path, "myhost.com", 2222, &pub_key).expect("add should succeed");
+
+        let content = fs::read_to_string(&path).unwrap();
+        assert!(content.starts_with("[myhost.com]:2222 "), "non-22 port uses [host]:port format: {content}");
+
+        // port 22 on same host is still unknown (different entry format)
+        let result = check_host_key_against_content("myhost.com", 22, &pub_key, &content).unwrap();
+        assert!(matches!(result, HostKeyCheckResult::Unknown { .. }));
+
+        let result = check_host_key_against_content("myhost.com", 2222, &pub_key, &content).unwrap();
+        assert!(matches!(result, HostKeyCheckResult::Matched));
+    }
+
+    #[test]
+    fn test_add_host_key_appends_without_clobbering_existing() {
+        let tmpdir = tempfile::tempdir().unwrap();
+        let path = tmpdir.path().join("known_hosts");
+
+        let existing_key = russh::keys::PrivateKey::random(&mut OsRng, russh::keys::Algorithm::Ed25519).unwrap();
+        let existing_pub = existing_key.public_key().clone();
+        let existing_line = format!(
+            "otherhost.com {} {}\n",
+            existing_pub.algorithm(),
+            existing_pub.public_key_base64()
+        );
+        fs::write(&path, &existing_line).unwrap();
+
+        let new_key = russh::keys::PrivateKey::random(&mut OsRng, russh::keys::Algorithm::Ed25519).unwrap();
+        let new_pub = new_key.public_key().clone();
+        add_host_key_to_path(&path, "myhost.com", 22, &new_pub).expect("add should succeed");
+
+        let content = fs::read_to_string(&path).unwrap();
+        assert!(content.contains("otherhost.com"), "existing entry should be preserved");
+        assert!(content.contains("myhost.com"), "new entry should be appended");
+
+        let result = check_host_key_against_content("otherhost.com", 22, &existing_pub, &content).unwrap();
+        assert!(matches!(result, HostKeyCheckResult::Matched));
+        let result = check_host_key_against_content("myhost.com", 22, &new_pub, &content).unwrap();
+        assert!(matches!(result, HostKeyCheckResult::Matched));
     }
 
     #[test]

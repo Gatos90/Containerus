@@ -44,6 +44,21 @@ pub async fn connect(
     pool.connect(system, password, passphrase, private_key_content, jump_host_creds).await
 }
 
+/// Connect to a system via SSH in "trust new host key" mode.
+/// The handshake accepts and persists an Unknown host key via
+/// `known_hosts::add_host_key`. Use only after the user has explicitly
+/// clicked Trust for this host.
+pub async fn connect_trusting(
+    system: &ContainerSystem,
+    password: Option<&str>,
+    passphrase: Option<&str>,
+    private_key_content: Option<&str>,
+    jump_host_creds: &HashMap<String, JumpHostCredentials>,
+) -> Result<(), ContainerError> {
+    let mut pool = SSH_POOL.write().await;
+    pool.connect_trusting(system, password, passphrase, private_key_content, jump_host_creds).await
+}
+
 /// Disconnect from a system
 pub async fn disconnect(system_id: &str) -> Result<(), ContainerError> {
     let mut pool = SSH_POOL.write().await;

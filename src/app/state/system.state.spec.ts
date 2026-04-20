@@ -32,6 +32,7 @@ describe('SystemState', () => {
       detectRuntimes: vi.fn(),
       getExtendedSystemInfo: vi.fn(),
       removeKnownHost: vi.fn(),
+      trustHostKey: vi.fn(),
     };
     mockMonitoringService = {
       startListening: vi.fn(),
@@ -366,7 +367,7 @@ describe('SystemState', () => {
   describe('trustNewHostKey', () => {
     it('should be a no-op when no mismatch is set', async () => {
       await state.trustNewHostKey();
-      expect(mockSystemService.removeKnownHost).not.toHaveBeenCalled();
+      expect(mockSystemService.trustHostKey).not.toHaveBeenCalled();
     });
 
     it('should set error and clear mismatch when hostname is empty', async () => {
@@ -382,9 +383,10 @@ describe('SystemState', () => {
 
       expect(state.error()).toContain('hostname is unknown');
       expect(state.hostKeyMismatch()).toBeNull();
+      expect(mockSystemService.trustHostKey).not.toHaveBeenCalled();
     });
 
-    it('should call removeKnownHost and reconnect on trust', async () => {
+    it('should call trustHostKey with pending credentials and update connection state', async () => {
       const systems = [makeSystem({ id: 'sys-1', hostname: 'test.local' })];
       mockSystemService.listSystems.mockResolvedValue(systems);
       mockSystemService.getConnectionState.mockResolvedValue('disconnected');
@@ -399,17 +401,23 @@ describe('SystemState', () => {
       });
       (state as any)._pendingCredentials = { password: 'pw' };
 
-      mockSystemService.removeKnownHost.mockResolvedValue(undefined);
-      mockSystemService.connectSystem.mockResolvedValue('connected');
-      mockSystemService.getExtendedSystemInfo.mockResolvedValue({});
+      mockSystemService.trustHostKey.mockResolvedValue('connected');
 
       await state.trustNewHostKey();
 
-      expect(mockSystemService.removeKnownHost).toHaveBeenCalledWith('test.local', 22);
+      expect(mockSystemService.trustHostKey).toHaveBeenCalledWith(
+        'sys-1',
+        'pw',
+        undefined,
+        undefined,
+        undefined,
+      );
       expect(state.hostKeyMismatch()).toBeNull();
+      expect(state.getConnectionState('sys-1')).toBe('connected');
+      expect((state as any)._pendingCredentials).toBeNull();
     });
 
-    it('should set error if removeKnownHost fails', async () => {
+    it('should set error and mark connection as error when trustHostKey fails', async () => {
       (state as any)._hostKeyMismatch.set({
         systemId: 'sys-1',
         hostname: 'bad.host',
@@ -418,12 +426,13 @@ describe('SystemState', () => {
         actual: 'def',
       });
 
-      mockSystemService.removeKnownHost.mockRejectedValue(new Error('permission denied'));
+      mockSystemService.trustHostKey.mockRejectedValue(new Error('permission denied'));
 
       await state.trustNewHostKey();
 
       expect(state.error()).not.toBeNull();
       expect(state.hostKeyMismatch()).toBeNull();
+      expect(state.getConnectionState('sys-1')).toBe('error');
     });
   });
 

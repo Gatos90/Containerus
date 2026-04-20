@@ -63,6 +63,48 @@ impl SshConnectionPool {
         private_key_content: Option<&str>,
         jump_host_creds: &HashMap<String, JumpHostCredentials>,
     ) -> Result<(), ContainerError> {
+        self.connect_with_trust(
+            system,
+            password,
+            passphrase,
+            private_key_content,
+            jump_host_creds,
+            false,
+        )
+        .await
+    }
+
+    /// Connect in "trust new host key" mode: the handshake accepts and
+    /// persists an Unknown host key via `known_hosts::add_host_key`. Use only
+    /// after the user has explicitly clicked Trust for this host.
+    pub async fn connect_trusting(
+        &mut self,
+        system: &ContainerSystem,
+        password: Option<&str>,
+        passphrase: Option<&str>,
+        private_key_content: Option<&str>,
+        jump_host_creds: &HashMap<String, JumpHostCredentials>,
+    ) -> Result<(), ContainerError> {
+        self.connect_with_trust(
+            system,
+            password,
+            passphrase,
+            private_key_content,
+            jump_host_creds,
+            true,
+        )
+        .await
+    }
+
+    async fn connect_with_trust(
+        &mut self,
+        system: &ContainerSystem,
+        password: Option<&str>,
+        passphrase: Option<&str>,
+        private_key_content: Option<&str>,
+        jump_host_creds: &HashMap<String, JumpHostCredentials>,
+        trust_unknown: bool,
+    ) -> Result<(), ContainerError> {
         let system_id = system.id.0.clone();
 
         // Check if already connected
@@ -76,16 +118,30 @@ impl SshConnectionPool {
             if let Some(ref jump_hosts) = ssh_config.proxy_jump {
                 if !jump_hosts.is_empty() {
                     tracing::info!("Connecting via ProxyJump ({} hop(s)) for system {}", jump_hosts.len(), system_id);
-                    SshClient::connect_via_jump(system, jump_hosts, password, passphrase, private_key_content, jump_host_creds).await?
+                    if trust_unknown {
+                        SshClient::connect_via_jump_trusting(system, jump_hosts, password, passphrase, private_key_content, jump_host_creds).await?
+                    } else {
+                        SshClient::connect_via_jump(system, jump_hosts, password, passphrase, private_key_content, jump_host_creds).await?
+                    }
+                } else if trust_unknown {
+                    SshClient::connect_trusting(system, password, passphrase, private_key_content).await?
                 } else {
                     SshClient::connect(system, password, passphrase, private_key_content).await?
                 }
             } else if let Some(ref proxy_command) = ssh_config.proxy_command {
                 tracing::info!("Connecting via ProxyCommand for system {}", system_id);
-                SshClient::connect_via_proxy_command(system, proxy_command, password, passphrase, private_key_content).await?
+                if trust_unknown {
+                    SshClient::connect_via_proxy_command_trusting(system, proxy_command, password, passphrase, private_key_content).await?
+                } else {
+                    SshClient::connect_via_proxy_command(system, proxy_command, password, passphrase, private_key_content).await?
+                }
+            } else if trust_unknown {
+                SshClient::connect_trusting(system, password, passphrase, private_key_content).await?
             } else {
                 SshClient::connect(system, password, passphrase, private_key_content).await?
             }
+        } else if trust_unknown {
+            SshClient::connect_trusting(system, password, passphrase, private_key_content).await?
         } else {
             SshClient::connect(system, password, passphrase, private_key_content).await?
         };

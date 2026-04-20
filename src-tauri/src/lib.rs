@@ -126,6 +126,7 @@ pub fn run() {
             commands::update_app_settings,
             commands::get_changelog,
             commands::remove_known_host,
+            commands::trust_host_key,
             // Container commands
             commands::list_containers,
             commands::perform_container_action,

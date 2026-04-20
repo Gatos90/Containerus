@@ -73,13 +73,35 @@ pub struct SshHandler {
     hostname: String,
     port: u16,
     rejection: Arc<Mutex<Option<HostKeyRejection>>>,
+    /// When true, Unknown host keys are accepted and persisted to known_hosts
+    /// via `add_host_key` during this single handshake. Used for the explicit
+    /// "trust new key" flow after a mismatch or first-contact rejection.
+    trust_unknown: bool,
 }
 
 impl SshHandler {
     pub fn new(hostname: String, port: u16) -> (Self, HostKeyWatcher) {
+        Self::new_with_options(hostname, port, false)
+    }
+
+    /// Like `new`, but the handshake accepts and persists an Unknown host key
+    /// via `known_hosts::add_host_key`. Use only in the explicit trust flow.
+    pub fn new_trusting(hostname: String, port: u16) -> (Self, HostKeyWatcher) {
+        Self::new_with_options(hostname, port, true)
+    }
+
+    fn new_with_options(hostname: String, port: u16, trust_unknown: bool) -> (Self, HostKeyWatcher) {
         let rejection = Arc::new(Mutex::new(None));
         let watcher = HostKeyWatcher(rejection.clone());
-        (Self { hostname, port, rejection }, watcher)
+        (
+            Self {
+                hostname,
+                port,
+                rejection,
+                trust_unknown,
+            },
+            watcher,
+        )
     }
 }
 
@@ -98,15 +120,38 @@ impl client::Handler for SshHandler {
                 Ok(true)
             }
             Ok(HostKeyCheckResult::Unknown { key_type, fingerprint }) => {
-                tracing::warn!(
-                    "Unknown host key for {}:{} ({} {}) — rejecting; user must approve fingerprint first",
-                    self.hostname, self.port, key_type, fingerprint
-                );
-                *self.rejection.lock().unwrap() = Some(HostKeyRejection::Unknown {
-                    key_type,
-                    fingerprint,
-                });
-                Ok(false)
+                if self.trust_unknown {
+                    match known_hosts::add_host_key(&self.hostname, self.port, server_public_key) {
+                        Ok(()) => {
+                            tracing::info!(
+                                "Trust flow: persisted new {} host key for {}:{} ({})",
+                                key_type, self.hostname, self.port, fingerprint
+                            );
+                            Ok(true)
+                        }
+                        Err(e) => {
+                            tracing::error!(
+                                "Trust flow: failed to persist host key for {}:{}: {} — rejecting",
+                                self.hostname, self.port, e
+                            );
+                            *self.rejection.lock().unwrap() = Some(HostKeyRejection::Unknown {
+                                key_type,
+                                fingerprint,
+                            });
+                            Ok(false)
+                        }
+                    }
+                } else {
+                    tracing::warn!(
+                        "Unknown host key for {}:{} ({} {}) — rejecting; user must approve fingerprint first",
+                        self.hostname, self.port, key_type, fingerprint
+                    );
+                    *self.rejection.lock().unwrap() = Some(HostKeyRejection::Unknown {
+                        key_type,
+                        fingerprint,
+                    });
+                    Ok(false)
+                }
             }
             Ok(HostKeyCheckResult::Mismatch { expected_fingerprint, actual_fingerprint }) => {
                 tracing::error!(
@@ -204,6 +249,28 @@ impl SshClient {
         passphrase: Option<&str>,
         private_key_content: Option<&str>,
     ) -> Result<Self, ContainerError> {
+        Self::connect_with_trust(system, password, passphrase, private_key_content, false).await
+    }
+
+    /// Connect like `connect`, but during the handshake accept+persist an
+    /// Unknown host key via `known_hosts::add_host_key`. Use only when the
+    /// user has explicitly clicked "Trust" for this host.
+    pub async fn connect_trusting(
+        system: &ContainerSystem,
+        password: Option<&str>,
+        passphrase: Option<&str>,
+        private_key_content: Option<&str>,
+    ) -> Result<Self, ContainerError> {
+        Self::connect_with_trust(system, password, passphrase, private_key_content, true).await
+    }
+
+    async fn connect_with_trust(
+        system: &ContainerSystem,
+        password: Option<&str>,
+        passphrase: Option<&str>,
+        private_key_content: Option<&str>,
+        trust_unknown: bool,
+    ) -> Result<Self, ContainerError> {
         let ssh_config = system
             .ssh_config
             .as_ref()
@@ -219,7 +286,11 @@ impl SshClient {
         tracing::info!("Connecting to SSH server at {}", addr);
 
         // Apply timeout using tokio
-        let (handler, watcher) = SshHandler::new(system.hostname.clone(), ssh_config.port);
+        let (handler, watcher) = if trust_unknown {
+            SshHandler::new_trusting(system.hostname.clone(), ssh_config.port)
+        } else {
+            SshHandler::new(system.hostname.clone(), ssh_config.port)
+        };
         let connect_future = client::connect(Arc::new(config), &addr, handler);
         let mut session = tokio::time::timeout(timeout_duration, connect_future)
             .await
@@ -261,6 +332,37 @@ impl SshClient {
         private_key_content: Option<&str>,
         jump_host_creds: &HashMap<String, JumpHostCredentials>,
     ) -> Result<Self, ContainerError> {
+        Self::connect_via_jump_with_trust(
+            system, jump_hosts, password, passphrase, private_key_content, jump_host_creds, false,
+        )
+        .await
+    }
+
+    /// Like `connect_via_jump`, but the final target handshake accepts+persists
+    /// an Unknown host key. Jump hosts still use strict verification.
+    pub async fn connect_via_jump_trusting(
+        system: &ContainerSystem,
+        jump_hosts: &[JumpHost],
+        password: Option<&str>,
+        passphrase: Option<&str>,
+        private_key_content: Option<&str>,
+        jump_host_creds: &HashMap<String, JumpHostCredentials>,
+    ) -> Result<Self, ContainerError> {
+        Self::connect_via_jump_with_trust(
+            system, jump_hosts, password, passphrase, private_key_content, jump_host_creds, true,
+        )
+        .await
+    }
+
+    async fn connect_via_jump_with_trust(
+        system: &ContainerSystem,
+        jump_hosts: &[JumpHost],
+        password: Option<&str>,
+        passphrase: Option<&str>,
+        private_key_content: Option<&str>,
+        jump_host_creds: &HashMap<String, JumpHostCredentials>,
+        trust_target_unknown: bool,
+    ) -> Result<Self, ContainerError> {
         let ssh_config = system
             .ssh_config
             .as_ref()
@@ -269,7 +371,14 @@ impl SshClient {
             ))?;
 
         if jump_hosts.is_empty() {
-            return Self::connect(system, password, passphrase, private_key_content).await;
+            return Self::connect_with_trust(
+                system,
+                password,
+                passphrase,
+                private_key_content,
+                trust_target_unknown,
+            )
+            .await;
         }
 
         let timeout_duration = Duration::from_secs(ssh_config.connection_timeout);
@@ -372,7 +481,11 @@ impl SshClient {
 
         // Step 4: Connect SSH to the target over the tunnel
         let config = Config::default();
-        let (handler, watcher) = SshHandler::new(system.hostname.clone(), ssh_config.port);
+        let (handler, watcher) = if trust_target_unknown {
+            SshHandler::new_trusting(system.hostname.clone(), ssh_config.port)
+        } else {
+            SshHandler::new(system.hostname.clone(), ssh_config.port)
+        };
         let mut target_session = tokio::time::timeout(
             timeout_duration,
             client::connect_stream(Arc::new(config), stream, handler),
@@ -411,6 +524,35 @@ impl SshClient {
         password: Option<&str>,
         passphrase: Option<&str>,
         private_key_content: Option<&str>,
+    ) -> Result<Self, ContainerError> {
+        Self::connect_via_proxy_command_with_trust(
+            system, proxy_command, password, passphrase, private_key_content, false,
+        )
+        .await
+    }
+
+    /// Like `connect_via_proxy_command`, but accept+persist an Unknown host key
+    /// on the target during the handshake.
+    pub async fn connect_via_proxy_command_trusting(
+        system: &ContainerSystem,
+        proxy_command: &str,
+        password: Option<&str>,
+        passphrase: Option<&str>,
+        private_key_content: Option<&str>,
+    ) -> Result<Self, ContainerError> {
+        Self::connect_via_proxy_command_with_trust(
+            system, proxy_command, password, passphrase, private_key_content, true,
+        )
+        .await
+    }
+
+    async fn connect_via_proxy_command_with_trust(
+        system: &ContainerSystem,
+        proxy_command: &str,
+        password: Option<&str>,
+        passphrase: Option<&str>,
+        private_key_content: Option<&str>,
+        trust_unknown: bool,
     ) -> Result<Self, ContainerError> {
         let ssh_config = system
             .ssh_config
@@ -464,7 +606,11 @@ impl SshClient {
 
         // Connect SSH over the proxy stream
         let config = Config::default();
-        let (handler, watcher) = SshHandler::new(system.hostname.clone(), ssh_config.port);
+        let (handler, watcher) = if trust_unknown {
+            SshHandler::new_trusting(system.hostname.clone(), ssh_config.port)
+        } else {
+            SshHandler::new(system.hostname.clone(), ssh_config.port)
+        };
         let mut session = tokio::time::timeout(
             timeout_duration,
             client::connect_stream(Arc::new(config), stream, handler),
