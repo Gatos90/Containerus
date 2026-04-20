@@ -24,7 +24,8 @@ use std::net::SocketAddr;
 
 use axum::{
     extract::{ConnectInfo, State},
-    http::StatusCode,
+    http::{header, HeaderValue, StatusCode},
+    response::IntoResponse,
     routing::post,
     Json, Router,
 };
@@ -215,7 +216,13 @@ async fn change(
             action: "user.password.change",
             resource_type: "user",
             resource_id: Some(&row.id.to_string()),
-            details: None,
+            // `mfaReauth` tracks whether the user satisfied an MFA
+            // challenge on this rotation. Today /change gates on
+            // current-password only — if the password itself was phished,
+            // an attacker can rotate the credential without MFA. The field
+            // is emitted unconditionally so MFA re-challenge can be
+            // enforced in a follow-up without changing the audit shape.
+            details: Some(json!({ "mfaReauth": false })),
         },
     )
     .await;
@@ -304,17 +311,21 @@ async fn reset_request(
             return Ok((StatusCode::OK, Json(neutral_reset_response())));
         }
 
-        let (raw_token, _row_id, expires_at) =
+        // Phase 1: no email transport. We do NOT log the raw token — logs
+        // flow to stdout and get aggregated, which would make anyone with
+        // log-read access an account-takeover capability. Raw tokens are
+        // surfaced only via the admin-only `/reset/issue` endpoint until
+        // real mail transport lands. token_id + expires_at are the only
+        // things that make it into the tracing record.
+        let (_raw_token, token_id, expires_at) =
             issue_reset_token(&state, user.id, &ip_str).await?;
 
-        // Phase 1: no email transport. Log the token at INFO so operators
-        // can relay it manually. Once the notification channel lands, swap
-        // this block for a real send and drop the raw token from logs.
         tracing::info!(
             user_id = %user.id,
             email = %email,
+            token_id = %token_id,
             expires_at = %expires_at,
-            "Password reset token issued (no email transport; deliver manually): {raw_token}",
+            "Password reset token issued; deliver via admin /reset/issue until mail transport lands",
         );
 
         let caller = AuditCaller::user(user.id, Some(ip_str.clone()));
@@ -408,12 +419,24 @@ async fn reset_confirm(
     let new_hash = password::hash_password(&req.new_password)
         .map_err(internal("Password hash failed"))?;
 
-    sqlx::query("UPDATE users SET password_hash = $1, updated_at = now() WHERE id = $2 AND is_active = true")
-        .bind(&new_hash)
-        .bind(user_id)
-        .execute(&mut *tx)
-        .await
-        .map_err(internal("Password update failed"))?;
+    let updated = sqlx::query(
+        "UPDATE users SET password_hash = $1, updated_at = now() WHERE id = $2 AND is_active = true",
+    )
+    .bind(&new_hash)
+    .bind(user_id)
+    .execute(&mut *tx)
+    .await
+    .map_err(internal("Password update failed"))?;
+
+    // If the user was deactivated between issue and confirm, the UPDATE
+    // matches zero rows. Roll back the token-claim UPDATE and return the
+    // same generic "invalid token" response rather than silently 204ing —
+    // otherwise the caller thinks the new password took effect when it
+    // didn't.
+    if updated.rows_affected() == 0 {
+        tx.rollback().await.map_err(internal("Transaction rollback failed"))?;
+        return Err(invalid_token_error());
+    }
 
     // Nuke every session — the reset flow is the "I lost access" path, so
     // every existing refresh token is presumed suspect.
@@ -445,20 +468,22 @@ async fn reset_confirm(
 
 /// Phase 1 fallback: a company admin issues a reset token on behalf of a
 /// user and receives the raw token back in the response. Used until an
-/// outbound email transport exists. The endpoint is **intentionally not**
-/// exposed to non-admin callers — the `users.password.reset.issue`
-/// permission is granted only to the built-in project-admin role at
-/// migration time, and the `require_permissions` macro enforces it.
+/// outbound email transport exists.
+///
+/// Authorisation is the explicit `is_company_admin` check below — that is
+/// the single source of truth. The `users.password.reset.issue` permission
+/// key exists in the `permissions` table (see `0010_password_reset_tokens.sql`)
+/// but is deliberately not granted to any role: `UserPermissions::has()`
+/// short-circuits to `true` for company admins, so the `require_permissions`
+/// macro does not widen access beyond the check below. If a non-admin role
+/// ever needs this capability, grant the permission in a new migration and
+/// relax the explicit claim check here in the same change.
 #[require_permissions("users.password.reset.issue")]
 async fn reset_issue_admin(
     State(state): State<AppState>,
     auth: AuthUser,
     Json(req): Json<ResetIssueRequest>,
-) -> Result<Json<ResetIssueResponse>, (StatusCode, Json<Value>)> {
-    // Company admin is the only caller that should ever land here. The
-    // permission is not attached to any non-admin built-in role, but we
-    // also gate on the claim directly for defence in depth against a
-    // misconfigured role_permissions row.
+) -> Result<axum::response::Response, (StatusCode, Json<Value>)> {
     if !auth.claims.is_company_admin {
         return Err((
             StatusCode::FORBIDDEN,
@@ -519,7 +544,14 @@ async fn reset_issue_admin(
     )
     .await;
 
-    Ok(Json(ResetIssueResponse { token: raw_token, expires_at }))
+    // The response body contains a live credential. Suppress every layer of
+    // caching (proxies, browser back-button restores) so the raw token is
+    // never persisted anywhere the admin's browser session can't control.
+    let mut response = Json(ResetIssueResponse { token: raw_token, expires_at }).into_response();
+    let headers = response.headers_mut();
+    headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store, max-age=0"));
+    headers.insert(header::PRAGMA, HeaderValue::from_static("no-cache"));
+    Ok(response)
 }
 
 // ============================================================================

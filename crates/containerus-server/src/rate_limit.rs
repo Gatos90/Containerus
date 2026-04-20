@@ -1,10 +1,10 @@
 use std::collections::VecDeque;
-use std::net::IpAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use axum::body::Body;
-use axum::extract::Request;
+use axum::extract::{connect_info::ConnectInfo, Request};
 use dashmap::DashMap;
 
 /// Sliding-window rate limiter keyed by client IP address.
@@ -52,14 +52,26 @@ impl RateLimiter {
 }
 
 /// Extract the real client IP from the request.
-/// Prefers the first address in `X-Forwarded-For`; falls back to `0.0.0.0`.
+///
+/// Pulls `ConnectInfo<SocketAddr>` out of request extensions (installed by
+/// `into_make_service_with_connect_info::<SocketAddr>()` in `lib.rs`). We
+/// intentionally do **not** trust `X-Forwarded-For` here: there's no
+/// reverse-proxy allowlist in this deployment, so accepting XFF would let
+/// an attacker trivially bypass per-IP throttling by rotating the header
+/// on every request — defeating the `auth_limiter` that wraps `/api/auth`
+/// (including the password routes). If/when a trusted proxy boundary is
+/// introduced, gate XFF behind an explicit allowlist env var rather than
+/// re-enabling it unconditionally here.
+///
+/// Keeps the `0.0.0.0` sentinel as the fallback so a missing `ConnectInfo`
+/// (shouldn't happen in production, but e.g. constructed requests in tests)
+/// doesn't panic — the limiter will treat all such requests as sharing one
+/// bucket, which is the safer default when the IP is unknowable.
 pub fn client_ip(request: &Request<Body>) -> IpAddr {
     request
-        .headers()
-        .get("x-forwarded-for")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.split(',').next())
-        .and_then(|s| s.trim().parse().ok())
+        .extensions()
+        .get::<ConnectInfo<SocketAddr>>()
+        .map(|ci| ci.0.ip())
         .unwrap_or(IpAddr::from([0, 0, 0, 0]))
 }
 
