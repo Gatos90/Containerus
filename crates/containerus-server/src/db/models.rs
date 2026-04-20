@@ -199,6 +199,22 @@ pub struct ProjectMemberResponse {
     pub joined_at: DateTime<Utc>,
 }
 
+/// Pending project invite (CON-129). Emitted by
+/// `GET /api/projects/{projectId}/invites` for emails that have been invited
+/// but have not yet redeemed the invite (no `users` row or not yet promoted
+/// into `project_members`).
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PendingInviteResponse {
+    pub id: Uuid,
+    pub email: String,
+    pub role_id: Uuid,
+    pub role_name: String,
+    pub invited_at: DateTime<Utc>,
+    pub invited_by: Option<Uuid>,
+    pub expires_at: Option<DateTime<Utc>>,
+}
+
 // ============================================================================
 // Resource ACL (per-resource permission overrides)
 // ============================================================================

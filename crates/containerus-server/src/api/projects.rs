@@ -12,7 +12,7 @@ use validator::ValidateEmail;
 
 use crate::audit::log_action;
 use crate::auth::middleware::{AuthUser, ProjectScoped};
-use crate::db::models::{Project, ProjectMemberResponse};
+use crate::db::models::{PendingInviteResponse, Project, ProjectMemberResponse};
 use crate::ws::events::{InvalidationScope, PermissionEvent};
 use crate::AppState;
 
@@ -33,6 +33,15 @@ pub fn router() -> Router<AppState> {
         .route(
             "/{project_id}/members/{user_id}",
             delete(remove_member),
+        )
+        .route("/{project_id}/invites", get(list_invites))
+        .route(
+            "/{project_id}/invites/{invite_id}/resend",
+            post(resend_invite),
+        )
+        .route(
+            "/{project_id}/invites/{invite_id}",
+            delete(revoke_invite),
         )
         .route("/{project_id}/my-permissions", get(get_my_permissions))
 }
@@ -604,7 +613,10 @@ async fn invite_member(
         ));
     }
 
-    // Find user by email
+    // Find user by email. CON-129: if no matching user exists we fall through
+    // to `project_invites` so the People screen can show a pending row that
+    // admins can resend or revoke, instead of the pre-CON-129 400 which left
+    // the invite nowhere.
     let target_user_id = sqlx::query_scalar::<_, Uuid>("SELECT id FROM users WHERE email = $1")
         .bind(&req.email)
         .fetch_optional(&mut *tx)
@@ -615,38 +627,87 @@ async fn invite_member(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(json!({ "error": "Internal server error" })),
             )
-        })?
-        .ok_or_else(|| {
+        })?;
+
+    if let Some(target_user_id) = target_user_id {
+        // Existing user — immediate membership (unchanged pre-CON-129 path).
+        sqlx::query(
+            "INSERT INTO project_members (project_id, user_id, role_id) VALUES ($1, $2, $3)",
+        )
+        .bind(project_id)
+        .bind(target_user_id)
+        .bind(req.role_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| {
+            if let Some(db_err) = e.as_database_error() {
+                if db_err.is_unique_violation() {
+                    return (
+                        StatusCode::CONFLICT,
+                        Json(json!({ "error": "User is already a member of this project" })),
+                    );
+                }
+            }
+            tracing::error!("Database error: {e}");
             (
-                StatusCode::BAD_REQUEST,
-                Json(json!({ "error": "Unable to add member. Please verify the email address." })),
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": "Internal server error" })),
             )
         })?;
 
-    // Insert the member and handle unique constraint violation atomically
-    sqlx::query(
-        "INSERT INTO project_members (project_id, user_id, role_id) VALUES ($1, $2, $3)",
+        tx.commit().await.map_err(|e| {
+            tracing::error!("Failed to commit transaction: {e}");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": "Internal server error" })),
+            )
+        })?;
+
+        log_action(&state.db, Some(project_id), Some(scoped.claims.sub), "member.invite", "member", Some(&target_user_id.to_string()), Some(serde_json::json!({"role_id": req.role_id.to_string()})), scoped.client_ip.as_deref(), None).await;
+
+        state.permission_events.publish(
+            target_user_id,
+            PermissionEvent::invalidated(InvalidationScope::Member, Some(project_id)),
+        );
+
+        return Ok((
+            StatusCode::CREATED,
+            Json(json!({ "message": "Member added successfully" })),
+        ));
+    }
+
+    // Unknown email — record a pending invite. Collides on (project_id,
+    // lower(email)) so the same address can't be pending twice on the same
+    // project.
+    let invite_id: Uuid = match sqlx::query_scalar(
+        "INSERT INTO project_invites (project_id, email, role_id, invited_by)
+         VALUES ($1, $2, $3, $4)
+         RETURNING id",
     )
     .bind(project_id)
-    .bind(target_user_id)
+    .bind(&req.email)
     .bind(req.role_id)
-    .execute(&mut *tx)
+    .bind(scoped.claims.sub)
+    .fetch_one(&mut *tx)
     .await
-    .map_err(|e| {
-        if let Some(db_err) = e.as_database_error() {
-            if db_err.is_unique_violation() {
-                return (
-                    StatusCode::CONFLICT,
-                    Json(json!({ "error": "User is already a member of this project" })),
-                );
+    {
+        Ok(id) => id,
+        Err(e) => {
+            if let Some(db_err) = e.as_database_error() {
+                if db_err.is_unique_violation() {
+                    return Err((
+                        StatusCode::CONFLICT,
+                        Json(json!({ "error": "An invite for this email is already pending on this project" })),
+                    ));
+                }
             }
+            tracing::error!("Database error: {e}");
+            return Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": "Internal server error" })),
+            ));
         }
-        tracing::error!("Database error: {e}");
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({ "error": "Internal server error" })),
-        )
-    })?;
+    };
 
     tx.commit().await.map_err(|e| {
         tracing::error!("Failed to commit transaction: {e}");
@@ -656,18 +717,25 @@ async fn invite_member(
         )
     })?;
 
-    log_action(&state.db, Some(project_id), Some(scoped.claims.sub), "member.invite", "member", Some(&target_user_id.to_string()), Some(serde_json::json!({"role_id": req.role_id.to_string()})), scoped.client_ip.as_deref(), None).await;
-
-    // CON-122: notify the newly-added user so any live session picks
-    // up the project membership without a reload.
-    state.permission_events.publish(
-        target_user_id,
-        PermissionEvent::invalidated(InvalidationScope::Member, Some(project_id)),
-    );
+    log_action(
+        &state.db,
+        Some(project_id),
+        Some(scoped.claims.sub),
+        "invite.create",
+        "invite",
+        Some(&invite_id.to_string()),
+        Some(json!({ "role_id": req.role_id.to_string(), "email": req.email })),
+        scoped.client_ip.as_deref(),
+        None,
+    )
+    .await;
 
     Ok((
         StatusCode::CREATED,
-        Json(json!({ "message": "Member added successfully" })),
+        Json(json!({
+            "message": "Invite created — user will be added when they sign up",
+            "inviteId": invite_id,
+        })),
     ))
 }
 
@@ -1138,6 +1206,161 @@ async fn remove_member(
     );
 
     Ok(Json(json!({ "message": "Member removed successfully" })))
+}
+
+/// CON-129 — list pending invites for a project. Gated on
+/// `projects.members.view` (the same permission that lets you see the
+/// members list).
+#[require_permissions("projects.members.view")]
+async fn list_invites(
+    State(state): State<AppState>,
+    scoped: ProjectScoped,
+) -> Result<Json<Vec<PendingInviteResponse>>, (StatusCode, Json<Value>)> {
+    scoped.require("projects.members.view").map_err(|_| {
+        (
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": "You do not have permission to view project members" })),
+        )
+    })?;
+
+    let project_id = scoped.project_id;
+
+    let invites = sqlx::query_as::<_, PendingInviteResponse>(
+        "SELECT pi.id, pi.email, pi.role_id, r.name AS role_name,
+                pi.invited_at, pi.invited_by, pi.expires_at
+         FROM project_invites pi
+         JOIN roles r ON r.id = pi.role_id
+         WHERE pi.project_id = $1
+         ORDER BY pi.invited_at DESC",
+    )
+    .bind(project_id)
+    .fetch_all(&state.db)
+    .await
+    .map_err(|e| {
+        tracing::error!("Database error: {e}");
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": "Internal server error" })),
+        )
+    })?;
+
+    Ok(Json(invites))
+}
+
+/// CON-129 — resend a pending invite. Bumps `invited_at` + `updated_at` so
+/// the People screen reflects the action; the audit row is the canonical
+/// record of the resend. Real notification delivery is a follow-up
+/// (no mailer infra in the server today).
+#[require_permissions("projects.members.manage")]
+async fn resend_invite(
+    State(state): State<AppState>,
+    scoped: ProjectScoped,
+    Path((_project_id, invite_id)): Path<(Uuid, Uuid)>,
+) -> Result<StatusCode, (StatusCode, Json<Value>)> {
+    scoped.require("projects.members.manage").map_err(|_| {
+        (
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": "You do not have permission to manage project members" })),
+        )
+    })?;
+
+    let project_id = scoped.project_id;
+
+    // Scope the update to (project_id, invite_id) so an invite on a different
+    // project can't be touched by a manage-perm holder on this one.
+    let result = sqlx::query(
+        "UPDATE project_invites
+            SET invited_at = now(), updated_at = now(), invited_by = $3
+          WHERE id = $1 AND project_id = $2",
+    )
+    .bind(invite_id)
+    .bind(project_id)
+    .bind(scoped.claims.sub)
+    .execute(&state.db)
+    .await
+    .map_err(|e| {
+        tracing::error!("Database error: {e}");
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": "Internal server error" })),
+        )
+    })?;
+
+    if result.rows_affected() == 0 {
+        return Err((
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Invite not found in this project" })),
+        ));
+    }
+
+    log_action(
+        &state.db,
+        Some(project_id),
+        Some(scoped.claims.sub),
+        "invite.resend",
+        "invite",
+        Some(&invite_id.to_string()),
+        None,
+        scoped.client_ip.as_deref(),
+        None,
+    )
+    .await;
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// CON-129 — revoke a pending invite so its token can no longer be redeemed.
+#[require_permissions("projects.members.manage")]
+async fn revoke_invite(
+    State(state): State<AppState>,
+    scoped: ProjectScoped,
+    Path((_project_id, invite_id)): Path<(Uuid, Uuid)>,
+) -> Result<StatusCode, (StatusCode, Json<Value>)> {
+    scoped.require("projects.members.manage").map_err(|_| {
+        (
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": "You do not have permission to manage project members" })),
+        )
+    })?;
+
+    let project_id = scoped.project_id;
+
+    let result = sqlx::query(
+        "DELETE FROM project_invites WHERE id = $1 AND project_id = $2",
+    )
+    .bind(invite_id)
+    .bind(project_id)
+    .execute(&state.db)
+    .await
+    .map_err(|e| {
+        tracing::error!("Database error: {e}");
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": "Internal server error" })),
+        )
+    })?;
+
+    if result.rows_affected() == 0 {
+        return Err((
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Invite not found in this project" })),
+        ));
+    }
+
+    log_action(
+        &state.db,
+        Some(project_id),
+        Some(scoped.claims.sub),
+        "invite.revoke",
+        "invite",
+        Some(&invite_id.to_string()),
+        None,
+        scoped.client_ip.as_deref(),
+        None,
+    )
+    .await;
+
+    Ok(StatusCode::NO_CONTENT)
 }
 
 /// Get the authenticated user's effective permissions for a specific project.
