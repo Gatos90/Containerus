@@ -201,7 +201,7 @@
   >
     <div class="flex flex-col h-full">
       <header class="flex items-center justify-between p-4 border-b border-zinc-700">
-        <h2 id="people-invite-title" class="text-base font-medium text-zinc-100">Invite member</h2>
+        <h2 id="people-invite-title" class="text-base font-medium text-zinc-100">Invite members</h2>
         <button
           type="button"
           (click)="onInviteClosed()"
@@ -212,57 +212,360 @@
         </button>
       </header>
 
-      <form
-        id="people-invite-form"
-        class="flex-1 overflow-y-auto p-4 space-y-4"
-        (submit)="$event.preventDefault(); submitInvite()"
+      <!-- CON-135: mode toggle. Radio semantics via `aria-pressed` on two
+           buttons so keyboard users can tab through both choices and the
+           active mode is announced. Single is the default so existing
+           Phase-1 workflows keep the same number of clicks. -->
+      <div
+        role="group"
+        aria-label="Invite mode"
+        class="px-4 pt-4 pb-2 flex gap-2 text-sm"
       >
-        <label class="block text-xs uppercase tracking-wide text-zinc-500">
-          Email
-          <input
-            type="email"
-            required
-            [ngModel]="inviteEmail()"
-            (ngModelChange)="inviteEmail.set($event)"
-            name="inviteEmail"
-            placeholder="colleague@company.com"
-            class="mt-1 w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-zinc-100 text-sm normal-case tracking-normal"
-          />
-        </label>
-
-        <label class="block text-xs uppercase tracking-wide text-zinc-500">
-          Role
-          <select
-            [ngModel]="inviteRoleId()"
-            (ngModelChange)="inviteRoleId.set($event)"
-            name="inviteRoleId"
-            required
-            class="mt-1 w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-zinc-100 text-sm normal-case tracking-normal"
-          >
-            @for (r of roles(); track r.id) {
-              <option [value]="r.id">{{ r.name }}</option>
-            }
-          </select>
-        </label>
-
-        @if (inviteError()) {
-          <p role="alert" class="text-sm text-red-300">{{ inviteError() }}</p>
-        }
-      </form>
-
-      <footer class="flex justify-end gap-2 p-4 border-t border-zinc-700">
         <button
           type="button"
-          (click)="onInviteClosed()"
-          class="px-3 py-1.5 text-sm text-zinc-300 hover:text-zinc-100"
-        >Cancel</button>
+          (click)="setInviteMode('single')"
+          [attr.aria-pressed]="inviteMode() === 'single'"
+          class="px-3 py-1 rounded-lg border"
+          [class.bg-blue-600]="inviteMode() === 'single'"
+          [class.text-white]="inviteMode() === 'single'"
+          [class.border-blue-500]="inviteMode() === 'single'"
+          [class.bg-zinc-800]="inviteMode() !== 'single'"
+          [class.text-zinc-300]="inviteMode() !== 'single'"
+          [class.border-zinc-700]="inviteMode() !== 'single'"
+        >Single</button>
         <button
-          type="submit"
-          form="people-invite-form"
-          [disabled]="!inviteEmail().trim() || !inviteRoleId() || inviteSaving()"
-          class="px-3 py-1.5 text-sm rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white"
-        >Send invite</button>
-      </footer>
+          type="button"
+          (click)="setInviteMode('bulk')"
+          [attr.aria-pressed]="inviteMode() === 'bulk'"
+          class="px-3 py-1 rounded-lg border"
+          [class.bg-blue-600]="inviteMode() === 'bulk'"
+          [class.text-white]="inviteMode() === 'bulk'"
+          [class.border-blue-500]="inviteMode() === 'bulk'"
+          [class.bg-zinc-800]="inviteMode() !== 'bulk'"
+          [class.text-zinc-300]="inviteMode() !== 'bulk'"
+          [class.border-zinc-700]="inviteMode() !== 'bulk'"
+        >Bulk (CSV / paste)</button>
+      </div>
+
+      @if (inviteMode() === 'single') {
+        <form
+          id="people-invite-form"
+          class="flex-1 overflow-y-auto p-4 space-y-4"
+          (submit)="$event.preventDefault(); submitInvite()"
+        >
+          <label class="block text-xs uppercase tracking-wide text-zinc-500">
+            Email
+            <input
+              type="email"
+              required
+              [ngModel]="inviteEmail()"
+              (ngModelChange)="inviteEmail.set($event)"
+              name="inviteEmail"
+              placeholder="colleague@company.com"
+              class="mt-1 w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-zinc-100 text-sm normal-case tracking-normal"
+            />
+          </label>
+
+          <label class="block text-xs uppercase tracking-wide text-zinc-500">
+            Role
+            <select
+              [ngModel]="inviteRoleId()"
+              (ngModelChange)="inviteRoleId.set($event)"
+              name="inviteRoleId"
+              required
+              class="mt-1 w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-zinc-100 text-sm normal-case tracking-normal"
+            >
+              @for (r of roles(); track r.id) {
+                <option [value]="r.id">{{ r.name }}</option>
+              }
+            </select>
+          </label>
+
+          @if (inviteError()) {
+            <p role="alert" class="text-sm text-red-300">{{ inviteError() }}</p>
+          }
+        </form>
+
+        <footer class="flex justify-end gap-2 p-4 border-t border-zinc-700">
+          <button
+            type="button"
+            (click)="onInviteClosed()"
+            class="px-3 py-1.5 text-sm text-zinc-300 hover:text-zinc-100"
+          >Cancel</button>
+          <button
+            type="submit"
+            form="people-invite-form"
+            [disabled]="!inviteEmail().trim() || !inviteRoleId() || inviteSaving()"
+            class="px-3 py-1.5 text-sm rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white"
+          >Send invite</button>
+        </footer>
+      } @else {
+        <!-- CON-135: bulk mode. CSV upload + paste textarea are two paths to
+             the same parsed preview, so keyboard users are never forced
+             through the file picker. -->
+        <div class="flex-1 overflow-y-auto p-4 space-y-4">
+          <div class="space-y-2">
+            <p class="text-xs text-zinc-400">
+              Paste one entry per line as <code class="text-zinc-300">email</code> or
+              <code class="text-zinc-300">email,role</code>. Role matches by name or slug; blank roles use the default below.
+              Max {{ BULK_MAX }} rows per batch.
+            </p>
+
+            <label class="block text-xs uppercase tracking-wide text-zinc-500">
+              Default role
+              <select
+                [ngModel]="bulkDefaultRoleId()"
+                (ngModelChange)="bulkDefaultRoleId.set($event)"
+                name="bulkDefaultRoleId"
+                class="mt-1 w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-zinc-100 text-sm normal-case tracking-normal"
+              >
+                @for (r of roles(); track r.id) {
+                  <option [value]="r.id">{{ r.name }}</option>
+                }
+              </select>
+            </label>
+
+            <label class="block text-xs uppercase tracking-wide text-zinc-500" for="bulk-paste-area">
+              Paste emails
+            </label>
+            <textarea
+              id="bulk-paste-area"
+              rows="6"
+              [ngModel]="bulkPaste()"
+              (ngModelChange)="bulkPaste.set($event)"
+              name="bulkPaste"
+              placeholder="alice@company.com&#10;bob@company.com,Admin&#10;carol@company.com,viewer"
+              class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-zinc-100 text-sm font-mono normal-case tracking-normal"
+              aria-describedby="bulk-paste-hint"
+            ></textarea>
+            <p id="bulk-paste-hint" class="sr-only">
+              Paste a list of email addresses, one per line. Optionally append a role after a comma.
+            </p>
+
+            <div class="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                (click)="loadBulkPreview()"
+                class="px-3 py-1 text-xs rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-100 border border-zinc-700"
+              >Load preview</button>
+
+              <label
+                class="px-3 py-1 text-xs rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-100 border border-zinc-700 cursor-pointer inline-flex items-center gap-1.5"
+              >
+                <lucide-icon [img]="Upload" [size]="12" aria-hidden="true" />
+                Upload CSV
+                <input
+                  type="file"
+                  accept=".csv,text/csv,text/plain"
+                  class="sr-only"
+                  (change)="onBulkFileChange($event)"
+                  aria-label="Upload CSV file"
+                />
+              </label>
+
+              @if (bulkRows().length > 0) {
+                <button
+                  type="button"
+                  (click)="clearBulk()"
+                  class="px-3 py-1 text-xs rounded-lg text-zinc-400 hover:text-zinc-100"
+                >Clear</button>
+              }
+            </div>
+
+            @if (bulkParseError()) {
+              <p role="alert" class="text-sm text-red-300">{{ bulkParseError() }}</p>
+            }
+          </div>
+
+          <!-- Preview table with inline validation + fix-in-place. -->
+          @if (bulkRows().length > 0) {
+            <section aria-labelledby="bulk-preview-heading" class="space-y-2">
+              <div class="flex items-center justify-between">
+                <h3 id="bulk-preview-heading" class="text-sm font-medium text-zinc-300">
+                  Preview ({{ bulkRows().length }} {{ bulkRows().length === 1 ? 'row' : 'rows' }})
+                </h3>
+                @if (bulkErrorCount() > 0) {
+                  <span
+                    role="status"
+                    aria-live="polite"
+                    class="text-xs text-red-300"
+                  >{{ bulkErrorCount() }} {{ bulkErrorCount() === 1 ? 'row needs' : 'rows need' }} attention</span>
+                }
+              </div>
+
+              @if (bulkOverCap()) {
+                <div role="alert" class="text-sm bg-red-950/30 text-red-300 rounded-lg p-2">
+                  Over the {{ BULK_MAX }}-row limit. Remove {{ bulkRows().length - BULK_MAX }}
+                  {{ bulkRows().length - BULK_MAX === 1 ? 'row' : 'rows' }} or split into batches.
+                </div>
+              }
+
+              <div class="bg-zinc-900 border border-zinc-800 rounded-lg overflow-x-auto">
+                <table class="w-full text-sm">
+                  <caption class="sr-only">Parsed invite rows with inline validation</caption>
+                  <thead class="text-left text-xs uppercase tracking-wide text-zinc-500 border-b border-zinc-800">
+                    <tr>
+                      <th scope="col" class="px-3 py-2">Email</th>
+                      <th scope="col" class="px-3 py-2">Role</th>
+                      <th scope="col" class="px-3 py-2">Issues</th>
+                      <th scope="col" class="px-3 py-2 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    @for (v of bulkRowValidation(); track v.row.id) {
+                      <tr
+                        class="border-b border-zinc-800/50"
+                        [class.bg-red-950/10]="v.issues.length > 0"
+                      >
+                        <td class="px-3 py-1.5">
+                          <label class="sr-only" [attr.for]="'bulk-email-' + v.row.id">Email for row {{ v.row.id }}</label>
+                          <input
+                            [attr.id]="'bulk-email-' + v.row.id"
+                            type="email"
+                            [ngModel]="v.row.email"
+                            (ngModelChange)="updateBulkRowEmail(v.row.id, $event)"
+                            [attr.name]="'bulk-email-' + v.row.id"
+                            [attr.aria-invalid]="v.issues.includes('invalid_email') ? 'true' : null"
+                            class="w-full bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-sm text-zinc-100 normal-case tracking-normal"
+                          />
+                        </td>
+                        <td class="px-3 py-1.5">
+                          <label class="sr-only" [attr.for]="'bulk-role-' + v.row.id">Role for row {{ v.row.id }}</label>
+                          <select
+                            [attr.id]="'bulk-role-' + v.row.id"
+                            [ngModel]="v.row.roleId"
+                            (ngModelChange)="updateBulkRowRole(v.row.id, $event)"
+                            [attr.name]="'bulk-role-' + v.row.id"
+                            [attr.aria-invalid]="(v.issues.includes('unknown_role') || v.issues.includes('missing_role')) ? 'true' : null"
+                            class="w-full bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-sm text-zinc-100 normal-case tracking-normal"
+                          >
+                            <option value="" disabled>— Select role —</option>
+                            @for (r of roles(); track r.id) {
+                              <option [value]="r.id">{{ r.name }}</option>
+                            }
+                          </select>
+                        </td>
+                        <td class="px-3 py-1.5 text-xs">
+                          @if (v.issues.length === 0) {
+                            <span class="text-emerald-300">OK</span>
+                          } @else {
+                            <ul class="space-y-0.5">
+                              @for (iss of v.issues; track iss) {
+                                <li class="text-red-300">
+                                  {{ describeIssue(iss) }}@if (iss === 'unknown_role' && v.row.rawRoleLabel) {
+                                    : "{{ v.row.rawRoleLabel }}"
+                                  }
+                                </li>
+                              }
+                            </ul>
+                          }
+                        </td>
+                        <td class="px-3 py-1.5 text-right">
+                          <button
+                            type="button"
+                            (click)="removeBulkRow(v.row.id)"
+                            class="text-zinc-400 hover:text-red-400 p-1 rounded hover:bg-zinc-800"
+                            [attr.aria-label]="'Remove row for ' + (v.row.email || '(empty)')"
+                          >
+                            <lucide-icon [img]="Trash2" [size]="14" aria-hidden="true" />
+                          </button>
+                        </td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          }
+
+          @if (bulkSubmitError()) {
+            <p role="alert" class="text-sm text-red-300">{{ bulkSubmitError() }}</p>
+          }
+
+          <!-- CON-135: results summary. Assertive when any row errored so
+               screen readers get the partial-success signal without the
+               operator having to navigate to it. -->
+          @if (bulkResult(); as r) {
+            <section
+              aria-labelledby="bulk-result-heading"
+              class="space-y-2 border-t border-zinc-800 pt-4"
+              [attr.role]="r.errored.length > 0 ? 'alert' : 'status'"
+              [attr.aria-live]="r.errored.length > 0 ? 'assertive' : 'polite'"
+            >
+              <h3 id="bulk-result-heading" class="text-sm font-medium text-zinc-100">
+                Result: {{ r.invited.length }} invited, {{ r.skipped.length }} skipped, {{ r.errored.length }} errored
+              </h3>
+
+              @if (r.invited.length > 0) {
+                <details class="bg-emerald-950/20 border border-emerald-900/40 rounded-lg">
+                  <summary class="px-3 py-2 text-sm text-emerald-200 cursor-pointer">
+                    Invited ({{ r.invited.length }})
+                  </summary>
+                  <ul class="px-3 pb-2 text-xs text-emerald-300 space-y-0.5">
+                    @for (row of r.invited; track row.email) {
+                      <li>{{ row.email }}</li>
+                    }
+                  </ul>
+                </details>
+              }
+
+              @if (r.skipped.length > 0) {
+                <details class="bg-amber-950/20 border border-amber-900/40 rounded-lg" open>
+                  <summary class="px-3 py-2 text-sm text-amber-200 cursor-pointer">
+                    Skipped ({{ r.skipped.length }})
+                  </summary>
+                  <ul class="px-3 pb-2 text-xs text-amber-300 space-y-0.5">
+                    @for (row of r.skipped; track row.email) {
+                      <li>{{ row.email }} — {{ describeReason(row.reason) }}</li>
+                    }
+                  </ul>
+                </details>
+              }
+
+              @if (r.errored.length > 0) {
+                <details class="bg-red-950/20 border border-red-900/40 rounded-lg" open>
+                  <summary class="px-3 py-2 text-sm text-red-200 cursor-pointer">
+                    Errored ({{ r.errored.length }})
+                  </summary>
+                  <ul class="px-3 pb-2 text-xs text-red-300 space-y-0.5">
+                    @for (row of r.errored; track row.email) {
+                      <li>{{ row.email }} — {{ describeReason(row.reason) }}</li>
+                    }
+                  </ul>
+                </details>
+              }
+            </section>
+          }
+        </div>
+
+        <footer class="flex justify-between items-center gap-2 p-4 border-t border-zinc-700">
+          <span class="text-xs text-zinc-500" aria-live="polite">
+            @if (bulkRows().length > 0) {
+              {{ bulkRows().length }} / {{ BULK_MAX }} rows
+            }
+          </span>
+          <span class="flex gap-2">
+            <button
+              type="button"
+              (click)="onInviteClosed()"
+              class="px-3 py-1.5 text-sm text-zinc-300 hover:text-zinc-100"
+            >Cancel</button>
+            <button
+              type="button"
+              (click)="submitBulk()"
+              [disabled]="!bulkCanSubmit()"
+              [attr.aria-busy]="bulkSubmitting() ? 'true' : null"
+              class="px-3 py-1.5 text-sm rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white"
+            >
+              @if (bulkSubmitting()) {
+                Sending…
+              } @else {
+                Send {{ bulkRows().length > 0 ? bulkRows().length : '' }} invite{{ bulkRows().length === 1 ? '' : 's' }}
+              }
+            </button>
+          </span>
+        </footer>
+      }
     </div>
   </app-drawer-dialog>
 

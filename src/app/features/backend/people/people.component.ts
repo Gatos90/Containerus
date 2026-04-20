@@ -17,6 +17,7 @@ import {
   X,
   UserMinus,
   UserCheck,
+  Upload,
 } from 'lucide-angular';
 
 import {
@@ -26,6 +27,7 @@ import {
 import { ConfirmDialogComponent } from '../../../shared/components/confirm-dialog/confirm-dialog.component';
 import { BackendService } from '../../../core/services/backend.service';
 import {
+  BulkInviteResponse,
   PendingInvite,
   Project,
   ProjectMember,
@@ -52,6 +54,45 @@ interface StatusToast {
   readonly kind: ToastKind;
 }
 
+/** CON-135 — client-side cap matching the server `BULK_INVITE_MAX` in CON-120. */
+export const BULK_INVITE_MAX = 100;
+
+/**
+ * CON-135 — a single parsed bulk-invite row. `id` is a monotonic local id
+ * (not the server user id) so fix-in-place edits and deletes can track rows
+ * stably even when two rows share the same email during editing.
+ */
+export interface BulkInviteRow {
+  id: number;
+  email: string;
+  /** Selected role id, or '' when the row's role label could not be matched. */
+  roleId: string;
+  /**
+   * Raw role label as it appeared in the CSV (or null when the row was
+   * seeded from an email-only paste line and inherited the default role).
+   * Kept so the preview can show "unknown role: foo" instead of dropping it.
+   */
+  rawRoleLabel: string | null;
+}
+
+type BulkRowIssue = 'invalid_email' | 'unknown_role' | 'missing_role';
+
+export interface BulkRowValidation {
+  row: BulkInviteRow;
+  issues: BulkRowIssue[];
+}
+
+/**
+ * Accepts most practical emails without trying to be RFC 5322. Kept tight
+ * enough to reject "a", "a@", "a@b", and whitespace-only input so the preview
+ * surfaces obviously-bad rows before submit.
+ */
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+export function isValidEmail(email: string): boolean {
+  return EMAIL_RE.test(email.trim());
+}
+
 @Component({
   selector: 'app-people',
   standalone: true,
@@ -76,6 +117,9 @@ export class PeopleComponent implements OnInit {
   readonly X = X;
   readonly UserMinus = UserMinus;
   readonly UserCheck = UserCheck;
+  readonly Upload = Upload;
+
+  readonly BULK_MAX = BULK_INVITE_MAX;
 
   readonly loading = signal(false);
   readonly loadError = signal<string | null>(null);
@@ -97,6 +141,28 @@ export class PeopleComponent implements OnInit {
   readonly inviteError = signal<string | null>(null);
 
   /**
+   * CON-135 — invite mode toggle inside the drawer. Single-email is the
+   * default (Phase-1 behaviour); operators opt in to bulk mode only when
+   * they have a list to import, so no existing workflow is re-routed.
+   */
+  readonly inviteMode = signal<'single' | 'bulk'>('single');
+
+  /** CON-135 — raw textarea content. Re-parsed into `bulkRows` on demand. */
+  readonly bulkPaste = signal('');
+  readonly bulkRows = signal<BulkInviteRow[]>([]);
+  /**
+   * Role applied to paste/CSV rows that don't specify one (email-only lines,
+   * or rows with a blank second column). Defaults to the first role once
+   * roles load.
+   */
+  readonly bulkDefaultRoleId = signal('');
+  readonly bulkParseError = signal<string | null>(null);
+  readonly bulkSubmitting = signal(false);
+  readonly bulkSubmitError = signal<string | null>(null);
+  readonly bulkResult = signal<BulkInviteResponse | null>(null);
+  private bulkRowSeq = 0;
+
+  /**
    * CON-134 — destructive confirm for Deactivate. Reactivate skips the modal
    * because it has no side effects on sessions/MFA; flipping a false-positive
    * back on shouldn't need a two-tap ceremony.
@@ -115,6 +181,39 @@ export class PeopleComponent implements OnInit {
     const map = new Map<string, Role>();
     for (const r of this.roles()) map.set(r.id, r);
     return map;
+  });
+
+  /**
+   * CON-135 — per-row validation annotations. Computed (not stored on the row)
+   * so a role being added after parse or an email edit re-validates instantly
+   * without having to re-walk the list by hand.
+   */
+  readonly bulkRowValidation = computed<BulkRowValidation[]>(() => {
+    const roles = this.roleById();
+    return this.bulkRows().map(row => {
+      const issues: BulkRowIssue[] = [];
+      if (!isValidEmail(row.email)) issues.push('invalid_email');
+      if (!row.roleId) {
+        issues.push(row.rawRoleLabel ? 'unknown_role' : 'missing_role');
+      } else if (!roles.has(row.roleId)) {
+        issues.push('unknown_role');
+      }
+      return { row, issues };
+    });
+  });
+
+  readonly bulkErrorCount = computed(
+    () => this.bulkRowValidation().filter(v => v.issues.length > 0).length,
+  );
+
+  readonly bulkOverCap = computed(() => this.bulkRows().length > this.BULK_MAX);
+
+  readonly bulkCanSubmit = computed(() => {
+    const count = this.bulkRows().length;
+    if (count === 0) return false;
+    if (count > this.BULK_MAX) return false;
+    if (this.bulkErrorCount() > 0) return false;
+    return !this.bulkSubmitting();
   });
 
   /**
@@ -178,6 +277,11 @@ export class PeopleComponent implements OnInit {
       if (roles.length > 0 && !this.inviteRoleId()) {
         this.inviteRoleId.set(roles[0].id);
       }
+      // CON-135 — seed the bulk default so email-only paste rows land on a
+      // valid role without the operator having to pick one first.
+      if (roles.length > 0 && !this.bulkDefaultRoleId()) {
+        this.bulkDefaultRoleId.set(roles[0].id);
+      }
 
       // Pending invites endpoint is a follow-up — degrade silently on 404
       // so the rest of the screen remains useful.
@@ -199,11 +303,34 @@ export class PeopleComponent implements OnInit {
   openInvite(event: Event): void {
     this.inviteTrigger.set(event.currentTarget as HTMLElement);
     this.inviteError.set(null);
+    this.resetBulkState();
+    this.inviteMode.set('single');
     this.inviteOpen.set(true);
   }
 
   onInviteClosed(): void {
     this.inviteOpen.set(false);
+  }
+
+  /**
+   * CON-135 — switching mode in the drawer should not silently discard
+   * paste content on a stray click. The textarea/rows only reset when the
+   * drawer is re-opened (or the operator clicks Clear).
+   */
+  setInviteMode(mode: 'single' | 'bulk'): void {
+    this.inviteMode.set(mode);
+    if (mode === 'single') {
+      this.bulkSubmitError.set(null);
+    }
+  }
+
+  private resetBulkState(): void {
+    this.bulkPaste.set('');
+    this.bulkRows.set([]);
+    this.bulkParseError.set(null);
+    this.bulkSubmitError.set(null);
+    this.bulkResult.set(null);
+    this.bulkRowSeq = 0;
   }
 
   async submitInvite(): Promise<void> {
@@ -389,6 +516,206 @@ export class PeopleComponent implements OnInit {
       return new Date(iso).toLocaleString();
     } catch {
       return iso;
+    }
+  }
+
+  // CON-135 — bulk invite -------------------------------------------------
+
+  /**
+   * Parse paste/CSV text into preview rows. Accepts one entry per line in
+   * either `email` or `email,role` form. Role tokens match case-insensitively
+   * against role name or slug; unmatched labels are kept on the row so the
+   * preview can render a specific "unknown role: X" message instead of
+   * silently falling back to the default role (which would be surprising
+   * when the operator explicitly typed a role label).
+   */
+  parseBulkInput(raw: string): BulkInviteRow[] {
+    const defaultRoleId = this.bulkDefaultRoleId();
+    const roles = this.roles();
+    const rows: BulkInviteRow[] = [];
+    const seen = new Set<string>();
+
+    const lines = raw.split(/\r?\n/);
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      // Comma or tab — CSV exports from Numbers/Excel tend to use tabs when
+      // pasting; accepting both keeps the UX forgiving.
+      const parts = trimmed.split(/[,\t]/, 2).map(s => s.trim());
+      const email = parts[0] ?? '';
+      const roleLabel = parts[1] && parts[1].length > 0 ? parts[1] : null;
+
+      // Deduplicate within the paste itself so the preview doesn't carry
+      // obvious duplicates the server will just skip with
+      // `duplicate_in_payload`. Case-insensitive — the server normalises too.
+      const dedupeKey = email.toLowerCase();
+      if (dedupeKey && seen.has(dedupeKey)) continue;
+      if (dedupeKey) seen.add(dedupeKey);
+
+      let roleId = defaultRoleId;
+      if (roleLabel) {
+        const lower = roleLabel.toLowerCase();
+        const match = roles.find(
+          r => r.name.toLowerCase() === lower || r.slug.toLowerCase() === lower,
+        );
+        roleId = match ? match.id : '';
+      }
+
+      rows.push({
+        id: ++this.bulkRowSeq,
+        email,
+        roleId,
+        rawRoleLabel: roleLabel,
+      });
+    }
+
+    return rows;
+  }
+
+  /**
+   * CON-135 — re-parse the textarea on demand. We don't auto-parse on every
+   * keystroke because CSV pastes commonly arrive in chunks; operators click
+   * "Load preview" (or upload a file) once and then fix individual rows.
+   */
+  loadBulkPreview(): void {
+    this.bulkParseError.set(null);
+    this.bulkSubmitError.set(null);
+    this.bulkResult.set(null);
+    const raw = this.bulkPaste();
+    if (!raw.trim()) {
+      this.bulkRows.set([]);
+      return;
+    }
+    const parsed = this.parseBulkInput(raw);
+    this.bulkRows.set(parsed);
+  }
+
+  /**
+   * CON-135 — CSV upload path. Reads the file client-side and feeds the
+   * textarea + preview so keyboard users (who interact with the paste area)
+   * and mouse users (who drop a file) see exactly the same preview state.
+   */
+  async onBulkFileChange(event: Event): Promise<void> {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+
+    try {
+      const text = await file.text();
+      this.bulkPaste.set(text);
+      this.loadBulkPreview();
+    } catch (e: any) {
+      this.bulkParseError.set(e?.message ?? 'Failed to read file');
+    } finally {
+      // Allow selecting the same file twice in a row (some browsers suppress
+      // the `change` event otherwise).
+      input.value = '';
+    }
+  }
+
+  updateBulkRowEmail(id: number, email: string): void {
+    this.bulkRows.update(list =>
+      list.map(row => (row.id === id ? { ...row, email } : row)),
+    );
+  }
+
+  updateBulkRowRole(id: number, roleId: string): void {
+    this.bulkRows.update(list =>
+      list.map(row =>
+        row.id === id
+          ? { ...row, roleId, rawRoleLabel: null }
+          : row,
+      ),
+    );
+  }
+
+  removeBulkRow(id: number): void {
+    this.bulkRows.update(list => list.filter(row => row.id !== id));
+  }
+
+  clearBulk(): void {
+    this.resetBulkState();
+  }
+
+  /**
+   * CON-135 — hard client-side cap at BULK_INVITE_MAX. Surfacing the cap in
+   * the preview footer (not only as a submit-time error) lets the operator
+   * delete rows before they bother clicking send.
+   */
+  async submitBulk(): Promise<void> {
+    if (!this.bulkCanSubmit()) return;
+
+    const connectionId = this.connectionId();
+    const projectId = this.selectedProjectId();
+    if (!connectionId || !projectId) return;
+
+    const rows = this.bulkRows();
+    const payload = {
+      invites: rows.map(r => ({ email: r.email.trim(), roleId: r.roleId })),
+    };
+
+    this.bulkSubmitting.set(true);
+    this.bulkSubmitError.set(null);
+    this.bulkResult.set(null);
+    try {
+      const result = await this.backend.inviteMembersBulkFor(connectionId, projectId, payload);
+      this.bulkResult.set(result);
+      // Refresh members + pending invites so the tables reflect the new
+      // state without forcing the operator to re-open the screen.
+      await this.loadAll();
+      this.announceToast({
+        kind: result.errored.length > 0 ? 'error' : 'success',
+        message: this.summariseBulkResult(result),
+      });
+    } catch (e: any) {
+      this.bulkSubmitError.set(e?.message ?? 'Failed to send bulk invites');
+    } finally {
+      this.bulkSubmitting.set(false);
+    }
+  }
+
+  private summariseBulkResult(r: BulkInviteResponse): string {
+    const parts: string[] = [];
+    if (r.invited.length > 0) parts.push(`${r.invited.length} invited`);
+    if (r.skipped.length > 0) parts.push(`${r.skipped.length} skipped`);
+    if (r.errored.length > 0) parts.push(`${r.errored.length} errored`);
+    return parts.length > 0 ? `Bulk invite: ${parts.join(', ')}.` : 'Bulk invite: no changes.';
+  }
+
+  /**
+   * CON-135 — human labels for server reason codes. Unknown codes fall
+   * through as-is so forward-compat strings from the server still render
+   * something legible rather than being swallowed.
+   */
+  describeReason(reason: string): string {
+    switch (reason) {
+      case 'already_member':
+        return 'Already a member of this project';
+      case 'duplicate_in_payload':
+        return 'Duplicate email in this batch';
+      case 'invalid_email':
+        return 'Invalid email address';
+      case 'invalid_role':
+        return 'Role does not exist';
+      case 'unknown_user':
+        return 'No user with that email exists yet';
+      case 'rate_limited':
+        return 'Rate limit reached — retry in a few minutes';
+      case 'internal_error':
+        return 'Internal server error';
+      default:
+        return reason;
+    }
+  }
+
+  describeIssue(issue: BulkRowIssue): string {
+    switch (issue) {
+      case 'invalid_email':
+        return 'Invalid email';
+      case 'unknown_role':
+        return 'Unknown role';
+      case 'missing_role':
+        return 'Pick a role';
     }
   }
 }

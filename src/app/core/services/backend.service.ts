@@ -12,6 +12,8 @@ import {
   ConnectionStatus,
   EffectivePermissions,
   Environment,
+  BulkInviteRequest,
+  BulkInviteResponse,
   InviteMemberRequest,
   PendingInvite,
   K8sCluster,
@@ -348,6 +350,24 @@ export class BackendService {
 
   async inviteMemberFor(connectionId: string, projectId: string, req: InviteMemberRequest): Promise<void> {
     await this.requestFor(connectionId, 'POST', `/api/projects/${projectId}/members/invite`, req);
+  }
+
+  /**
+   * CON-135 / CON-120 — bulk invite. Server returns `200 OK` when every row
+   * succeeded and `207 Multi-Status` when any row was skipped or errored, but
+   * the caller just reads the partitioned body either way.
+   */
+  async inviteMembersBulkFor(
+    connectionId: string,
+    projectId: string,
+    req: BulkInviteRequest,
+  ): Promise<BulkInviteResponse> {
+    return this.requestFor<BulkInviteResponse>(
+      connectionId,
+      'POST',
+      `/api/projects/${projectId}/members/invite-bulk`,
+      req,
+    );
   }
 
   async updateMemberRoleFor(connectionId: string, projectId: string, userId: string, roleId: string): Promise<void> {

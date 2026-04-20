@@ -29,7 +29,10 @@ const MEMBERS = [
     isActive: false,
   },
 ];
-const ROLES = [{ id: 'r1', name: 'Dev', slug: 'dev', isSystem: false, createdAt: '', updatedAt: '' }];
+const ROLES = [
+  { id: 'r1', name: 'Dev', slug: 'dev', isSystem: false, createdAt: '', updatedAt: '' },
+  { id: 'r2', name: 'Admin', slug: 'admin', isSystem: true, createdAt: '', updatedAt: '' },
+];
 
 interface ConfigureOpts {
   invitesAvailable: boolean;
@@ -61,6 +64,9 @@ function configure(opts: ConfigureOpts): { fixture: ComponentFixture<PeopleCompo
         ])
       : vi.fn().mockRejectedValue(new Error('Not Found')),
     inviteMemberFor: vi.fn().mockResolvedValue(undefined),
+    inviteMembersBulkFor: vi
+      .fn()
+      .mockResolvedValue({ invited: [], skipped: [], errored: [] }),
     removeMemberFor: vi.fn().mockResolvedValue(undefined),
     revokeInviteFor: vi.fn().mockResolvedValue(undefined),
     resendInviteFor: vi.fn().mockResolvedValue(undefined),
@@ -195,5 +201,173 @@ describe('PeopleComponent', () => {
     const t = fixture.componentInstance.toast();
     expect(t?.kind).toBe('error');
     expect(t?.message).toContain('boom');
+  });
+
+  // CON-135 — bulk invite --------------------------------------------------
+
+  it('parses email-only paste lines onto the default role', async () => {
+    const { fixture } = configure({ invitesAvailable: true });
+    await fixture.componentInstance.ngOnInit();
+    fixture.componentInstance.bulkPaste.set('alice@x.test\nbob@x.test');
+    fixture.componentInstance.loadBulkPreview();
+
+    const rows = fixture.componentInstance.bulkRows();
+    expect(rows).toHaveLength(2);
+    expect(rows[0].email).toBe('alice@x.test');
+    expect(rows[0].roleId).toBe('r1');
+    expect(rows[0].rawRoleLabel).toBeNull();
+    // Every row must be valid when emails are well-formed and the default
+    // role is set — otherwise the submit button would be disabled for the
+    // most common "paste a list of emails" flow.
+    expect(fixture.componentInstance.bulkErrorCount()).toBe(0);
+    expect(fixture.componentInstance.bulkCanSubmit()).toBe(true);
+  });
+
+  it('parses email,role pairs and matches role by name or slug', async () => {
+    const { fixture } = configure({ invitesAvailable: true });
+    await fixture.componentInstance.ngOnInit();
+    fixture.componentInstance.bulkPaste.set('alice@x.test,Admin\nbob@x.test,dev');
+    fixture.componentInstance.loadBulkPreview();
+
+    const [a, b] = fixture.componentInstance.bulkRows();
+    expect(a.roleId).toBe('r2'); // matched "Admin" by name
+    expect(b.roleId).toBe('r1'); // matched "dev" by slug
+    expect(fixture.componentInstance.bulkErrorCount()).toBe(0);
+  });
+
+  it('marks unknown role labels as unknown_role (not silent fallback)', async () => {
+    const { fixture } = configure({ invitesAvailable: true });
+    await fixture.componentInstance.ngOnInit();
+    fixture.componentInstance.bulkPaste.set('alice@x.test,Wizard');
+    fixture.componentInstance.loadBulkPreview();
+
+    const issues = fixture.componentInstance.bulkRowValidation()[0].issues;
+    expect(issues).toContain('unknown_role');
+    expect(fixture.componentInstance.bulkRows()[0].rawRoleLabel).toBe('Wizard');
+    expect(fixture.componentInstance.bulkCanSubmit()).toBe(false);
+  });
+
+  it('flags invalid emails in preview and disables submit', async () => {
+    const { fixture } = configure({ invitesAvailable: true });
+    await fixture.componentInstance.ngOnInit();
+    fixture.componentInstance.bulkPaste.set('not-an-email\nalice@x.test');
+    fixture.componentInstance.loadBulkPreview();
+
+    const issues = fixture.componentInstance.bulkRowValidation()[0].issues;
+    expect(issues).toContain('invalid_email');
+    expect(fixture.componentInstance.bulkErrorCount()).toBe(1);
+    expect(fixture.componentInstance.bulkCanSubmit()).toBe(false);
+  });
+
+  it('deduplicates paste input case-insensitively', async () => {
+    const { fixture } = configure({ invitesAvailable: true });
+    await fixture.componentInstance.ngOnInit();
+    fixture.componentInstance.bulkPaste.set('Alice@X.test\nalice@x.test');
+    fixture.componentInstance.loadBulkPreview();
+
+    // Only one row survives — the server would skip the duplicate anyway,
+    // and showing one is clearer than two identical preview rows.
+    expect(fixture.componentInstance.bulkRows()).toHaveLength(1);
+  });
+
+  it('rejects > 100 rows client-side with a clear over-cap indicator', async () => {
+    const { fixture } = configure({ invitesAvailable: true });
+    await fixture.componentInstance.ngOnInit();
+    const paste = Array.from({ length: 101 }, (_, i) => `user${i}@x.test`).join('\n');
+    fixture.componentInstance.bulkPaste.set(paste);
+    fixture.componentInstance.loadBulkPreview();
+
+    expect(fixture.componentInstance.bulkRows().length).toBe(101);
+    expect(fixture.componentInstance.bulkOverCap()).toBe(true);
+    expect(fixture.componentInstance.bulkCanSubmit()).toBe(false);
+  });
+
+  it('fix-in-place: editing the role re-validates the row', async () => {
+    const { fixture } = configure({ invitesAvailable: true });
+    await fixture.componentInstance.ngOnInit();
+    fixture.componentInstance.bulkPaste.set('alice@x.test,Wizard');
+    fixture.componentInstance.loadBulkPreview();
+    const rowId = fixture.componentInstance.bulkRows()[0].id;
+
+    // Before: unknown role
+    expect(fixture.componentInstance.bulkErrorCount()).toBe(1);
+
+    // Operator picks a real role from the row dropdown.
+    fixture.componentInstance.updateBulkRowRole(rowId, 'r1');
+    expect(fixture.componentInstance.bulkErrorCount()).toBe(0);
+    expect(fixture.componentInstance.bulkRows()[0].rawRoleLabel).toBeNull();
+  });
+
+  it('submits the partitioned bulk payload and renders per-reason result', async () => {
+    const { fixture, backend } = configure({ invitesAvailable: true });
+    backend.inviteMembersBulkFor.mockResolvedValueOnce({
+      invited: [{ email: 'alice@x.test', userId: 'uA', roleId: 'r1' }],
+      skipped: [{ email: 'bob@x.test', reason: 'already_member' }],
+      errored: [{ email: 'carol@x.test', reason: 'unknown_user' }],
+    });
+
+    await fixture.componentInstance.ngOnInit();
+    fixture.componentInstance.bulkPaste.set('alice@x.test\nbob@x.test\ncarol@x.test');
+    fixture.componentInstance.loadBulkPreview();
+    await fixture.componentInstance.submitBulk();
+
+    expect(backend.inviteMembersBulkFor).toHaveBeenCalledWith('c1', 'p1', {
+      invites: [
+        { email: 'alice@x.test', roleId: 'r1' },
+        { email: 'bob@x.test', roleId: 'r1' },
+        { email: 'carol@x.test', roleId: 'r1' },
+      ],
+    });
+
+    const r = fixture.componentInstance.bulkResult();
+    expect(r?.invited.length).toBe(1);
+    expect(r?.skipped[0].reason).toBe('already_member');
+    expect(r?.errored[0].reason).toBe('unknown_user');
+
+    // Errored > 0 flips the toast to the assertive/error channel so
+    // screen-reader users aren't told "all good" on a partial success.
+    const t = fixture.componentInstance.toast();
+    expect(t?.kind).toBe('error');
+    expect(t?.message).toContain('1 invited');
+    expect(t?.message).toContain('1 errored');
+  });
+
+  it('humanises reason codes in the result rendering', async () => {
+    const { fixture } = configure({ invitesAvailable: true });
+    await fixture.componentInstance.ngOnInit();
+    expect(fixture.componentInstance.describeReason('already_member')).toMatch(/already/i);
+    expect(fixture.componentInstance.describeReason('invalid_email')).toMatch(/invalid/i);
+    expect(fixture.componentInstance.describeReason('rate_limited')).toMatch(/rate limit/i);
+    // Forward-compat — unknown codes fall through rather than being dropped.
+    expect(fixture.componentInstance.describeReason('future_code')).toBe('future_code');
+  });
+
+  it('resetBulkState via Clear empties paste, rows, and result', async () => {
+    const { fixture } = configure({ invitesAvailable: true });
+    await fixture.componentInstance.ngOnInit();
+    fixture.componentInstance.bulkPaste.set('alice@x.test');
+    fixture.componentInstance.loadBulkPreview();
+    expect(fixture.componentInstance.bulkRows()).toHaveLength(1);
+
+    fixture.componentInstance.clearBulk();
+    expect(fixture.componentInstance.bulkPaste()).toBe('');
+    expect(fixture.componentInstance.bulkRows()).toHaveLength(0);
+    expect(fixture.componentInstance.bulkResult()).toBeNull();
+  });
+
+  it('opens drawer in single mode and toggles to bulk without dropping paste', async () => {
+    const { fixture } = configure({ invitesAvailable: true });
+    await fixture.componentInstance.ngOnInit();
+    const fakeTrigger = document.createElement('button');
+    fixture.componentInstance.openInvite({ currentTarget: fakeTrigger } as unknown as Event);
+    expect(fixture.componentInstance.inviteMode()).toBe('single');
+
+    fixture.componentInstance.setInviteMode('bulk');
+    fixture.componentInstance.bulkPaste.set('alice@x.test');
+    fixture.componentInstance.setInviteMode('single');
+    fixture.componentInstance.setInviteMode('bulk');
+    // Toggling modes must not wipe the textarea — the only reset points
+    // are drawer open and explicit Clear.
+    expect(fixture.componentInstance.bulkPaste()).toBe('alice@x.test');
   });
 });

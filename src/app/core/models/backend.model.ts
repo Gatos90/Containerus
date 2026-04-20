@@ -218,6 +218,39 @@ export interface InviteMemberRequest {
 }
 
 /**
+ * CON-135 / CON-120 — bulk invite request. The server caps the batch at
+ * `BULK_INVITE_MAX` (100); the UI enforces the same ceiling before submit so
+ * the operator sees the "split into batches" message without a round-trip.
+ */
+export interface BulkInviteRequest {
+  invites: InviteMemberRequest[];
+}
+
+export interface BulkInviteInvited {
+  email: string;
+  userId: string;
+  roleId: string;
+}
+
+export interface BulkInviteSkipped {
+  email: string;
+  /** Server-emitted reason code — e.g. `already_member`, `duplicate_in_payload`. */
+  reason: string;
+}
+
+export interface BulkInviteErrored {
+  email: string;
+  /** Server-emitted reason code — e.g. `invalid_email`, `invalid_role`, `unknown_user`, `rate_limited`. */
+  reason: string;
+}
+
+export interface BulkInviteResponse {
+  invited: BulkInviteInvited[];
+  skipped: BulkInviteSkipped[];
+  errored: BulkInviteErrored[];
+}
+
+/**
  * CON-115 §3.3 — pending invite issued from the People screen. Backend
  * GET/POST/DELETE `/api/projects/{id}/invites*` is a Phase-1 follow-up
  * (tracked in the BackendEngineer subtask spawned from CON-125); the
