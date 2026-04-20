@@ -23,7 +23,7 @@ use containerus_core::runtime::CommandBuilder;
 use crate::audit::{log_event, log_permission_denied, AuditCaller, AuditEvent};
 use crate::auth::jwt::decode_access_token;
 use crate::auth::middleware::container_acl_resource_id;
-use crate::auth::resolver::{self, ResolverInput};
+use crate::auth::resolver::{self, ResolverInput, ResourceAclView};
 use crate::db::models::SystemRow;
 use crate::AppState;
 
@@ -97,6 +97,33 @@ fn is_valid_container_id(s: &str) -> bool {
             .all(|c| c.is_alphanumeric() || c == '_' || c == '-' || c == '.')
 }
 
+/// Pure-logic core of the WS container-exec ACL check. Takes pre-loaded
+/// views so it is unit-testable without a database. Returns the resolver's
+/// decision verbatim; the async wrapper handles audit logging and wire
+/// responses.
+fn decide_container_exec(
+    is_company_admin: bool,
+    container_view: Option<&ResourceAclView>,
+    system_view: Option<&ResourceAclView>,
+) -> resolver::ResolvedPermission {
+    // Seed the resolver's role set with the single permission under test so a
+    // container/system ACL that neither denies nor allows falls through to an
+    // allow instead of a spurious default-deny. `wait_for_auth` already
+    // validated the role grant (or bypassed on `is_company_admin`).
+    let mut role_permissions = std::collections::HashSet::new();
+    role_permissions.insert("containers.exec".to_string());
+
+    let input = ResolverInput {
+        is_company_admin,
+        role_permissions: &role_permissions,
+        container_acl: container_view,
+        resource_acl: system_view,
+        env_override: None,
+    };
+
+    resolver::resolve(&input, "containers.exec")
+}
+
 /// CON-117: container-scoped `containers.exec` enforcement for the WebSocket
 /// terminal. Runs only when `enforce_acls = true`; the legacy role-only path
 /// in `wait_for_auth` remains the single source of truth when the flag is
@@ -108,6 +135,7 @@ async fn enforce_container_exec_acl(
     state: &AppState,
     caller: &AuditCaller,
     user_id: Uuid,
+    is_company_admin: bool,
     project_id: Uuid,
     environment_id: Uuid,
     system_id: Uuid,
@@ -147,25 +175,11 @@ async fn enforce_container_exec_acl(
         }
     };
 
-    // Getting here implies wait_for_auth already validated role-based
-    // `containers.exec` (or the caller is a company admin, in which case
-    // wait_for_auth skipped the role check and we treat them as bypassing
-    // the ACL stack the same way). Seed the resolver's role set with the
-    // single permission under test so a container/system ACL that neither
-    // denies nor allows falls through to an allow instead of a spurious
-    // default-deny.
-    let mut role_permissions = std::collections::HashSet::new();
-    role_permissions.insert("containers.exec".to_string());
-
-    let input = ResolverInput {
-        is_company_admin: false,
-        role_permissions: &role_permissions,
-        container_acl: container_view.as_ref(),
-        resource_acl: system_view.as_ref(),
-        env_override: None,
-    };
-
-    let resolved = resolver::resolve(&input, "containers.exec");
+    let resolved = decide_container_exec(
+        is_company_admin,
+        container_view.as_ref(),
+        system_view.as_ref(),
+    );
     if resolved.is_allowed() {
         Ok(())
     } else {
@@ -202,7 +216,7 @@ async fn handle_terminal_session(
     let (mut ws_sender, mut ws_receiver) = socket.split();
 
     // Phase 1: Wait for auth message (with timeout)
-    let (user_id, runtime_str, project_id, environment_id) = match tokio::time::timeout(
+    let (user_id, runtime_str, project_id, environment_id, is_company_admin) = match tokio::time::timeout(
         std::time::Duration::from_secs(30),
         wait_for_auth(&mut ws_sender, &mut ws_receiver, &state, system_id),
     )
@@ -265,6 +279,7 @@ async fn handle_terminal_session(
         ws_receiver,
         state.clone(),
         user_id,
+        is_company_admin,
         system_id,
         project_id,
         environment_id,
@@ -296,8 +311,8 @@ async fn wait_for_auth(
     ws_receiver: &mut futures_util::stream::SplitStream<WebSocket>,
     state: &AppState,
     system_id: Uuid,
-) -> Result<(Uuid, String, Uuid, Uuid), ()> {
-    // Returns (user_id, primary_runtime, project_id, environment_id)
+) -> Result<(Uuid, String, Uuid, Uuid, bool), ()> {
+    // Returns (user_id, primary_runtime, project_id, environment_id, is_company_admin)
     loop {
         match ws_receiver.next().await {
             Some(Ok(Message::Text(text))) => {
@@ -451,7 +466,7 @@ async fn wait_for_auth(
                             system_id
                         );
 
-                        return Ok((claims.sub, system.primary_runtime.clone(), project_id, environment_id));
+                        return Ok((claims.sub, system.primary_runtime.clone(), project_id, environment_id, claims.is_company_admin));
                     }
                 }
             }
@@ -506,6 +521,7 @@ async fn run_terminal_pty(
     mut ws_receiver: futures_util::stream::SplitStream<WebSocket>,
     state: AppState,
     user_id: Uuid,
+    is_company_admin: bool,
     system_id: Uuid,
     project_id: Uuid,
     environment_id: Uuid,
@@ -555,6 +571,7 @@ async fn run_terminal_pty(
                 &state,
                 &caller,
                 user_id,
+                is_company_admin,
                 project_id,
                 environment_id,
                 system_id,
@@ -721,4 +738,47 @@ async fn run_terminal_pty(
     drop(ws_write_tx);
     let _ = write_task.await;
     tracing::info!("PTY session ended: {} for system {}", session_id, system_id);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::auth::resolver::{Decision, DecisionReason};
+
+    fn acl_view(extra: &[&str], denied: &[&str]) -> ResourceAclView {
+        ResourceAclView {
+            extra_permissions: extra.iter().map(|s| s.to_string()).collect(),
+            denied_permissions: denied.iter().map(|s| s.to_string()).collect(),
+        }
+    }
+
+    // CON-117 B1: company admin with a container-scoped `containers.exec`
+    // deny must still be allowed on the WS exec path, matching the REST
+    // `require_for_container` contract. Prior to the fix the WS helper
+    // hardcoded `is_company_admin: false` and returned
+    // `DecisionReason::ContainerAclDeny`.
+    #[test]
+    fn company_admin_bypasses_container_deny_on_ws_path() {
+        let container = acl_view(&[], &["containers.exec"]);
+        let resolved = decide_container_exec(true, Some(&container), None);
+        assert_eq!(resolved.decision, Decision::Allow);
+        assert_eq!(resolved.reason, DecisionReason::CompanyAdmin);
+    }
+
+    #[test]
+    fn non_admin_still_blocked_by_container_deny_on_ws_path() {
+        let container = acl_view(&[], &["containers.exec"]);
+        let resolved = decide_container_exec(false, Some(&container), None);
+        assert_eq!(resolved.decision, Decision::Deny);
+        assert_eq!(resolved.reason, DecisionReason::ContainerAclDeny);
+    }
+
+    #[test]
+    fn non_admin_allowed_when_no_acls_override_role_grant() {
+        // `wait_for_auth` already confirmed the role grant; absent any ACL
+        // layer we expect the resolver to fall through to the role-level
+        // allow, not a spurious default-deny.
+        let resolved = decide_container_exec(false, None, None);
+        assert_eq!(resolved.decision, Decision::Allow);
+    }
 }
