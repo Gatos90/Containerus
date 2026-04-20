@@ -12,6 +12,7 @@ use uuid::Uuid;
 use crate::audit::log_action;
 use crate::auth::middleware::{AuthUser, ProjectScoped};
 use crate::db::models::{Project, ProjectMemberResponse};
+use crate::ws::events::{InvalidationScope, PermissionEvent};
 use crate::AppState;
 
 pub fn router() -> Router<AppState> {
@@ -596,6 +597,13 @@ async fn invite_member(
 
     log_action(&state.db, Some(project_id), Some(scoped.claims.sub), "member.invite", "member", Some(&target_user_id.to_string()), Some(serde_json::json!({"role_id": req.role_id.to_string()})), scoped.client_ip.as_deref(), None).await;
 
+    // CON-122: notify the newly-added user so any live session picks
+    // up the project membership without a reload.
+    state.permission_events.publish(
+        target_user_id,
+        PermissionEvent::invalidated(InvalidationScope::Member, Some(project_id)),
+    );
+
     Ok((
         StatusCode::CREATED,
         Json(json!({ "message": "Member added successfully" })),
@@ -690,6 +698,12 @@ async fn update_member_role(
 
     log_action(&state.db, Some(project_id), Some(scoped.claims.sub), "member.role_update", "member", Some(&target_user_id.to_string()), Some(serde_json::json!({"role_id": req.role_id.to_string()})), scoped.client_ip.as_deref(), None).await;
 
+    // CON-122: the affected user's effective permissions just changed.
+    state.permission_events.publish(
+        target_user_id,
+        PermissionEvent::invalidated(InvalidationScope::Member, Some(project_id)),
+    );
+
     Ok(Json(json!({ "message": "Role updated successfully" })))
 }
 
@@ -780,6 +794,14 @@ async fn remove_member(
     }
 
     log_action(&state.db, Some(project_id), Some(scoped.claims.sub), "member.remove", "member", Some(&target_user_id.to_string()), None, scoped.client_ip.as_deref(), None).await;
+
+    // CON-122: the removed user's permissions just collapsed for this
+    // project. Fire an invalidation so any live session re-renders and
+    // drops access-gated UI.
+    state.permission_events.publish(
+        target_user_id,
+        PermissionEvent::invalidated(InvalidationScope::Member, Some(project_id)),
+    );
 
     Ok(Json(json!({ "message": "Member removed successfully" })))
 }

@@ -12,6 +12,7 @@ use uuid::Uuid;
 
 use crate::auth::middleware::ProjectScoped;
 use crate::db::models::ResourceAcl;
+use crate::ws::events::{InvalidationScope, PermissionEvent};
 use crate::AppState;
 
 // ============================================================================
@@ -261,6 +262,14 @@ async fn create_acl(
         (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": "Internal server error" })))
     })?;
 
+    // CON-122: the target user's resolved permissions for this project
+    // just changed. Publish so any live session refetches before the
+    // user hits a 403.
+    state.permission_events.publish(
+        acl.user_id,
+        PermissionEvent::invalidated(InvalidationScope::Acl, Some(project_id)),
+    );
+
     Ok((StatusCode::CREATED, Json(acl)))
 }
 
@@ -350,6 +359,13 @@ async fn update_acl(
     })?
     .ok_or_else(|| (StatusCode::NOT_FOUND, Json(json!({ "error": "ACL entry not found" }))))?;
 
+    // CON-122: same fanout as create — the ACL row drives resolver
+    // overrides for this user, so any change invalidates their cache.
+    state.permission_events.publish(
+        acl.user_id,
+        PermissionEvent::invalidated(InvalidationScope::Acl, Some(project_id)),
+    );
+
     Ok(Json(acl))
 }
 
@@ -366,21 +382,32 @@ async fn delete_acl(
 
     let project_id = scoped.project_id;
 
-    let result = sqlx::query(
-        "DELETE FROM resource_acls WHERE id = $1 AND project_id = $2",
+    // CON-122: capture the affected user_id before the row is gone so
+    // we can publish the invalidation after the delete succeeds.
+    let deleted_user_id: Option<Uuid> = sqlx::query_scalar(
+        r#"
+        DELETE FROM resource_acls
+        WHERE id = $1 AND project_id = $2
+        RETURNING user_id
+        "#,
     )
     .bind(acl_id)
     .bind(project_id)
-    .execute(&state.db)
+    .fetch_optional(&state.db)
     .await
     .map_err(|e| {
         tracing::error!("Failed to delete resource ACL: {e}");
         (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": "Internal server error" })))
     })?;
 
-    if result.rows_affected() == 0 {
-        return Err((StatusCode::NOT_FOUND, Json(json!({ "error": "ACL entry not found" }))));
-    }
+    let user_id = deleted_user_id.ok_or_else(|| {
+        (StatusCode::NOT_FOUND, Json(json!({ "error": "ACL entry not found" })))
+    })?;
+
+    state.permission_events.publish(
+        user_id,
+        PermissionEvent::invalidated(InvalidationScope::Acl, Some(project_id)),
+    );
 
     Ok(Json(json!({ "message": "ACL entry deleted successfully" })))
 }
