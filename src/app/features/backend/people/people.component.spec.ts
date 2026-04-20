@@ -438,4 +438,51 @@ describe('PeopleComponent', () => {
     // are drawer open and explicit Clear.
     expect(fixture.componentInstance.bulkPaste()).toBe('alice@x.test');
   });
+
+  // CON-135 a11y review fixes ---------------------------------------------
+
+  it('radiogroup arrow/Home/End keydown cycles invite mode', async () => {
+    const { fixture } = configure({ invitesAvailable: true });
+    await fixture.componentInstance.ngOnInit();
+    expect(fixture.componentInstance.inviteMode()).toBe('single');
+
+    const fire = (key: string) => {
+      const ev = new KeyboardEvent('keydown', { key, cancelable: true });
+      fixture.componentInstance.onInviteModeKeydown(ev);
+      return ev;
+    };
+
+    const right = fire('ArrowRight');
+    expect(right.defaultPrevented).toBe(true);
+    expect(fixture.componentInstance.inviteMode()).toBe('bulk');
+
+    // Wraps back to 'single' from the last option.
+    fire('ArrowRight');
+    expect(fixture.componentInstance.inviteMode()).toBe('single');
+
+    fire('End');
+    expect(fixture.componentInstance.inviteMode()).toBe('bulk');
+
+    fire('Home');
+    expect(fixture.componentInstance.inviteMode()).toBe('single');
+
+    // Unrelated keys are a no-op and don't preventDefault.
+    const tab = fire('Tab');
+    expect(tab.defaultPrevented).toBe(false);
+    expect(fixture.componentInstance.inviteMode()).toBe('single');
+  });
+
+  it('removeBulkRow drops the row (focus-restore event arg is optional)', async () => {
+    const { fixture } = configure({ invitesAvailable: true });
+    await fixture.componentInstance.ngOnInit();
+    fixture.componentInstance.bulkPaste.set('alice@x.test\nbob@x.test');
+    fixture.componentInstance.loadBulkPreview();
+    const [first] = fixture.componentInstance.bulkRows();
+
+    // No event arg — back-compat path, no focus restoration attempted.
+    fixture.componentInstance.removeBulkRow(first.id);
+    const remaining = fixture.componentInstance.bulkRows();
+    expect(remaining).toHaveLength(1);
+    expect(remaining[0].email).toBe('bob@x.test');
+  });
 });

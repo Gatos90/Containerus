@@ -2,9 +2,11 @@ import {
   ChangeDetectionStrategy,
   Component,
   computed,
+  ElementRef,
   inject,
   OnInit,
   signal,
+  viewChild,
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { CommonModule } from '@angular/common';
@@ -146,6 +148,18 @@ export class PeopleComponent implements OnInit {
    * they have a list to import, so no existing workflow is re-routed.
    */
   readonly inviteMode = signal<'single' | 'bulk'>('single');
+
+  /**
+   * CON-135 a11y — template refs for focus management:
+   *   - `inviteModeGroup`: the radiogroup wrapper; we focus() the matching
+   *     child radio after an Arrow/Home/End keystroke so keyboard users see
+   *     the roving-tabindex follow their navigation.
+   *   - `loadPreviewBtn`: focus fallback when the last preview row is
+   *     deleted (the Clear button disappears with the rows, so it can't be
+   *     the target). Matches the a11y reviewer's recommendation.
+   */
+  private readonly inviteModeGroup = viewChild<ElementRef<HTMLElement>>('inviteModeGroup');
+  private readonly loadPreviewBtn = viewChild<ElementRef<HTMLButtonElement>>('loadPreviewBtn');
 
   /** CON-135 — raw textarea content. Re-parsed into `bulkRows` on demand. */
   readonly bulkPaste = signal('');
@@ -337,6 +351,50 @@ export class PeopleComponent implements OnInit {
     if (mode === 'single') {
       this.bulkSubmitError.set(null);
     }
+  }
+
+  /**
+   * CON-135 a11y — radiogroup arrow-key nav. The two modes are mutually
+   * exclusive, so we follow the standard WAI-ARIA Radio Group pattern:
+   * ArrowLeft/ArrowRight cycle (wrapping), Home = first, End = last. The
+   * newly-selected radio is focused so the roving-tabindex follows the
+   * keystroke — without this, focus stays on a now-untabbable radio.
+   */
+  onInviteModeKeydown(event: KeyboardEvent): void {
+    const order: ReadonlyArray<'single' | 'bulk'> = ['single', 'bulk'];
+    const current = this.inviteMode();
+    const idx = order.indexOf(current);
+    let next: 'single' | 'bulk' | null = null;
+    switch (event.key) {
+      case 'ArrowRight':
+      case 'ArrowDown':
+        next = order[(idx + 1) % order.length];
+        break;
+      case 'ArrowLeft':
+      case 'ArrowUp':
+        next = order[(idx - 1 + order.length) % order.length];
+        break;
+      case 'Home':
+        next = order[0];
+        break;
+      case 'End':
+        next = order[order.length - 1];
+        break;
+      default:
+        return;
+    }
+    event.preventDefault();
+    if (next === current) return;
+    this.setInviteMode(next);
+    // setTimeout so we run after the OnPush re-render flips tabindex; both
+    // radios are always mounted, so we can focus the target directly by
+    // data-attr selector within the group.
+    const group = this.inviteModeGroup()?.nativeElement;
+    if (!group) return;
+    setTimeout(() => {
+      const target = group.querySelector<HTMLElement>(`[data-invite-mode="${next}"]`);
+      target?.focus();
+    });
   }
 
   private resetBulkState(): void {
@@ -663,8 +721,31 @@ export class PeopleComponent implements OnInit {
     );
   }
 
-  removeBulkRow(id: number): void {
+  /**
+   * CON-135 a11y — row removal focus management. Deleting the focused row
+   * drops focus to `<body>` on AT, which loses the operator's place. We
+   * restore focus to the next sibling row's delete button (same index in
+   * the new list), or the last row if the deleted one was last, or the
+   * `Load preview` button as the final fallback when no rows remain (the
+   * `Clear` button disappears with the rows, so it can't be the target).
+   */
+  removeBulkRow(id: number, event?: MouseEvent): void {
+    const rows = this.bulkRows();
+    const removedIdx = rows.findIndex(r => r.id === id);
     this.bulkRows.update(list => list.filter(row => row.id !== id));
+    if (!event || removedIdx < 0) return;
+    const tbody = (event.currentTarget as HTMLElement | null)?.closest('tbody');
+    setTimeout(() => {
+      const remaining = this.bulkRows().length;
+      if (remaining === 0) {
+        this.loadPreviewBtn()?.nativeElement.focus();
+        return;
+      }
+      const buttons = tbody?.querySelectorAll<HTMLButtonElement>('[data-bulk-remove-row]');
+      if (!buttons || buttons.length === 0) return;
+      const targetIdx = Math.min(removedIdx, buttons.length - 1);
+      buttons[targetIdx]?.focus();
+    });
   }
 
   clearBulk(): void {

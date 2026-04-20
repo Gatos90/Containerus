@@ -215,19 +215,27 @@
         </button>
       </header>
 
-      <!-- CON-135: mode toggle. Radio semantics via `aria-pressed` on two
-           buttons so keyboard users can tab through both choices and the
-           active mode is announced. Single is the default so existing
-           Phase-1 workflows keep the same number of clicks. -->
+      <!-- CON-135: mode toggle as a proper radiogroup. The two modes are
+           mutually exclusive (exactly one active), so radio semantics are the
+           textbook fit — they convey "1 of 2" position and exclusivity that
+           independent `aria-pressed` buttons cannot. Roving tabindex: only
+           the checked radio is in the tab order; Arrow/Home/End cycle within
+           the group. Single is the default so existing Phase-1 workflows
+           keep the same number of clicks. -->
       <div
-        role="group"
+        #inviteModeGroup
+        role="radiogroup"
         aria-label="Invite mode"
         class="px-4 pt-4 pb-2 flex gap-2 text-sm"
+        (keydown)="onInviteModeKeydown($event)"
       >
         <button
           type="button"
+          role="radio"
+          data-invite-mode="single"
           (click)="setInviteMode('single')"
-          [attr.aria-pressed]="inviteMode() === 'single'"
+          [attr.aria-checked]="inviteMode() === 'single'"
+          [attr.tabindex]="inviteMode() === 'single' ? 0 : -1"
           class="px-3 py-1 rounded-lg border"
           [class.bg-blue-600]="inviteMode() === 'single'"
           [class.text-white]="inviteMode() === 'single'"
@@ -238,8 +246,11 @@
         >Single</button>
         <button
           type="button"
+          role="radio"
+          data-invite-mode="bulk"
           (click)="setInviteMode('bulk')"
-          [attr.aria-pressed]="inviteMode() === 'bulk'"
+          [attr.aria-checked]="inviteMode() === 'bulk'"
+          [attr.tabindex]="inviteMode() === 'bulk' ? 0 : -1"
           class="px-3 py-1 rounded-lg border"
           [class.bg-blue-600]="inviteMode() === 'bulk'"
           [class.text-white]="inviteMode() === 'bulk'"
@@ -348,6 +359,7 @@
             <div class="flex flex-wrap items-center gap-2">
               <button
                 type="button"
+                #loadPreviewBtn
                 (click)="loadBulkPreview()"
                 class="px-3 py-1 text-xs rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-100 border border-zinc-700"
               >Load preview</button>
@@ -357,12 +369,14 @@
               >
                 <lucide-icon [img]="Upload" [size]="12" aria-hidden="true" />
                 Upload CSV
+                <!-- Accessible name comes from the wrapping <label>'s "Upload CSV"
+                     text (implicit association). Adding an aria-label here would
+                     override that and some VO/NVDA combos read it twice. -->
                 <input
                   type="file"
                   accept=".csv,text/csv,text/plain"
                   class="sr-only"
                   (change)="onBulkFileChange($event)"
-                  aria-label="Upload CSV file"
                 />
               </label>
 
@@ -429,6 +443,7 @@
                             (ngModelChange)="updateBulkRowEmail(v.row.id, $event)"
                             [attr.name]="'bulk-email-' + v.row.id"
                             [attr.aria-invalid]="v.issues.includes('invalid_email') ? 'true' : null"
+                            [attr.aria-describedby]="v.issues.length ? 'bulk-issues-' + v.row.id : null"
                             class="w-full bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-sm text-zinc-100 normal-case tracking-normal"
                           />
                         </td>
@@ -440,6 +455,7 @@
                             (ngModelChange)="updateBulkRowRole(v.row.id, $event)"
                             [attr.name]="'bulk-role-' + v.row.id"
                             [attr.aria-invalid]="(v.issues.includes('unknown_role') || v.issues.includes('missing_role')) ? 'true' : null"
+                            [attr.aria-describedby]="v.issues.length ? 'bulk-issues-' + v.row.id : null"
                             class="w-full bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-sm text-zinc-100 normal-case tracking-normal"
                           >
                             <option value="" disabled>— Select role —</option>
@@ -452,7 +468,11 @@
                           @if (v.issues.length === 0) {
                             <span class="text-emerald-300">OK</span>
                           } @else {
-                            <ul class="space-y-0.5">
+                            <!-- CON-135 a11y: deterministic id so the email + role
+                                 inputs can reference this list via aria-describedby
+                                 and SRs announce *why* the field is invalid without
+                                 forcing the user to tab out to the Issues column. -->
+                            <ul [attr.id]="'bulk-issues-' + v.row.id" class="space-y-0.5">
                               @for (iss of v.issues; track iss) {
                                 <li class="text-red-300">
                                   {{ describeIssue(iss) }}@if (iss === 'unknown_role' && v.row.rawRoleLabel) {
@@ -466,7 +486,9 @@
                         <td class="px-3 py-1.5 text-right">
                           <button
                             type="button"
-                            (click)="removeBulkRow(v.row.id)"
+                            data-bulk-remove-row
+                            [attr.data-row-id]="v.row.id"
+                            (click)="removeBulkRow(v.row.id, $event)"
                             class="text-zinc-400 hover:text-red-400 p-1 rounded hover:bg-zinc-800"
                             [attr.aria-label]="'Remove row for ' + (v.row.email || '(empty)')"
                           >
