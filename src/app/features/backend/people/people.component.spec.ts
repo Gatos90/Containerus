@@ -182,6 +182,74 @@ describe('PeopleComponent', () => {
     expect(t?.message).toContain('Sessions revoked');
   });
 
+  it('routes success and error toasts through separate live regions', async () => {
+    const { fixture, backend } = configure({ invitesAvailable: true, currentUserId: 'someone-else' });
+    await fixture.componentInstance.ngOnInit();
+
+    await fixture.componentInstance.reactivateMember(MEMBERS[1]);
+    // Success goes to the polite region; the assertive region stays empty so
+    // SR doesn't re-announce the previous error (if any) on this update.
+    expect(fixture.componentInstance.politeAnnouncement()).toContain('reactivated');
+    expect(fixture.componentInstance.assertiveAnnouncement()).toBe('');
+
+    backend.setUserActiveFor.mockRejectedValueOnce(new Error('nope'));
+    await fixture.componentInstance.reactivateMember(MEMBERS[0]);
+    expect(fixture.componentInstance.assertiveAnnouncement()).toContain('nope');
+    expect(fixture.componentInstance.politeAnnouncement()).toBe('');
+  });
+
+  it('moves focus to the Reactivate button after a successful deactivate', async () => {
+    const { fixture } = configure({ invitesAvailable: true, currentUserId: 'someone-else' });
+    await fixture.componentInstance.ngOnInit();
+
+    // Stand in for the freshly-rendered Reactivate button. AppModalDirective
+    // would restore focus to the (now-removed) Deactivate button and silently
+    // fail; the override should target the Reactivate button for this row
+    // by matching its aria-label via document-level query.
+    const stub = document.createElement('button');
+    stub.setAttribute('aria-label', `Reactivate ${MEMBERS[0].email}`);
+    document.body.appendChild(stub);
+    try {
+      const focusSpy = vi.spyOn(stub, 'focus');
+      fixture.componentInstance.openDeactivateConfirm(
+        MEMBERS[0],
+        { currentTarget: document.createElement('button') } as unknown as Event,
+      );
+      await fixture.componentInstance.onDeactivateConfirmed();
+      // Let the setTimeout(0) override fire. Using real timers because fake
+      // timers interact badly with the directive's cleanup microtask that we
+      // rely on racing against.
+      await new Promise(resolve => setTimeout(resolve, 0));
+      expect(focusSpy).toHaveBeenCalled();
+    } finally {
+      stub.remove();
+    }
+  });
+
+  it('does not move focus when the deactivate request fails', async () => {
+    const { fixture, backend } = configure({ invitesAvailable: true, currentUserId: 'someone-else' });
+    backend.setUserActiveFor.mockRejectedValueOnce(new Error('boom'));
+    await fixture.componentInstance.ngOnInit();
+
+    const stub = document.createElement('button');
+    stub.setAttribute('aria-label', `Reactivate ${MEMBERS[0].email}`);
+    document.body.appendChild(stub);
+    try {
+      const focusSpy = vi.spyOn(stub, 'focus');
+      fixture.componentInstance.openDeactivateConfirm(
+        MEMBERS[0],
+        { currentTarget: document.createElement('button') } as unknown as Event,
+      );
+      await fixture.componentInstance.onDeactivateConfirmed();
+      await new Promise(resolve => setTimeout(resolve, 0));
+      // Failure path keeps the modal open for the user to retry or cancel —
+      // the focus override must not fire.
+      expect(focusSpy).not.toHaveBeenCalled();
+    } finally {
+      stub.remove();
+    }
+  });
+
   it('reactivates with a single tap (no confirm) and announces success', async () => {
     const { fixture, backend } = configure({ invitesAvailable: true, currentUserId: 'someone-else' });
     await fixture.componentInstance.ngOnInit();

@@ -8,13 +8,28 @@
       class="bg-zinc-900 border border-zinc-700 rounded-xl p-4 w-[22rem] max-w-[calc(100vw-2rem)] shadow-xl cx-modal-panel focus:outline-none"
       appModal
       [attr.aria-labelledby]="titleId"
+      [attr.aria-describedby]="descriptionId"
       (modalClose)="onCancel()"
       (click)="$event.stopPropagation()"
     >
       <h3 [id]="titleId" class="text-sm font-medium mb-2 text-zinc-100">
         {{ title() }}
       </h3>
-      <p class="text-sm text-zinc-400 mb-4 whitespace-pre-line">{{ message() }}</p>
+      <div [id]="descriptionId" class="mb-4 space-y-2">
+        @if (message()) {
+          <p class="text-sm text-zinc-400 whitespace-pre-line">{{ message() }}</p>
+        }
+        @if (consequences().length > 0) {
+          <ul role="list" class="text-sm text-zinc-400 list-disc pl-5 space-y-0.5">
+            @for (c of consequences(); track c) {
+              <li>{{ c }}</li>
+            }
+          </ul>
+        }
+        @if (note()) {
+          <p class="text-sm text-zinc-400">{{ note() }}</p>
+        }
+      </div>
       <div class="flex justify-end gap-2">
         <app-button
           variant="secondary"

@@ -61,7 +61,10 @@
           </thead>
           <tbody>
             @for (m of members(); track m.userId) {
-              <tr class="border-b border-zinc-800/50" [class.opacity-60]="m.isActive === false">
+              <!-- CON-134: state is communicated by the Status pill + Reactivate action;
+                   avoid opacity-60 on the full row because it drops text-zinc-400 email
+                   contrast below AA (~3.4:1) over bg-zinc-900. -->
+              <tr class="border-b border-zinc-800/50">
                 <td class="px-3 py-2 text-zinc-200">{{ m.displayName || m.email }}</td>
                 <td class="px-3 py-2 text-zinc-400">{{ m.email }}</td>
                 <td class="px-3 py-2 text-zinc-300">{{ m.roleName }}</td>
@@ -570,20 +573,21 @@
   </app-drawer-dialog>
 
   <!-- CON-134: destructive confirm for Deactivate. Names the target user and
-       lists the server-side side-effects (sessions, MFA) so admins aren't
-       surprised. Whitespace-pre-line in confirm-dialog lets \n be a break. -->
+       lists the server-side side-effects as a real <ul role="list"> (via the
+       consequences input) so screen readers expose list semantics instead of
+       flattening bullet glyphs into one sentence. -->
   @if (deactivateTarget(); as target) {
     <app-confirm-dialog
       [open]="deactivateOpen()"
       variant="destructive"
       title="Deactivate user?"
-      [message]="
-        'Deactivating ' + target.email + ' will:' +
-        '\n• revoke all of their active sessions' +
-        '\n• clear their MFA secrets and backup codes' +
-        '\n• deny login until an admin reactivates the account' +
-        '\n\nResource access grants (ACLs) are preserved, so reactivation restores prior project access.'
-      "
+      [message]="'Deactivating ' + target.email + ' will:'"
+      [consequences]="[
+        'revoke all of their active sessions',
+        'clear their MFA secrets and backup codes',
+        'deny login until an admin reactivates the account'
+      ]"
+      note="Resource access grants (ACLs) are preserved, so reactivation restores prior project access."
       confirmText="Deactivate"
       cancelText="Cancel"
       [busy]="deactivateBusy()"
@@ -592,17 +596,28 @@
     />
   }
 
-  <!-- CON-134: status announcement. Polite for success, assertive for errors.
-       Fixed to the viewport corner so it doesn't shift the members table. -->
+  <!-- CON-134: always-present live regions — one polite, one assertive — so
+       success and error announcements each come from a stable node. Swapping
+       role/aria-live on a persistent node caused NVDA to drop subsequent
+       announcements; keeping both mounted and only mutating text is the
+       reliable pattern. The visual toast below is purely presentational. -->
+  <div role="status" aria-live="polite" aria-atomic="true" class="sr-only">
+    {{ politeAnnouncement() }}
+  </div>
+  <div role="alert" aria-live="assertive" aria-atomic="true" class="sr-only">
+    {{ assertiveAnnouncement() }}
+  </div>
+
   @if (toast(); as t) {
     <div
-      [attr.role]="t.kind === 'error' ? 'alert' : 'status'"
-      [attr.aria-live]="t.kind === 'error' ? 'assertive' : 'polite'"
       class="fixed bottom-4 right-4 bg-zinc-900 border rounded-lg shadow-lg px-3 py-2 flex items-center gap-3 text-sm text-zinc-100 max-w-[calc(100vw-2rem)]"
       [class.border-red-700]="t.kind === 'error'"
       [class.border-zinc-700]="t.kind !== 'error'"
     >
-      <span>{{ t.message }}</span>
+      <!-- aria-hidden so SR users hear one announcement from the live region
+           above rather than a duplicate when tabbing past this node. The
+           Dismiss button below keeps its own accessible name. -->
+      <span aria-hidden="true">{{ t.message }}</span>
       <button
         type="button"
         (click)="dismissToast()"

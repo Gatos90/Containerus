@@ -177,6 +177,21 @@ export class PeopleComponent implements OnInit {
   readonly toast = signal<StatusToast | null>(null);
   private toastTimer: ReturnType<typeof setTimeout> | null = null;
 
+  /**
+   * A11y: mount two *always-present* sr-only live regions — one polite, one
+   * assertive — and route each toast to the matching one. Swapping
+   * role/aria-live on a single persistent node (the previous approach)
+   * caused NVDA to drop the second announcement when the kind changed.
+   * Keeping both nodes mounted and only mutating their text is the stable
+   * pattern.
+   */
+  readonly politeAnnouncement = computed(() =>
+    this.toast()?.kind === 'success' ? (this.toast()?.message ?? '') : '',
+  );
+  readonly assertiveAnnouncement = computed(() =>
+    this.toast()?.kind === 'error' ? (this.toast()?.message ?? '') : '',
+  );
+
   readonly roleById = computed(() => {
     const map = new Map<string, Role>();
     for (const r of this.roles()) map.set(r.id, r);
@@ -419,12 +434,29 @@ export class PeopleComponent implements OnInit {
     const member = this.deactivateTarget();
     if (!member) return;
     this.deactivateBusy.set(true);
+    let succeeded = false;
     try {
-      await this.setUserActive(member, false);
+      succeeded = await this.setUserActive(member, false);
       this.deactivateOpen.set(false);
       this.deactivateTarget.set(null);
     } finally {
       this.deactivateBusy.set(false);
+    }
+    // A11y: AppModalDirective restores focus to `previouslyFocused` (the
+    // Deactivate button), but that button is removed from the DOM as soon
+    // as `isActive` flips to false and the template swaps in Reactivate —
+    // the directive's queueMicrotask restore then silently fails and
+    // keyboard/SR users land on <body>. On success, move focus to the
+    // freshly-rendered Reactivate button for this row. setTimeout (macro)
+    // runs after the directive's cleanup microtask so we win the race.
+    if (succeeded) {
+      const email = member.email;
+      setTimeout(() => {
+        const next = Array.from(
+          document.querySelectorAll<HTMLElement>('button[aria-label]'),
+        ).find(b => b.getAttribute('aria-label') === `Reactivate ${email}`);
+        next?.focus();
+      }, 0);
     }
   }
 
@@ -438,9 +470,9 @@ export class PeopleComponent implements OnInit {
     await this.setUserActive(member, true);
   }
 
-  private async setUserActive(member: ProjectMember, isActive: boolean): Promise<void> {
+  private async setUserActive(member: ProjectMember, isActive: boolean): Promise<boolean> {
     const connectionId = this.connectionId();
-    if (!connectionId) return;
+    if (!connectionId) return false;
 
     this.markPending(member.userId, true);
     try {
@@ -458,11 +490,13 @@ export class PeopleComponent implements OnInit {
           ? `${member.email} reactivated.`
           : `${member.email} deactivated. Sessions revoked and MFA cleared.`,
       });
+      return true;
     } catch (e: any) {
       this.announceToast({
         kind: 'error',
         message: e?.message ?? `Failed to ${isActive ? 'reactivate' : 'deactivate'} ${member.email}.`,
       });
+      return false;
     } finally {
       this.markPending(member.userId, false);
     }
