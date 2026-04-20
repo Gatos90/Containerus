@@ -65,10 +65,24 @@ describe('K8sPodDrawerComponent manual-activation tablist', () => {
   it('Home and End reposition focus without committing activation', () => {
     const { drawer } = make();
     drawer.onTabKeydown({ key: 'End', preventDefault: vi.fn(), currentTarget: null } as unknown as KeyboardEvent, 'describe');
-    expect(drawer.focusedTab()).toBe('events');
+    expect(drawer.focusedTab()).toBe('metrics');
     expect(drawer.activeTab()).toBe('describe');
-    drawer.onTabKeydown({ key: 'Home', preventDefault: vi.fn(), currentTarget: null } as unknown as KeyboardEvent, 'events');
+    drawer.onTabKeydown({ key: 'Home', preventDefault: vi.fn(), currentTarget: null } as unknown as KeyboardEvent, 'metrics');
     expect(drawer.focusedTab()).toBe('describe');
     expect(drawer.activeTab()).toBe('describe');
+  });
+
+  it('tablist exposes the CON-136 Metrics tab as a roving target reachable by arrow keys', () => {
+    const { drawer, k8s } = make();
+    drawer.onTabKeydown({ key: 'ArrowLeft', preventDefault: vi.fn(), currentTarget: null } as unknown as KeyboardEvent, 'describe');
+    // ArrowLeft wraps to the last tab, which is now Metrics.
+    expect(drawer.focusedTab()).toBe('metrics');
+    expect(drawer.activeTab()).toBe('describe');
+    // Metrics tab activation is panel-owned polling — drawer should not
+    // invoke logs or events fetches when it is selected.
+    drawer.onTabKeydown({ key: 'Enter', preventDefault: vi.fn(), currentTarget: null } as unknown as KeyboardEvent, 'metrics');
+    expect(drawer.activeTab()).toBe('metrics');
+    expect(k8s.getPodLogsFor).not.toHaveBeenCalled();
+    expect(k8s.getResourceEventsFor).not.toHaveBeenCalled();
   });
 });

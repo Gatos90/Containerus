@@ -429,6 +429,45 @@ export interface K8sPod {
   containerNames?: string[];
 }
 
+/**
+ * CON-121 per-container stats sample, mirrored from the Rust
+ * `ContainerStatsSample`. All numeric fields already come normalised to
+ * bytes + percentages so the Phase-3 drawer (CON-136) can render without
+ * runtime-specific branches.
+ */
+export interface ContainerStatsSample {
+  timestampMs: number;
+  cpuPercent: number;
+  memoryBytes: number;
+  memoryLimitBytes: number;
+  memoryPercent: number;
+  netRxBytes: number;
+  netTxBytes: number;
+  blockReadBytes: number;
+  blockWriteBytes: number;
+}
+
+export type ContainerMetricsWindow = '1h' | '6h' | '24h';
+
+export interface ContainerMetricsResponse {
+  systemId: string;
+  containerId: string;
+  window: ContainerMetricsWindow;
+  maxPoints: number;
+  samples: ContainerStatsSample[];
+}
+
+/**
+ * Named failure reasons for the per-container metrics fetch. Reuses the
+ * CON-126 chip pattern — the drawer never renders the raw HTTP status; it
+ * maps it to a descriptor that the named-reason chip can present.
+ */
+export type MetricsUnavailableReason =
+  | 'unavailable'
+  | 'unauthorized'
+  | 'not_found'
+  | 'rate_limited';
+
 export interface K8sDeployment {
   name: string;
   namespace: string;

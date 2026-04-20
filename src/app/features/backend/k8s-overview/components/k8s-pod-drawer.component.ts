@@ -13,8 +13,9 @@ import {
 import { BackendK8sService } from '../../../../core/services/backend-k8s.service';
 import { K8sPod, K8sEvent, mapEvent } from '../../../../core/models/backend.model';
 import { DrawerDialogComponent } from '../../../../shared/components/a11y';
+import { PodMetricsPanelComponent } from './pod-metrics-panel.component';
 
-type PodTab = 'describe' | 'logs' | 'events';
+type PodTab = 'describe' | 'logs' | 'events' | 'metrics';
 
 /**
  * CON-131 §5 — pod drill-down slide-over with Describe / Logs / Events
@@ -30,7 +31,7 @@ type PodTab = 'describe' | 'logs' | 'events';
 @Component({
   selector: 'app-k8s-pod-drawer',
   standalone: true,
-  imports: [CommonModule, DrawerDialogComponent],
+  imports: [CommonModule, DrawerDialogComponent, PodMetricsPanelComponent],
   template: `
     <app-drawer-dialog
       [open]="open()"
@@ -139,6 +140,22 @@ type PodTab = 'describe' | 'logs' | 'events';
               </section>
             }
 
+            @if (activeTab() === 'metrics') {
+              <section
+                role="tabpanel"
+                [id]="panelId('metrics')"
+                [attr.aria-labelledby]="tabId('metrics')"
+                class="space-y-2"
+              >
+                <app-pod-metrics-panel
+                  [connectionId]="connectionId()"
+                  [systemId]="metricsSystemId()"
+                  [containerIds]="p.containerNames ?? []"
+                  [active]="open() && activeTab() === 'metrics'"
+                />
+              </section>
+            }
+
             @if (activeTab() === 'events') {
               <section
                 role="tabpanel"
@@ -187,8 +204,18 @@ export class K8sPodDrawerComponent {
   readonly pod = input<K8sPod | null>(null);
   readonly connectionId = input.required<string>();
   readonly clusterId = input.required<string>();
+  /**
+   * CON-136: container-runtime system UUID that owns the node this pod
+   * runs on. Optional because not every cluster has a registered
+   * runtime system today — when null, the Metrics tab renders the
+   * "Unavailable" named-reason chip instead of polling.
+   */
+  readonly systemId = input<string | null>(null);
   readonly restoreFocusTo = input<HTMLElement | null>(null);
   readonly close = output<void>();
+
+  /** Alias so the template reads naturally; lets us later swap in a resolver. */
+  readonly metricsSystemId = computed(() => this.systemId());
 
   readonly titleId = `k8s-pod-drawer-title-${Math.random().toString(36).slice(2, 9)}`;
 
@@ -196,6 +223,7 @@ export class K8sPodDrawerComponent {
     { key: 'describe', label: 'Describe' },
     { key: 'logs', label: 'Logs' },
     { key: 'events', label: 'Events' },
+    { key: 'metrics', label: 'Metrics' },
   ];
 
   readonly activeTab = signal<PodTab>('describe');

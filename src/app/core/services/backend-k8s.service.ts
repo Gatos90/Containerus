@@ -1,5 +1,7 @@
 import { Injectable } from '@angular/core';
 import {
+  ContainerMetricsResponse,
+  ContainerMetricsWindow,
   K8sCluster,
   K8sDeployment,
   K8sNamespace,
@@ -159,6 +161,34 @@ export class BackendK8sService {
       url: `${conn.serverUrl}/api/clusters/${clusterId}/namespaces/${namespace}/pods/${pod}/logs/stream${qs ? `?${qs}` : ''}`,
       token: conn.tokens.accessToken,
     };
+  }
+
+  // ---------- Container metrics (CON-121) ----------
+
+  /**
+   * Fetch the downsampled rolling buffer for a single container on a
+   * given system. Used by CON-136's pod-drawer Metrics tab. The endpoint
+   * is system-scoped (docker/podman/apple) — k8s pods are wired through
+   * by passing the system UUID that owns the node the pod runs on.
+   *
+   * Errors bubble up so the caller can branch on HTTP status into the
+   * named-reason chip (unauthorized / unavailable / not_found).
+   */
+  async getContainerMetricsFor(
+    connectionId: string,
+    systemId: string,
+    containerId: string,
+    window: ContainerMetricsWindow = '1h',
+    runtime?: 'docker' | 'podman' | 'apple',
+  ): Promise<ContainerMetricsResponse> {
+    const params = new URLSearchParams();
+    params.set('window', window);
+    if (runtime) params.set('runtime', runtime);
+    return this.backend.requestFor<ContainerMetricsResponse>(
+      connectionId,
+      'GET',
+      `/api/systems/${systemId}/containers/${encodeURIComponent(containerId)}/metrics?${params.toString()}`,
+    );
   }
 
   // ---------- Resource events ----------
