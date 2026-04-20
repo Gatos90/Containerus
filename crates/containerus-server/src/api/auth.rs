@@ -18,7 +18,7 @@ use crate::auth::middleware::AuthUser;
 use crate::db::models::UserResponse;
 use crate::AppState;
 
-use super::mfa;
+use super::{mfa, password as password_api};
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -28,6 +28,7 @@ pub fn router() -> Router<AppState> {
         .route("/refresh", post(refresh))
         .route("/me", axum::routing::get(me))
         .nest("/mfa", mfa::router())
+        .nest("/password", password_api::router())
 }
 
 // ============================================================================

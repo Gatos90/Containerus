@@ -62,3 +62,43 @@ pub fn client_ip(request: &Request<Body>) -> IpAddr {
         .and_then(|s| s.trim().parse().ok())
         .unwrap_or(IpAddr::from([0, 0, 0, 0]))
 }
+
+/// String-keyed sliding-window rate limiter.
+///
+/// Mirrors [`RateLimiter`] but keys on an arbitrary owned `String` so callers
+/// can throttle per normalised email, per user id, etc. Used by
+/// `/api/auth/password/reset/request` to apply a per-email ceiling on top of
+/// the generic per-IP limit attached to the whole `/api/auth` sub-router.
+#[derive(Clone)]
+pub struct KeyedRateLimiter {
+    state: Arc<DashMap<String, VecDeque<Instant>>>,
+    window: Duration,
+    max_requests: usize,
+}
+
+impl KeyedRateLimiter {
+    pub fn new(max_requests: usize, window: Duration) -> Self {
+        Self {
+            state: Arc::new(DashMap::new()),
+            window,
+            max_requests,
+        }
+    }
+
+    /// Returns `true` if the request keyed on `key` is within the limit and
+    /// records it; returns `false` if the limit has been exceeded.
+    pub fn check(&self, key: &str) -> bool {
+        let now = Instant::now();
+        let cutoff = now - self.window;
+
+        let mut entry = self.state.entry(key.to_owned()).or_default();
+        while entry.front().map(|&t| t < cutoff).unwrap_or(false) {
+            entry.pop_front();
+        }
+        if entry.len() >= self.max_requests {
+            return false;
+        }
+        entry.push_back(now);
+        true
+    }
+}

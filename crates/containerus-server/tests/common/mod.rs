@@ -142,6 +142,16 @@ impl TestHarness {
             k8s: ClusterManager::new(vault),
             permission_cache,
             revocation_cache: TokenRevocationCache::new(),
+            // Tests disable rate-limiting by setting a ceiling high enough to
+            // never trip in a single run (mirrors `auth_limiter` above).
+            password_reset_email_limiter: containerus_server::rate_limit::KeyedRateLimiter::new(
+                10_000,
+                std::time::Duration::from_secs(60),
+            ),
+            password_reset_ip_limiter: RateLimiter::new(
+                10_000,
+                std::time::Duration::from_secs(60),
+            ),
         };
 
         let auth_limiter = RateLimiter::new(10_000, std::time::Duration::from_secs(60));
@@ -354,7 +364,15 @@ pub async fn call(
         }
         None => Body::empty(),
     };
-    let request = builder.body(body).expect("build request");
+    let mut request = builder.body(body).expect("build request");
+    // Production wires this via `into_make_service_with_connect_info`; when
+    // driving the router directly with `oneshot`, handlers that take a
+    // `ConnectInfo<SocketAddr>` extractor (e.g. `/api/auth/password/*`) will
+    // 500 unless we install one ourselves. Use a loopback address so tests
+    // that do inspect the IP see something sensible.
+    request.extensions_mut().insert(axum::extract::ConnectInfo(
+        std::net::SocketAddr::from(([127, 0, 0, 1], 0)),
+    ));
     let response = router.clone().oneshot(request).await.expect("router");
     let status = response.status();
     let body_bytes = axum::body::to_bytes(response.into_body(), 10 * 1024 * 1024)

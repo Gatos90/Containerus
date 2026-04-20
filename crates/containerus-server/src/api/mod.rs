@@ -8,6 +8,7 @@ pub mod environments;
 pub mod files;
 pub mod health;
 pub mod mfa;
+pub mod password;
 pub mod projects;
 pub mod roles;
 pub mod sessions;

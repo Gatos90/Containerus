@@ -26,7 +26,7 @@ use tower_http::trace::TraceLayer;
 use tower_http::catch_panic::CatchPanicLayer;
 use uuid::Uuid;
 
-use rate_limit::RateLimiter;
+use rate_limit::{KeyedRateLimiter, RateLimiter};
 
 use config::ServerConfig;
 use connections::ConnectionManager;
@@ -43,6 +43,16 @@ pub struct AppState {
     pub k8s: ClusterManager,
     pub permission_cache: PermissionCache,
     pub revocation_cache: TokenRevocationCache,
+    /// Per-email rate limit for `POST /api/auth/password/reset/request`
+    /// (CON-118). Caps at 5 requests/hour per normalised email so the public
+    /// endpoint cannot be weaponised for enumeration or mail-bombing against
+    /// a single account. Sits on top of the blanket per-IP `auth_limiter`.
+    pub password_reset_email_limiter: KeyedRateLimiter,
+    /// Per-IP rate limit for `POST /api/auth/password/reset/request`. Tighter
+    /// than the blanket auth limiter (which is tuned for login) so a single
+    /// attacker cannot burn through reset attempts across many emails from
+    /// one host.
+    pub password_reset_ip_limiter: RateLimiter,
 }
 
 /// Build the full axum router (API + WebSocket + middleware stack) for the
@@ -150,6 +160,14 @@ pub async fn run() {
 
     let revocation_cache = TokenRevocationCache::new();
 
+    // Password reset throttles (CON-118). One-hour rolling windows so both
+    // limiters age out after a quiet period. Numbers match the ticket's
+    // acceptance criteria: "max 5/hour per email + per IP".
+    let password_reset_email_limiter =
+        KeyedRateLimiter::new(5, std::time::Duration::from_secs(3600));
+    let password_reset_ip_limiter =
+        RateLimiter::new(10, std::time::Duration::from_secs(3600));
+
     let state = AppState {
         db,
         config,
@@ -158,6 +176,8 @@ pub async fn run() {
         k8s,
         permission_cache,
         revocation_cache,
+        password_reset_email_limiter,
+        password_reset_ip_limiter,
     };
 
     // Background: cleanup idle SSH connections.
