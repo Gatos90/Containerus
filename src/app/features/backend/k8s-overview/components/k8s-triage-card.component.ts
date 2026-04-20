@@ -78,7 +78,14 @@ export class K8sTriageCardComponent {
   readonly ariaLabel = computed(() => {
     const parts: string[] = [this.headline()];
     const sub = this.sub();
-    if (sub) parts.push(sub);
+    if (sub) {
+      // Visual sub-lines use " · " (middle dot) as a separator. Screen
+      // readers read that glyph literally as "middle dot", so split on it
+      // and let the comma-joined aria-label carry each fragment cleanly.
+      for (const fragment of sub.split(/\s*·\s*/)) {
+        if (fragment) parts.push(fragment);
+      }
+    }
     const ready = this.readyCounts();
     if (ready) parts.push(`ready ${ready}`);
     const label = this.chipLabel() ?? this.status();

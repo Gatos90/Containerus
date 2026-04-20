@@ -39,10 +39,11 @@ import { FormsModule } from '@angular/forms';
         role="combobox"
         autocomplete="off"
         spellcheck="false"
+        aria-autocomplete="list"
         [attr.aria-controls]="listboxId"
         [attr.aria-expanded]="open()"
         aria-haspopup="listbox"
-        [attr.aria-activedescendant]="open() ? optionId(activeIndex()) : null"
+        [attr.aria-activedescendant]="activeDescendantId()"
         class="w-48 rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-100 placeholder:text-zinc-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-400"
         [placeholder]="allLabel"
         [value]="displayValue()"
@@ -125,6 +126,17 @@ export class K8sNamespaceFilterComponent {
     return `${this.listboxId}-opt-${index}`;
   }
 
+  /**
+   * Suppress `aria-activedescendant` whenever the filtered list is empty
+   * (type-ahead narrowed everything out) so the attribute never points at
+   * a non-existent id. NVDA/JAWS silently ignore dangling ids otherwise.
+   */
+  readonly activeDescendantId = computed(() => {
+    if (!this.open()) return null;
+    if (this.filteredOptions().length === 0) return null;
+    return this.optionId(this.activeIndex());
+  });
+
   onInput(event: Event): void {
     const value = (event.target as HTMLInputElement).value;
     this.query.set(value);
@@ -133,10 +145,12 @@ export class K8sNamespaceFilterComponent {
   }
 
   openList(): void {
-    this.query.set('');
+    // Preserve any prior query on refocus — wiping it on tab-back is
+    // disorienting. The displayValue() computed already falls back to the
+    // active namespace when `query` is empty.
     this.open.set(true);
     const active = this.activeNamespace() ?? '';
-    const idx = Math.max(0, this.options().findIndex((o) => o.value === active));
+    const idx = Math.max(0, this.filteredOptions().findIndex((o) => o.value === active));
     this.activeIndex.set(idx);
   }
 
@@ -169,14 +183,9 @@ export class K8sNamespaceFilterComponent {
           event.preventDefault();
           this.activeIndex.update((i) => Math.max(0, i - 1));
           return;
-        case 'Home':
-          event.preventDefault();
-          this.activeIndex.set(0);
-          return;
-        case 'End':
-          event.preventDefault();
-          this.activeIndex.set(max);
-          return;
+        // Home/End intentionally fall through to caret navigation: this is a
+        // text input first and a listbox second (APG allows either behavior
+        // for editable comboboxes; caret nav matches user expectation here).
         case 'Enter':
           event.preventDefault();
           this.activateIndex(this.activeIndex());

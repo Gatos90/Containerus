@@ -62,7 +62,7 @@ type PodTab = 'describe' | 'logs' | 'events';
                 [id]="tabId(t.key)"
                 [attr.aria-controls]="panelId(t.key)"
                 [attr.aria-selected]="activeTab() === t.key"
-                [attr.tabindex]="activeTab() === t.key ? 0 : -1"
+                [attr.tabindex]="focusedTab() === t.key ? 0 : -1"
                 class="rounded-t px-3 py-1.5 text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-400"
                 [class.text-zinc-100]="activeTab() === t.key"
                 [class.border-b-2]="activeTab() === t.key"
@@ -110,11 +110,17 @@ type PodTab = 'describe' | 'logs' | 'events';
             }
 
             @if (activeTab() === 'logs') {
+              <!--
+                tabindex="0" makes the scrollable log output reachable for
+                keyboard-only users — the inner <pre> overflows on long logs
+                and has no inherently focusable children.
+              -->
               <section
                 role="tabpanel"
                 [id]="panelId('logs')"
                 [attr.aria-labelledby]="tabId('logs')"
-                class="space-y-2"
+                tabindex="0"
+                class="space-y-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-400"
               >
                 @if (logsLoading()) {
                   <div class="text-xs text-zinc-500">Loading logs…</div>
@@ -133,7 +139,8 @@ type PodTab = 'describe' | 'logs' | 'events';
                 role="tabpanel"
                 [id]="panelId('events')"
                 [attr.aria-labelledby]="tabId('events')"
-                class="space-y-2"
+                tabindex="0"
+                class="space-y-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-400"
               >
                 @if (eventsLoading()) {
                   <div class="text-xs text-zinc-500">Loading events…</div>
@@ -188,6 +195,16 @@ export class K8sPodDrawerComponent {
 
   readonly activeTab = signal<PodTab>('describe');
 
+  /**
+   * Roving tabindex target — the tab the keyboard is currently parked on.
+   * Decoupled from `activeTab` so arrow-nav can move the focus ring across
+   * the tablist without triggering panel activation (and its lazy fetches).
+   * APG §Tabs "manual activation" pattern: arrows move focus, Enter/Space
+   * commits. Kept in sync with `activeTab` on commit so mouse click + keyboard
+   * selection converge on the same selected tab.
+   */
+  readonly focusedTab = signal<PodTab>('describe');
+
   readonly logs = signal<string>('');
   readonly logsLoading = signal(false);
   readonly logsError = signal<string | null>(null);
@@ -213,6 +230,7 @@ export class K8sPodDrawerComponent {
         this.events.set([]);
         this.eventsError.set(null);
         this.activeTab.set('describe');
+        this.focusedTab.set('describe');
       }
     });
   }
@@ -226,6 +244,7 @@ export class K8sPodDrawerComponent {
 
   setTab(tab: PodTab): void {
     this.activeTab.set(tab);
+    this.focusedTab.set(tab);
     if (tab === 'logs' && !this.logs() && !this.logsLoading()) {
       void this.loadLogs();
     }
@@ -234,21 +253,46 @@ export class K8sPodDrawerComponent {
     }
   }
 
+  /** Move the roving tabindex without committing — no panel load fires. */
+  private moveFocusTo(tab: PodTab, host: HTMLElement | null): void {
+    this.focusedTab.set(tab);
+    const container = host?.closest('[role="tablist"]');
+    const target = container?.querySelector<HTMLElement>(`#${this.tabId(tab)}`);
+    target?.focus();
+  }
+
+  /**
+   * Manual-activation tablist (WAI-ARIA APG §Tabs). Arrow/Home/End only
+   * reposition the roving tabindex so users can survey the tabs without
+   * firing the lazy log/event fetches bound to `setTab`. Enter/Space
+   * commits.
+   */
   onTabKeydown(event: KeyboardEvent, current: PodTab): void {
     const order = this.tabs.map((t) => t.key);
     const idx = order.indexOf(current);
-    if (event.key === 'ArrowRight') {
-      event.preventDefault();
-      this.setTab(order[(idx + 1) % order.length]);
-    } else if (event.key === 'ArrowLeft') {
-      event.preventDefault();
-      this.setTab(order[(idx - 1 + order.length) % order.length]);
-    } else if (event.key === 'Home') {
-      event.preventDefault();
-      this.setTab(order[0]);
-    } else if (event.key === 'End') {
-      event.preventDefault();
-      this.setTab(order[order.length - 1]);
+    const host = event.currentTarget as HTMLElement | null;
+    switch (event.key) {
+      case 'ArrowRight':
+        event.preventDefault();
+        this.moveFocusTo(order[(idx + 1) % order.length], host);
+        return;
+      case 'ArrowLeft':
+        event.preventDefault();
+        this.moveFocusTo(order[(idx - 1 + order.length) % order.length], host);
+        return;
+      case 'Home':
+        event.preventDefault();
+        this.moveFocusTo(order[0], host);
+        return;
+      case 'End':
+        event.preventDefault();
+        this.moveFocusTo(order[order.length - 1], host);
+        return;
+      case 'Enter':
+      case ' ':
+        event.preventDefault();
+        this.setTab(current);
+        return;
     }
   }
 

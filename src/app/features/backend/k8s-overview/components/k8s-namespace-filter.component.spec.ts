@@ -68,6 +68,33 @@ describe('K8sNamespaceFilterComponent', () => {
     expect(selectSpy).not.toHaveBeenCalled();
   });
 
+  it('activeDescendantId drops to null when type-ahead narrows the list to zero matches', () => {
+    filter.openList();
+    expect(filter.activeDescendantId()).not.toBeNull();
+    filter.onInput({ target: { value: 'does-not-exist' } } as unknown as Event);
+    expect(filter.filteredOptions()).toHaveLength(0);
+    expect(filter.activeDescendantId()).toBeNull();
+  });
+
+  it('Home and End do not intercept caret navigation on the editable input', () => {
+    filter.openList();
+    filter.activeIndex.set(2);
+    const preventSpy = vi.fn();
+    filter.onKeydown({ key: 'Home', preventDefault: preventSpy } as unknown as KeyboardEvent);
+    filter.onKeydown({ key: 'End', preventDefault: preventSpy } as unknown as KeyboardEvent);
+    expect(preventSpy).not.toHaveBeenCalled();
+    expect(filter.activeIndex()).toBe(2);
+  });
+
+  it('refocusing the input preserves any prior query text', () => {
+    filter.openList();
+    filter.onInput({ target: { value: 'prod' } } as unknown as Event);
+    // Simulate tab-back without an intervening close (e.g. mid-interaction
+    // where some other focus target did not dispatch an outside-click).
+    filter.openList();
+    expect(filter.query()).toBe('prod');
+  });
+
   it('displayValue shows the active namespace when closed and the query when open', () => {
     const f = make('prod-api', ['prod-api', 'prod-web']);
     expect(f.displayValue()).toBe('prod-api');

@@ -100,6 +100,17 @@ describe('K8sClusterSwitcherComponent', () => {
     expect(focusSpy).not.toHaveBeenCalled();
   });
 
+  it('activeDescendantId is null when the listbox is closed', () => {
+    expect(switcher.activeDescendantId()).toBeNull();
+  });
+
+  it('activeDescendantId is null when the cluster list is empty (no dangling id)', () => {
+    const s = makeSwitcher([], null);
+    s.openList();
+    expect(s.open()).toBe(true);
+    expect(s.activeDescendantId()).toBeNull();
+  });
+
   it('activeCluster falls back to the first option when the provided id is unknown', () => {
     const s = makeSwitcher([cluster('c1', 'alpha'), cluster('c2', 'beta')], 'missing');
     expect(s.activeCluster()?.id).toBe('c1');

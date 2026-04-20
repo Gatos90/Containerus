@@ -19,7 +19,12 @@
       (select)="onSelectNamespace($event)"
     />
     @if (loading()) {
-      <span class="text-xs text-zinc-500" aria-live="polite">Loading cluster…</span>
+      <!--
+        aria-live="off": the rollup announcer (`role="status"` above) already
+        reports state transitions. Leaving this polite would cause SRs to
+        double-chatter on fast cluster switches.
+      -->
+      <span class="text-xs text-zinc-500" aria-live="off">Loading cluster…</span>
     }
   </header>
 

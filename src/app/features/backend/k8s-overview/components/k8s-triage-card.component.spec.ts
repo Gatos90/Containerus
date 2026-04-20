@@ -30,6 +30,17 @@ describe('K8sTriageCardComponent', () => {
     expect(c.ariaLabel()).toBe('prod-api, namespace, ready 1/3, 2 failing');
   });
 
+  it('splits middle-dot separators in sub so SRs do not read "middle dot" verbatim', () => {
+    const c = make();
+    (c.headline as any) = () => 'payments-7c9';
+    (c.sub as any) = () => 'payments · node-3';
+    (c.status as any) = () => 'healthy';
+    (c.chipLabel as any) = () => 'Running';
+    (c.chipCount as any) = () => null;
+    (c.readyCounts as any) = () => null;
+    expect(c.ariaLabel()).toBe('payments-7c9, payments, node-3, Running');
+  });
+
   it('emits the triggering button element on activation so the caller can restore focus', () => {
     const c = make();
     (c.headline as any) = () => 'x';

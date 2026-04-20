@@ -38,7 +38,7 @@ import { K8sCluster } from '../../../../core/models/backend.model';
         [attr.aria-controls]="listboxId"
         [attr.aria-expanded]="open()"
         aria-haspopup="listbox"
-        [attr.aria-activedescendant]="open() ? optionId(activeIndex()) : null"
+        [attr.aria-activedescendant]="activeDescendantId()"
         (click)="toggle()"
         (keydown)="onTriggerKeydown($event)"
       >
@@ -108,6 +108,17 @@ export class K8sClusterSwitcherComponent {
   optionId(index: number): string {
     return `${this.listboxId}-opt-${index}`;
   }
+
+  /**
+   * `aria-activedescendant` must point at a real element id or be absent —
+   * NVDA/JAWS silently swallow dangling ids. Only expose the attribute when
+   * the listbox is open AND has at least one concrete option to point at.
+   */
+  readonly activeDescendantId = computed(() => {
+    if (!this.open()) return null;
+    if (this.clusters().length === 0) return null;
+    return this.optionId(this.activeIndex());
+  });
 
   toggle(): void {
     if (this.open()) this.close();

@@ -163,6 +163,16 @@ export class K8sOverviewPageComponent implements OnInit {
     };
   });
 
+  /**
+   * Unfiltered failing-pod rollup. Deliberately based on `pods()` (not
+   * `filteredPods()`) so the polite announcer only speaks when the cluster's
+   * actual health transitions — drilling into a namespace must not refire the
+   * live region just because the filtered count shrank.
+   */
+  private readonly clusterFailingTotal = computed(
+    () => countPodPhases(this.pods()).failed,
+  );
+
   readonly activePod = computed(() => {
     const name = this.activePodName();
     if (!name) return null;
@@ -188,11 +198,12 @@ export class K8sOverviewPageComponent implements OnInit {
       }
     });
 
-    // Announce failing-pod transitions when the count changes. Writing
-    // announcements outside the template keeps the live region from
-    // spamming on every re-render.
+    // Announce failing-pod transitions when the cluster-wide count changes.
+    // Reads `clusterFailingTotal` (unfiltered) so drilling into a namespace
+    // or workload does not refire the live region for a transient scoped
+    // count; only real cluster-health transitions are announced.
     effect(() => {
-      const failing = this.clusterPhaseSummary().counts.failed;
+      const failing = this.clusterFailingTotal();
       if (failing !== this.lastFailingCount && this.lastFailingCount !== -1) {
         this.announcement.set(
           failing === 0
