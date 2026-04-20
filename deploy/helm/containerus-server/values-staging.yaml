@@ -13,6 +13,15 @@
 web:
   enabled: false
 
+# CORS allowlist for the Containerus desktop (Tauri) app.
+#   - tauri://localhost        → macOS production build (custom scheme)
+#   - http://tauri.localhost   → Windows/Linux production build
+#   - http://localhost:1420    → `pnpm tauri dev` / `pnpm start`
+# Without this, the desktop webview's fetch to /api/health is blocked by CORS
+# and the UI shows "Cannot reach server" even though the backend is healthy.
+config:
+  corsOrigins: "tauri://localhost,http://tauri.localhost,http://localhost:1420"
+
 ingress:
   enabled: true
   className: traefik
