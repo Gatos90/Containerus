@@ -207,6 +207,13 @@ export const routes: Routes = [
       ),
   },
   {
+    path: 'reset-password/:token',
+    loadComponent: () =>
+      import('./features/backend/reset-password/reset-password.component').then(
+        (m) => m.ResetPasswordComponent
+      ),
+  },
+  {
     path: 'a11y-devshell',
     loadComponent: () =>
       import('./shared/components/a11y/devshell/a11y-devshell.component').then(

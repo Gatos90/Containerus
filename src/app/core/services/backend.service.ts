@@ -33,6 +33,8 @@ import {
   UserSession,
   MfaEnrollResponse,
   MfaVerifyEnrollmentResponse,
+  PasswordChangeRequest,
+  PasswordResetConfirmRequest,
   AuditLogEntry,
   K8sApiResource,
   mapPod,
@@ -577,6 +579,52 @@ export class BackendService {
     } catch {
       // Non-fatal.
     }
+  }
+
+  // ==========================================================================
+  // Password change + reset (CON-133)
+  // --------------------------------------------------------------------------
+  // All three endpoints live under `/api/auth/password/*`. Change is
+  // authenticated; request/confirm are anonymous — `requestFor` simply omits
+  // the `Authorization` header when the connection has no access token, so
+  // the login-screen callsites reuse the same pipeline without a second
+  // transport. Server-side rate limiting + enumeration-proof responses live
+  // in `crates/containerus-server/src/api/password.rs`.
+  // ==========================================================================
+
+  async changePasswordFor(
+    connectionId: string,
+    req: PasswordChangeRequest,
+  ): Promise<void> {
+    await this.requestFor(connectionId, 'POST', '/api/auth/password/change', req);
+    // The server revoked every refresh token for this user (including ours),
+    // so clear the local session to force a fresh login instead of letting
+    // the next request trip a 401 → failed-refresh cascade.
+    this.updateConnection(connectionId, {
+      tokens: null,
+      user: null,
+      projects: [],
+      projectPermissions: {},
+      status: 'disconnected',
+      errorReason: null,
+    });
+    this._userLoggedOut.add(connectionId);
+    this.persistConnections();
+  }
+
+  async requestPasswordResetFor(connectionId: string, email: string): Promise<void> {
+    // Response is always 200 with a generic body — we ignore it. Errors here
+    // mean transport failure, which the caller surfaces as a network reason.
+    await this.requestFor(connectionId, 'POST', '/api/auth/password/reset/request', {
+      email,
+    });
+  }
+
+  async confirmPasswordResetFor(
+    connectionId: string,
+    req: PasswordResetConfirmRequest,
+  ): Promise<void> {
+    await this.requestFor(connectionId, 'POST', '/api/auth/password/reset/confirm', req);
   }
 
   // ==========================================================================

@@ -9,6 +9,7 @@ import {
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { CommonModule } from '@angular/common';
+import { Router } from '@angular/router';
 import {
   LucideAngularModule,
   Shield,
@@ -19,6 +20,7 @@ import {
   CheckCircle2,
   AlertTriangle,
   Copy,
+  KeyRound,
 } from 'lucide-angular';
 
 import {
@@ -73,6 +75,10 @@ interface StatusToast {
 })
 export class AccountSecurityComponent implements OnInit {
   private readonly backend = inject(BackendService);
+  private readonly router = inject(Router);
+
+  /** CON-133: matches server-side MIN_PASSWORD_LEN used by both change + confirm. */
+  readonly PASSWORD_MIN_LENGTH = 8;
 
   readonly Shield = Shield;
   readonly ShieldCheck = ShieldCheck;
@@ -82,6 +88,7 @@ export class AccountSecurityComponent implements OnInit {
   readonly CheckCircle2 = CheckCircle2;
   readonly AlertTriangle = AlertTriangle;
   readonly Copy = Copy;
+  readonly KeyRound = KeyRound;
 
   private readonly mfaCodeInput = viewChild(MfaCodeInputComponent);
 
@@ -390,5 +397,113 @@ export class AccountSecurityComponent implements OnInit {
     if (this.toastTimer) clearTimeout(this.toastTimer);
     this.toastTimer = null;
     this.toast.set(null);
+  }
+
+  // ---------------------------------------------------------------------------
+  // CON-133 — self-service password change
+  // ---------------------------------------------------------------------------
+  // The form stays inline rather than living in a drawer: it has no
+  // multi-step branching, the password manager needs a stable DOM to offer
+  // autofill, and we want the inline error announcer to sit next to the
+  // fields so SR users hear "Passwords do not match" on the row they typed.
+  //
+  // We do *not* surface the backend's min-length verbatim — we validate the
+  // same threshold client-side so users aren't round-tripping the server for
+  // "your password is too short". A weak-password rejection still maps to
+  // the server message via `flashToast('error')` for anything we miss.
+
+  readonly currentPassword = signal('');
+  readonly newPassword = signal('');
+  readonly confirmPassword = signal('');
+  readonly passwordBusy = signal(false);
+  readonly passwordError = signal<string | null>(null);
+  readonly passwordSubmitted = signal(false);
+
+  readonly passwordMismatch = computed(
+    () =>
+      this.passwordSubmitted() &&
+      this.newPassword().length > 0 &&
+      this.confirmPassword().length > 0 &&
+      this.newPassword() !== this.confirmPassword(),
+  );
+
+  readonly passwordTooShort = computed(
+    () =>
+      this.passwordSubmitted() &&
+      this.newPassword().length > 0 &&
+      this.newPassword().length < this.PASSWORD_MIN_LENGTH,
+  );
+
+  readonly passwordSame = computed(
+    () =>
+      this.passwordSubmitted() &&
+      this.currentPassword().length > 0 &&
+      this.newPassword().length > 0 &&
+      this.currentPassword() === this.newPassword(),
+  );
+
+  onCurrentPasswordChanged(value: string): void {
+    this.currentPassword.set(value);
+    if (this.passwordError()) this.passwordError.set(null);
+  }
+  onNewPasswordChanged(value: string): void {
+    this.newPassword.set(value);
+    if (this.passwordError()) this.passwordError.set(null);
+  }
+  onConfirmPasswordChanged(value: string): void {
+    this.confirmPassword.set(value);
+    if (this.passwordError()) this.passwordError.set(null);
+  }
+
+  async submitPasswordChange(): Promise<void> {
+    this.passwordSubmitted.set(true);
+    this.passwordError.set(null);
+
+    const current = this.currentPassword();
+    const next = this.newPassword();
+    const confirm = this.confirmPassword();
+
+    if (!current || !next || !confirm) {
+      this.passwordError.set('Fill in all three password fields.');
+      return;
+    }
+    if (next.length < this.PASSWORD_MIN_LENGTH) {
+      this.passwordError.set(
+        `New password must be at least ${this.PASSWORD_MIN_LENGTH} characters.`,
+      );
+      return;
+    }
+    if (next !== confirm) {
+      this.passwordError.set('New password and confirmation do not match.');
+      return;
+    }
+    if (current === next) {
+      this.passwordError.set('New password must differ from your current password.');
+      return;
+    }
+
+    const connectionId = this.connectionId();
+    if (!connectionId) {
+      this.passwordError.set('No active backend connection.');
+      return;
+    }
+
+    this.passwordBusy.set(true);
+    try {
+      await this.backend.changePasswordFor(connectionId, {
+        currentPassword: current,
+        newPassword: next,
+      });
+      // `changePasswordFor` already cleared the local session; send the user
+      // to /login so they re-authenticate with their new password.
+      this.flashToast('Password changed. Signing you out…', 'success');
+      setTimeout(() => {
+        this.router.navigate(['/login'], { queryParams: { connectionId } });
+      }, 800);
+    } catch (e: any) {
+      this.passwordError.set(e?.message ?? 'Failed to change password.');
+    } finally {
+      this.passwordBusy.set(false);
+    }
   }
 }

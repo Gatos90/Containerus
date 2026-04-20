@@ -139,6 +139,126 @@
   </section>
 
   <!-- ======================================================================
+       CON-133 — Change password
+       ====================================================================== -->
+  <section aria-labelledby="password-heading" class="space-y-3">
+    <div class="flex flex-wrap items-center justify-between gap-3">
+      <h2 id="password-heading" class="text-base font-semibold text-zinc-100 flex items-center gap-2">
+        <lucide-icon [img]="KeyRound" [size]="18" aria-hidden="true" />
+        Change password
+      </h2>
+    </div>
+
+    <form
+      (ngSubmit)="submitPasswordChange()"
+      novalidate
+      class="bg-zinc-900 border border-zinc-800 rounded-xl p-4 space-y-3"
+      aria-describedby="password-description"
+    >
+      <p id="password-description" class="text-sm text-zinc-400">
+        Choose a new password. Signing you out of this and every other session — you'll need to sign back in.
+      </p>
+
+      <!-- Hidden email input: lets password managers attach the saved entry
+           to the correct account even though we render the form inside the
+           authenticated shell rather than on login. -->
+      <input
+        type="email"
+        name="username"
+        autocomplete="username"
+        [value]="userEmail()"
+        readonly
+        tabindex="-1"
+        aria-hidden="true"
+        class="sr-only"
+      />
+
+      <div class="space-y-1.5">
+        <label for="current-password" class="block text-sm font-medium text-zinc-300">
+          Current password
+        </label>
+        <input
+          id="current-password"
+          name="current-password"
+          type="password"
+          autocomplete="current-password"
+          [value]="currentPassword()"
+          (input)="onCurrentPasswordChanged($any($event.target).value)"
+          [disabled]="passwordBusy()"
+          [attr.aria-invalid]="passwordError() ? 'true' : null"
+          [attr.aria-describedby]="passwordError() ? 'password-error' : null"
+          required
+          class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+        />
+      </div>
+
+      <div class="space-y-1.5">
+        <label for="new-password" class="block text-sm font-medium text-zinc-300">
+          New password
+        </label>
+        <input
+          id="new-password"
+          name="new-password"
+          type="password"
+          autocomplete="new-password"
+          [attr.minlength]="PASSWORD_MIN_LENGTH"
+          [value]="newPassword()"
+          (input)="onNewPasswordChanged($any($event.target).value)"
+          [disabled]="passwordBusy()"
+          [attr.aria-invalid]="passwordTooShort() || passwordSame() ? 'true' : null"
+          [attr.aria-describedby]="'new-password-hint' + (passwordError() ? ' password-error' : '')"
+          required
+          class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+        />
+        <p id="new-password-hint" class="text-[11px] text-zinc-500">
+          At least {{ PASSWORD_MIN_LENGTH }} characters. Must differ from your current password.
+        </p>
+      </div>
+
+      <div class="space-y-1.5">
+        <label for="confirm-password" class="block text-sm font-medium text-zinc-300">
+          Confirm new password
+        </label>
+        <input
+          id="confirm-password"
+          name="confirm-password"
+          type="password"
+          autocomplete="new-password"
+          [value]="confirmPassword()"
+          (input)="onConfirmPasswordChanged($any($event.target).value)"
+          [disabled]="passwordBusy()"
+          [attr.aria-invalid]="passwordMismatch() ? 'true' : null"
+          [attr.aria-describedby]="passwordError() ? 'password-error' : null"
+          required
+          class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+        />
+      </div>
+
+      @if (passwordError(); as err) {
+        <div
+          id="password-error"
+          role="alert"
+          class="bg-red-950/30 text-red-300 rounded-lg p-3 text-sm flex items-start gap-2"
+        >
+          <lucide-icon [img]="AlertTriangle" [size]="14" aria-hidden="true" class="mt-0.5" />
+          <span>{{ err }}</span>
+        </div>
+      }
+
+      <button
+        type="submit"
+        [disabled]="passwordBusy()"
+        class="bg-blue-600 hover:bg-blue-500 disabled:bg-zinc-800 disabled:text-zinc-500 text-white text-sm rounded-lg px-3 py-2 flex items-center gap-1.5"
+      >
+        @if (passwordBusy()) {
+          <lucide-icon [img]="Loader2" [size]="14" class="animate-spin" aria-hidden="true" />
+        }
+        Update password
+      </button>
+    </form>
+  </section>
+
+  <!-- ======================================================================
        Status toast — polite so SR users hear revoke/MFA outcomes without
        being yanked off the row they just acted on.
        ====================================================================== -->

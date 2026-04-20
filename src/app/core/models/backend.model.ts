@@ -59,6 +59,37 @@ export interface AuthTokens {
 }
 
 // ============================================================================
+// Password change + reset (CON-133)
+// ============================================================================
+
+export interface PasswordChangeRequest {
+  currentPassword: string;
+  newPassword: string;
+}
+
+export interface PasswordResetRequest {
+  email: string;
+}
+
+export interface PasswordResetConfirmRequest {
+  token: string;
+  newPassword: string;
+}
+
+/**
+ * CON-133 §3 — named reason codes for the password reset completion page.
+ * The backend intentionally returns one generic message for expired / used /
+ * non-existent tokens to avoid enumeration (see `api/password.rs`), so the
+ * UI only distinguishes "network failure" from "token rejected". Named
+ * reasons mirror the CON-126 chip pattern so SR users hear a stable label
+ * instead of a free-form error string.
+ */
+export type PasswordResetErrorReason =
+  | 'token_invalid_or_expired'
+  | 'network_error'
+  | 'weak_password';
+
+// ============================================================================
 // Sessions (CON-132)
 // ============================================================================
 
