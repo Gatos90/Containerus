@@ -195,6 +195,11 @@ export interface ResourceAcl {
   projectId: string;
   resourceType: string;
   resourceId: string;
+  /**
+   * Non-null iff `resourceType === 'container'` (CON-117 DB CHECK). Carries
+   * the parent system FK so container ACLs cascade-delete with the system.
+   */
+  systemId?: string | null;
   roleId?: string | null;
   extraPermissions: string[];
   deniedPermissions: string[];

@@ -483,7 +483,25 @@ export class BackendService {
     return this.requestFor<ResourceAcl[]>(connectionId, 'GET', `/api/projects/${projectId}/acls`);
   }
 
-  async createAclFor(connectionId: string, projectId: string, data: { userId: string; resourceType: string; resourceId: string; roleId?: string; extraPermissions: string[]; deniedPermissions: string[] }): Promise<ResourceAcl> {
+  async createAclFor(
+    connectionId: string,
+    projectId: string,
+    data: {
+      userId: string;
+      resourceType: string;
+      resourceId: string;
+      /**
+       * Required when `resourceType === 'container'`, rejected otherwise.
+       * Enforced server-side by the CON-117 DB CHECK constraint and the
+       * api/acls.rs handler — the client mirrors that shape so a malformed
+       * payload fails fast before hitting the network.
+       */
+      systemId?: string;
+      roleId?: string;
+      extraPermissions: string[];
+      deniedPermissions: string[];
+    },
+  ): Promise<ResourceAcl> {
     const acl = await this.requestFor<ResourceAcl>(connectionId, 'POST', `/api/projects/${projectId}/acls`, data);
     this.notifyLocalPermissionEdit(connectionId);
     return acl;

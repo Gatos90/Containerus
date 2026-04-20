@@ -1,3 +1,4 @@
+import '../../../shared/utils/__testing__/webcrypto-polyfill';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { TestBed, ComponentFixture } from '@angular/core/testing';
 import { setupTestBed } from '@analogjs/vitest-angular/setup-testbed';
@@ -15,7 +16,10 @@ const PERMS = [
   { key: 'container.start', category: 'container', description: 'Start container' },
 ];
 
-function configure(): ComponentFixture<ResourceAccessDrawerComponent> {
+function configure(options?: {
+  containers?: any[];
+  listContainersFor?: ReturnType<typeof vi.fn>;
+}): ComponentFixture<ResourceAccessDrawerComponent> {
   const backendStub = {
     getRoleFor: vi.fn().mockResolvedValue({
       id: 'r1',
@@ -26,6 +30,8 @@ function configure(): ComponentFixture<ResourceAccessDrawerComponent> {
       createdAt: '',
       updatedAt: '',
     }),
+    listContainersFor:
+      options?.listContainersFor ?? vi.fn().mockResolvedValue(options?.containers ?? []),
   };
   const catalogStub = {
     ensureLoaded: vi.fn().mockResolvedValue(undefined),
@@ -134,6 +140,125 @@ describe('ResourceAccessDrawerComponent', () => {
       const keyPart = label.split(': ')[1];
       expect(PERMS.map((p) => p.key)).toContain(keyPart);
     }
+  });
+
+  // ==========================================================================
+  // CON-130 Phase 2 — container scope
+  // ==========================================================================
+
+  const SYSTEM_UUID = '11111111-2222-3333-4444-555555555555';
+  const CONTAINER_ID = 'abc123def456';
+  // Pinned against the Rust `container_acl_resource_id()` helper — see
+  // `container-acl-id.spec.ts` for the origin of this fixture.
+  const EXPECTED_RESOURCE_UUID = 'c40d9fd2-2c80-556d-99b7-5c1ace1bfd16';
+
+  function mkContainer(overrides: Partial<any> = {}): any {
+    return {
+      id: CONTAINER_ID,
+      name: 'web-1',
+      image: 'nginx:latest',
+      status: 'running',
+      runtime: 'docker',
+      systemId: SYSTEM_UUID,
+      createdAt: '',
+      ports: [],
+      environmentVariables: {},
+      volumes: [],
+      networkSettings: { networks: {} },
+      resourceLimits: {},
+      labels: {},
+      restartPolicy: { name: 'no', maximumRetryCount: 0 },
+      healthCheck: null,
+      state: {},
+      config: {},
+      hostConfig: { ulimits: [] },
+      ...overrides,
+    };
+  }
+
+  // Flush Angular's microtask effect scheduler + any async work inside
+  // effects (the drawer's container-load effect awaits listContainersFor).
+  async function flush(f: ComponentFixture<ResourceAccessDrawerComponent>) {
+    for (let i = 0; i < 5; i++) {
+      f.detectChanges();
+      await Promise.resolve();
+    }
+  }
+
+  it('canSubmit requires both a parent system and a picked container in container scope', async () => {
+    const f = configure({ containers: [mkContainer()] });
+    const c = f.componentInstance;
+    c.userId.set('u1');
+    c.resourceType.set('container');
+    await flush(f);
+    expect(c.canSubmit()).toBe(false);
+    c.containerSystemId.set(SYSTEM_UUID);
+    await flush(f);
+    expect(c.canSubmit()).toBe(false);
+    c.selectedContainerRuntimeId.set(CONTAINER_ID);
+    expect(c.canSubmit()).toBe(true);
+  });
+
+  it('emits a container-scope payload with server-matching resourceId + systemId', async () => {
+    const f = configure({ containers: [mkContainer()] });
+    const c = f.componentInstance;
+    c.userId.set('u1');
+    c.resourceType.set('container');
+    c.containerSystemId.set(SYSTEM_UUID);
+    await flush(f);
+    c.selectedContainerRuntimeId.set(CONTAINER_ID);
+
+    const emitted: any[] = [];
+    c.create.subscribe((p) => emitted.push(p));
+    await c.onSubmit();
+
+    expect(emitted).toHaveLength(1);
+    expect(emitted[0]).toMatchObject({
+      userId: 'u1',
+      resourceType: 'container',
+      resourceId: EXPECTED_RESOURCE_UUID,
+      systemId: SYSTEM_UUID,
+    });
+  });
+
+  it('filters and paginates containers client-side', async () => {
+    const many = Array.from({ length: 60 }, (_, i) =>
+      mkContainer({ id: `c${i}`, name: `web-${i}`, image: i % 2 === 0 ? 'nginx' : 'redis' }),
+    );
+    const f = configure({ containers: many });
+    const c = f.componentInstance;
+    c.resourceType.set('container');
+    c.containerSystemId.set(SYSTEM_UUID);
+    await flush(f);
+
+    // Full list after load.
+    expect(c.containers().length).toBe(60);
+    // Default page size = 25 ⇒ 3 pages for 60 rows.
+    expect(c.containerPageCount()).toBe(3);
+    expect(c.containerPageSlice().length).toBe(25);
+
+    c.onContainerPage(1);
+    expect(c.containerPage()).toBe(2);
+
+    c.onContainerSearch('redis');
+    // Pagination resets to page 1 on search.
+    expect(c.containerPage()).toBe(1);
+    // Half the list matches 'redis'.
+    expect(c.filteredContainers().length).toBe(30);
+  });
+
+  it('resourceTypes now includes container (Phase 2)', () => {
+    const f = configure();
+    expect(f.componentInstance.resourceTypes).toContain('container');
+  });
+
+  it('has no serious axe-core violations when the container picker is rendered', async () => {
+    const f = configure({ containers: [mkContainer()] });
+    const c = f.componentInstance;
+    c.resourceType.set('container');
+    c.containerSystemId.set(SYSTEM_UUID);
+    await flush(f);
+    await assertNoA11yViolations(f.nativeElement);
   });
 
   it('announces causal phrase when a toggle crosses Extra ⇄ Deny', () => {

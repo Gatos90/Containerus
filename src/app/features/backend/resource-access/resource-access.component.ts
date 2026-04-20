@@ -14,6 +14,7 @@ import {
   Plus,
   Trash2,
   Loader2,
+  Box,
 } from 'lucide-angular';
 
 import {
@@ -34,17 +35,29 @@ import {
 import { ResourceAccessDrawerComponent } from './resource-access-drawer.component';
 
 /**
- * Phase-1 scope: `resource_type ∈ { system, cluster, environment }`. Container
- * scope is gated behind [CON-117](/CON/issues/CON-117) per CON-115 §8 Q1, so
- * the picker hides it until that ticket lands.
+ * Phase-2 scope: `resource_type ∈ { system, cluster, environment, container }`.
+ * Container scope was gated behind [CON-117](/CON/issues/CON-117) server
+ * enforcement and landed in Phase 2 of [CON-116](/CON/issues/CON-116); see
+ * [CON-130](/CON/issues/CON-130). `PHASE1_RESOURCE_TYPES` is kept as an alias
+ * for tests + existing call-sites that predate container scope.
  */
-export type AclResourceType = 'system' | 'cluster' | 'environment';
+export type AclResourceType = 'system' | 'cluster' | 'environment' | 'container';
 
-export const PHASE1_RESOURCE_TYPES: readonly AclResourceType[] = [
+export const RESOURCE_TYPES: readonly AclResourceType[] = [
   'system',
   'cluster',
   'environment',
+  'container',
 ];
+
+/** @deprecated Phase-2 ships container scope — use `RESOURCE_TYPES`. */
+export const PHASE1_RESOURCE_TYPES: readonly AclResourceType[] = RESOURCE_TYPES;
+
+interface UndoToast {
+  readonly kind: 'deleted';
+  readonly acl: ResourceAcl;
+  readonly message: string;
+}
 
 @Component({
   selector: 'app-resource-access',
@@ -68,8 +81,9 @@ export class ResourceAccessComponent implements OnInit {
   readonly Plus = Plus;
   readonly Trash2 = Trash2;
   readonly Loader2 = Loader2;
+  readonly Box = Box;
 
-  readonly resourceTypes = PHASE1_RESOURCE_TYPES;
+  readonly resourceTypes = RESOURCE_TYPES;
 
   readonly loading = signal(false);
   readonly loadError = signal<string | null>(null);
@@ -90,6 +104,12 @@ export class ResourceAccessComponent implements OnInit {
   readonly drawerOpen = signal(false);
   readonly drawerTrigger = signal<HTMLElement | null>(null);
 
+  // Undo affordance for delete: we keep the full ACL row and re-POST it on
+  // undo. The toast auto-dismisses after 5s so undo is a short window, not
+  // a persistent history drawer.
+  readonly undoToast = signal<UndoToast | null>(null);
+  private undoTimer: ReturnType<typeof setTimeout> | null = null;
+
   // Lookups so the table can show user.email + role name without N+1 calls.
   readonly memberByUserId = computed(() => {
     const map = new Map<string, ProjectMember>();
@@ -102,7 +122,10 @@ export class ResourceAccessComponent implements OnInit {
     return map;
   });
 
-  // Build a label per ACL row covering Phase-1 resource types only.
+  // Build a label per ACL row covering all Phase-2 resource types. Container
+  // resourceId is a derived UUID-v5, so we fall back to the parent system's
+  // label + a truncated id — there's no way to recover the runtime id without
+  // scanning the backend's container list for a match.
   resourceLabel(acl: ResourceAcl): string {
     if (acl.resourceType === 'system') {
       return this.systems().find((s) => s.id === acl.resourceId)?.label ?? acl.resourceId;
@@ -112,6 +135,11 @@ export class ResourceAccessComponent implements OnInit {
     }
     if (acl.resourceType === 'environment') {
       return this.envs().find((e) => e.id === acl.resourceId)?.label ?? acl.resourceId;
+    }
+    if (acl.resourceType === 'container') {
+      const sys = this.systems().find((s) => s.id === acl.systemId);
+      const sysLabel = sys?.label ?? acl.systemId ?? 'unknown system';
+      return `${sysLabel} · ${acl.resourceId.slice(0, 8)}…`;
     }
     return acl.resourceId;
   }
@@ -202,6 +230,7 @@ export class ResourceAccessComponent implements OnInit {
     userId: string;
     resourceType: AclResourceType;
     resourceId: string;
+    systemId?: string;
     roleId?: string;
     extraPermissions: string[];
     deniedPermissions: string[];
@@ -211,7 +240,11 @@ export class ResourceAccessComponent implements OnInit {
     if (!connectionId || !projectId) return;
     this.saving.set(true);
     try {
-      await this.backend.createAclFor(connectionId, projectId, payload);
+      const created = await this.backend.createAclFor(connectionId, projectId, payload);
+      // Optimistic prepend: show the new row before reloadAll completes so
+      // the drawer close feels instant. loadAll() will reconcile if the
+      // server returned a different canonical row.
+      this.acls.update((list) => [created, ...list]);
       this.drawerOpen.set(false);
       await this.loadAll();
     } catch (e: any) {
@@ -221,6 +254,12 @@ export class ResourceAccessComponent implements OnInit {
     }
   }
 
+  /**
+   * Optimistic delete with a 5-second undo window. We remove the row from the
+   * local signal immediately, fire the DELETE, and stage an undo toast. If
+   * the user clicks "Undo" before the timer fires we re-POST the original
+   * payload to recreate the same override.
+   */
   async deleteAcl(acl: ResourceAcl): Promise<void> {
     const connectionId = this.connectionId();
     const projectId = this.selectedProjectId();
@@ -233,12 +272,62 @@ export class ResourceAccessComponent implements OnInit {
       return;
     }
 
+    const snapshot = this.acls();
+    this.acls.update((list) => list.filter((a) => a.id !== acl.id));
+
     try {
       await this.backend.deleteAclFor(connectionId, projectId, acl.id);
-      await this.loadAll();
+      this.stageUndo(acl, `Removed override on ${acl.resourceType} "${resourceLabel}".`);
     } catch (e: any) {
+      // Roll back: the delete failed, so restore the snapshot.
+      this.acls.set(snapshot);
       this.loadError.set(e?.message ?? 'Failed to delete override');
     }
+  }
+
+  private stageUndo(acl: ResourceAcl, message: string): void {
+    if (this.undoTimer) clearTimeout(this.undoTimer);
+    this.undoToast.set({ kind: 'deleted', acl, message });
+    this.undoTimer = setTimeout(() => {
+      this.undoToast.set(null);
+      this.undoTimer = null;
+    }, 5000);
+  }
+
+  async undoLast(): Promise<void> {
+    const toast = this.undoToast();
+    if (!toast) return;
+    if (this.undoTimer) clearTimeout(this.undoTimer);
+    this.undoTimer = null;
+    this.undoToast.set(null);
+
+    const connectionId = this.connectionId();
+    const projectId = this.selectedProjectId();
+    if (!connectionId || !projectId) return;
+
+    const { acl } = toast;
+    try {
+      // Recreate via the canonical POST path so the server re-validates and
+      // emits the CON-122 invalidation event, not via a hidden undelete.
+      const recreated = await this.backend.createAclFor(connectionId, projectId, {
+        userId: acl.userId,
+        resourceType: acl.resourceType,
+        resourceId: acl.resourceId,
+        systemId: acl.systemId ?? undefined,
+        roleId: acl.roleId ?? undefined,
+        extraPermissions: acl.extraPermissions,
+        deniedPermissions: acl.deniedPermissions,
+      });
+      this.acls.update((list) => [recreated, ...list]);
+    } catch (e: any) {
+      this.loadError.set(e?.message ?? 'Failed to restore override');
+    }
+  }
+
+  dismissUndo(): void {
+    if (this.undoTimer) clearTimeout(this.undoTimer);
+    this.undoTimer = null;
+    this.undoToast.set(null);
   }
 
   async loadRoleDetails(roleId: string): Promise<RoleWithPermissions | null> {

@@ -194,7 +194,17 @@
         </span>
       </span>
       <span class="text-zinc-300 truncate flex-1 min-w-0">
-        @if (row.entry.resourceType) {
+        @if (row.entry.resourceType === 'container') {
+          <!-- CON-117 stamps resource_type="container" on the audit row when
+               the deny originated in the container ACL layer, so incident
+               response can tell it apart from a system-wide deny. Surface
+               that distinction visually here. -->
+          <span
+            class="inline-flex items-center text-[10px] uppercase tracking-wide bg-amber-500/20 text-amber-300 rounded px-1.5 py-0.5 mr-1.5 shrink-0"
+            aria-label="Container-scoped audit event"
+          >container</span>
+          <span class="text-zinc-200">{{ row.entry.resourceId ?? '' }}</span>
+        } @else if (row.entry.resourceType) {
           <span class="text-zinc-500">{{ row.entry.resourceType }}:</span>
           {{ row.entry.resourceId ?? '' }}
         }

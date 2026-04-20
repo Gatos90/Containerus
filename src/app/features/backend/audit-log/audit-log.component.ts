@@ -10,6 +10,8 @@ interface SavedFilter {
   readonly key: string;
   readonly label: string;
   readonly action: string;
+  /** Restrict to a specific `resource_type`. Empty = no restriction. */
+  readonly resourceType?: string;
   /** Hours back from "now" to apply as `from`. 0 = no time bound. */
   readonly hoursBack: number;
 }
@@ -18,6 +20,9 @@ const SAVED_FILTERS: readonly SavedFilter[] = [
   { key: 'failed-logins-24h', label: 'Failed logins · 24h', action: 'auth.login.failed', hoursBack: 24 },
   { key: 'container-removals', label: 'Container removals', action: 'container.remove', hoursBack: 0 },
   { key: 'role-changes', label: 'Role changes', action: 'member.role_change', hoursBack: 0 },
+  // CON-130: one-click filter for ACL denies that fired at the container
+  // layer (CON-117 stamps resource_type="container" on those rows).
+  { key: 'container-scope-denies', label: 'Container-scope denies · 24h', action: '', resourceType: 'container', hoursBack: 24 },
 ];
 
 interface AuditRow extends VirtualGridRow {
@@ -131,7 +136,7 @@ export class AuditLogComponent implements OnInit, OnChanges {
       return;
     }
     this.actionFilter = filter.action;
-    this.resourceTypeFilter = '';
+    this.resourceTypeFilter = filter.resourceType ?? '';
     this.userIdFilter = '';
     if (filter.hoursBack > 0) {
       const since = new Date(Date.now() - filter.hoursBack * 60 * 60 * 1000);

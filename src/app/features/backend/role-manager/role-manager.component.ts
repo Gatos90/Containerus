@@ -24,12 +24,36 @@ import {
  * assignments and ACL overrides across every project on the active
  * connection. Per-project failures are absorbed (counted as `partial`) so a
  * single 403 on one project doesn't blank the panel.
+ *
+ * CON-130 Phase 2: the ACL counts are now split by `resource_type` so a
+ * container-scope assignment is distinguishable from a system or cluster
+ * override at a glance. Existing call-sites that still read `.acls` continue
+ * to see the aggregate.
  */
+interface ScopeBreakdown {
+  readonly system: number;
+  readonly cluster: number;
+  readonly environment: number;
+  readonly container: number;
+}
+
 interface WhereUsedSummary {
   members: number;
   acls: number;
-  projects: { projectId: string; projectName: string; members: number; acls: number }[];
+  byScope: ScopeBreakdown;
+  projects: { projectId: string; projectName: string; members: number; acls: number; byScope: ScopeBreakdown }[];
   partial: boolean;
+}
+
+const EMPTY_BREAKDOWN: ScopeBreakdown = { system: 0, cluster: 0, environment: 0, container: 0 };
+
+function addBreakdown(a: ScopeBreakdown, b: ScopeBreakdown): ScopeBreakdown {
+  return {
+    system: a.system + b.system,
+    cluster: a.cluster + b.cluster,
+    environment: a.environment + b.environment,
+    container: a.container + b.container,
+  };
 }
 
 interface PermissionGroup {
@@ -180,7 +204,7 @@ export class RoleManagerComponent implements OnInit {
     const conn = this.backend.connectedBackends().find((c) => c.id === connectionId);
     const projects = conn?.projects ?? [];
     if (projects.length === 0) {
-      this.whereUsed.set({ members: 0, acls: 0, projects: [], partial: false });
+      this.whereUsed.set({ members: 0, acls: 0, byScope: EMPTY_BREAKDOWN, projects: [], partial: false });
       return;
     }
 
@@ -195,14 +219,25 @@ export class RoleManagerComponent implements OnInit {
           }),
           this.backend.listAclsFor(connectionId, p.id).catch(() => {
             partial = true;
-            return [] as { roleId: string | null }[];
+            return [] as { roleId: string | null; resourceType: string }[];
           }),
         ]);
+        // CON-130: split ACL matches per resource_type so container-scope
+        // rows are visible in the where-used panel. Members still aggregate —
+        // there's no per-scope concept on membership.
+        const matchingAcls = acls.filter((a) => a.roleId === roleId);
+        const byScope: ScopeBreakdown = {
+          system: matchingAcls.filter((a) => a.resourceType === 'system').length,
+          cluster: matchingAcls.filter((a) => a.resourceType === 'cluster').length,
+          environment: matchingAcls.filter((a) => a.resourceType === 'environment').length,
+          container: matchingAcls.filter((a) => a.resourceType === 'container').length,
+        };
         return {
           projectId: p.id,
           projectName: p.name,
           members: members.filter((m) => m.roleId === roleId).length,
-          acls: acls.filter((a) => a.roleId === roleId).length,
+          acls: matchingAcls.length,
+          byScope,
         };
       }),
     );
@@ -215,9 +250,14 @@ export class RoleManagerComponent implements OnInit {
 
     const totalMembers = perProject.reduce((acc, p) => acc + p.members, 0);
     const totalAcls = perProject.reduce((acc, p) => acc + p.acls, 0);
+    const totalByScope = perProject.reduce(
+      (acc, p) => addBreakdown(acc, p.byScope),
+      EMPTY_BREAKDOWN,
+    );
     this.whereUsed.set({
       members: totalMembers,
       acls: totalAcls,
+      byScope: totalByScope,
       projects: perProject.filter((p) => p.members > 0 || p.acls > 0),
       partial,
     });

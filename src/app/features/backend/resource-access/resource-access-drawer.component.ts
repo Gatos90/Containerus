@@ -19,12 +19,17 @@ import {
 } from '../../../shared/components/a11y';
 import { BackendService } from '../../../core/services/backend.service';
 import {
+  Container,
+  getDisplayName as getContainerDisplayName,
+} from '../../../core/models/container.model';
+import {
   K8sCluster,
   PermissionDef,
   ProjectMember,
   Role,
 } from '../../../core/models/backend.model';
-import { AclResourceType, PHASE1_RESOURCE_TYPES } from './resource-access.component';
+import { containerAclResourceId } from '../../../shared/utils/container-acl-id';
+import { AclResourceType, RESOURCE_TYPES } from './resource-access.component';
 
 interface ResourceOption {
   readonly id: string;
@@ -35,10 +40,17 @@ interface CreateAclPayload {
   userId: string;
   resourceType: AclResourceType;
   resourceId: string;
+  /** Only set when `resourceType === 'container'`; required by CON-117. */
+  systemId?: string;
   roleId?: string;
   extraPermissions: string[];
   deniedPermissions: string[];
 }
+
+// Cap per-page container count so screen-reader users don't have to tab
+// through a thousand containers and the DOM stays small enough for 400%
+// zoom + 320px reflow to render without horizontal scroll.
+export const CONTAINER_PAGE_SIZE = 25;
 
 @Component({
   selector: 'app-resource-access-drawer',
@@ -67,7 +79,7 @@ export class ResourceAccessDrawerComponent implements OnInit {
   readonly cancel = output<void>();
   readonly dirtyChange = output<boolean>();
 
-  readonly resourceTypes = PHASE1_RESOURCE_TYPES;
+  readonly resourceTypes = RESOURCE_TYPES;
 
   readonly userId = signal('');
   readonly resourceType = signal<AclResourceType>('system');
@@ -75,6 +87,19 @@ export class ResourceAccessDrawerComponent implements OnInit {
   readonly roleId = signal<string>('');
   readonly extraSet = signal<Set<string>>(new Set());
   readonly deniedSet = signal<Set<string>>(new Set());
+
+  // --- Container picker state (Phase 2) ---
+  // A container ACL needs the parent system id to be sent to the server (so
+  // the FK cascade-delete works) and the runtime id to hash into resourceId.
+  // We load containers lazily per-system so users don't pay for the list on
+  // unrelated systems.
+  readonly containerSystemId = signal<string>('');
+  readonly containerSearch = signal<string>('');
+  readonly containerPage = signal<number>(1);
+  readonly containers = signal<readonly Container[]>([]);
+  readonly containersLoading = signal<boolean>(false);
+  readonly containersError = signal<string | null>(null);
+  readonly selectedContainerRuntimeId = signal<string>('');
 
   // Causal phrase for the polite live region: set whenever a toggle crosses
   // sides (Extra ⇄ Deny) so a screen-reader user hears *what* moved, not just
@@ -93,9 +118,31 @@ export class ResourceAccessDrawerComponent implements OnInit {
         return this.clusters().map((c) => ({ id: c.id, label: c.name }));
       case 'environment':
         return this.envs();
+      // 'container' is handled by a dedicated picker, not this list.
       default:
         return [];
     }
+  });
+
+  readonly filteredContainers = computed<readonly Container[]>(() => {
+    const q = this.containerSearch().trim().toLowerCase();
+    if (!q) return this.containers();
+    return this.containers().filter(
+      (c) =>
+        getContainerDisplayName(c).toLowerCase().includes(q) ||
+        c.image.toLowerCase().includes(q) ||
+        c.id.toLowerCase().includes(q),
+    );
+  });
+
+  readonly containerPageCount = computed<number>(() =>
+    Math.max(1, Math.ceil(this.filteredContainers().length / CONTAINER_PAGE_SIZE)),
+  );
+
+  readonly containerPageSlice = computed<readonly Container[]>(() => {
+    const page = Math.min(this.containerPage(), this.containerPageCount());
+    const start = (page - 1) * CONTAINER_PAGE_SIZE;
+    return this.filteredContainers().slice(start, start + CONTAINER_PAGE_SIZE);
   });
 
   readonly permissionsByCategory = computed(() => {
@@ -121,14 +168,21 @@ export class ResourceAccessDrawerComponent implements OnInit {
     return Array.from(base).sort();
   });
 
-  readonly canSubmit = computed<boolean>(
-    () => !!this.userId() && !!this.resourceType() && !!this.resourceId(),
-  );
+  readonly canSubmit = computed<boolean>(() => {
+    if (!this.userId() || !this.resourceType()) return false;
+    if (this.resourceType() === 'container') {
+      // Need both the parent system (FK) and a picked container.
+      return !!this.containerSystemId() && !!this.selectedContainerRuntimeId();
+    }
+    return !!this.resourceId();
+  });
 
   readonly dirty = computed<boolean>(
     () =>
       !!this.userId()
       || !!this.resourceId()
+      || !!this.containerSystemId()
+      || !!this.selectedContainerRuntimeId()
       || !!this.roleId()
       || this.extraSet().size > 0
       || this.deniedSet().size > 0,
@@ -156,11 +210,36 @@ export class ResourceAccessDrawerComponent implements OnInit {
     });
 
     // When resource type changes, reset resource ID so we never POST a
-    // mismatched (type, id) pair.
+    // mismatched (type, id) pair. Also reset the container picker state.
     effect(() => {
       this.resourceType();
-      // untracked write — clear without re-triggering this effect
-      queueMicrotask(() => this.resourceId.set(''));
+      queueMicrotask(() => {
+        this.resourceId.set('');
+        this.selectedContainerRuntimeId.set('');
+        this.containerPage.set(1);
+        this.containerSearch.set('');
+      });
+    });
+
+    // When the container system changes, reload the container list.
+    effect(async () => {
+      const systemId = this.containerSystemId();
+      if (this.resourceType() !== 'container' || !systemId || !this.connectionId) {
+        return;
+      }
+      this.containersLoading.set(true);
+      this.containersError.set(null);
+      try {
+        const list = await this.backend.listContainersFor(this.connectionId, systemId);
+        this.containers.set(list);
+        this.containerPage.set(1);
+        this.selectedContainerRuntimeId.set('');
+      } catch (e: any) {
+        this.containers.set([]);
+        this.containersError.set(e?.message ?? 'Failed to load containers for this system.');
+      } finally {
+        this.containersLoading.set(false);
+      }
     });
   }
 
@@ -169,6 +248,19 @@ export class ResourceAccessDrawerComponent implements OnInit {
     // are typically the most useful starting point for an override base.
     const firstRole = this.roles().find((r) => !r.isSystem) ?? this.roles()[0];
     if (firstRole) this.roleId.set(firstRole.id);
+  }
+
+  onContainerSearch(value: string): void {
+    this.containerSearch.set(value);
+    this.containerPage.set(1);
+  }
+
+  onContainerPage(delta: number): void {
+    const next = Math.min(
+      this.containerPageCount(),
+      Math.max(1, this.containerPage() + delta),
+    );
+    this.containerPage.set(next);
   }
 
   toggleExtra(key: string): void {
@@ -213,8 +305,35 @@ export class ResourceAccessDrawerComponent implements OnInit {
     }
   }
 
-  onSubmit(): void {
+  /**
+   * Derive the `resource_id` for a container ACL exactly the way the server
+   * middleware does (UUID-v5 over (system_id, runtime_id)), then emit the
+   * full create payload. Exposed as a method instead of inlined in onSubmit()
+   * so the unit spec can assert on the derivation without faking an event.
+   */
+  async buildContainerPayload(): Promise<CreateAclPayload | null> {
+    const systemId = this.containerSystemId();
+    const runtimeId = this.selectedContainerRuntimeId();
+    if (!systemId || !runtimeId) return null;
+    const resourceId = await containerAclResourceId(systemId, runtimeId);
+    return {
+      userId: this.userId(),
+      resourceType: 'container',
+      resourceId,
+      systemId,
+      roleId: this.roleId() || undefined,
+      extraPermissions: Array.from(this.extraSet()),
+      deniedPermissions: Array.from(this.deniedSet()),
+    };
+  }
+
+  async onSubmit(): Promise<void> {
     if (!this.canSubmit()) return;
+    if (this.resourceType() === 'container') {
+      const payload = await this.buildContainerPayload();
+      if (payload) this.create.emit(payload);
+      return;
+    }
     this.create.emit({
       userId: this.userId(),
       resourceType: this.resourceType(),
@@ -227,5 +346,9 @@ export class ResourceAccessDrawerComponent implements OnInit {
 
   onCancel(): void {
     this.cancel.emit();
+  }
+
+  containerDisplayName(c: Container): string {
+    return getContainerDisplayName(c);
   }
 }

@@ -52,21 +52,135 @@
              until [CON-117] container-scope ACL enforcement lands. -->
       </label>
 
-      <label class="block text-xs uppercase tracking-wide text-zinc-500">
-        Resource
-        <select
-          [ngModel]="resourceId()"
-          (ngModelChange)="resourceId.set($event)"
-          name="resourceId"
-          required
-          class="mt-1 w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-zinc-100 text-sm normal-case tracking-normal"
-        >
-          <option value="" disabled>Select {{ resourceType() }}…</option>
-          @for (r of resourceOptions(); track r.id) {
-            <option [value]="r.id">{{ r.label }}</option>
+      @if (resourceType() !== 'container') {
+        <label class="block text-xs uppercase tracking-wide text-zinc-500">
+          Resource
+          <select
+            [ngModel]="resourceId()"
+            (ngModelChange)="resourceId.set($event)"
+            name="resourceId"
+            required
+            class="mt-1 w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-zinc-100 text-sm normal-case tracking-normal"
+          >
+            <option value="" disabled>Select {{ resourceType() }}…</option>
+            @for (r of resourceOptions(); track r.id) {
+              <option [value]="r.id">{{ r.label }}</option>
+            }
+          </select>
+        </label>
+      } @else {
+        <!-- Container scope (CON-130): pick the parent system first so the
+             server can cascade-delete via the FK, then a searchable paginated
+             list of that system's containers. Keeping the system + container
+             inputs stacked (rather than inline) is what keeps the drawer
+             reflow clean at 400% zoom and 320px width. -->
+        <fieldset class="space-y-2">
+          <legend class="block text-xs uppercase tracking-wide text-zinc-500">Container</legend>
+
+          <label class="block text-xs text-zinc-500">
+            Parent system
+            <select
+              [ngModel]="containerSystemId()"
+              (ngModelChange)="containerSystemId.set($event)"
+              name="containerSystemId"
+              required
+              class="mt-1 w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-zinc-100 text-sm normal-case tracking-normal"
+              aria-describedby="container-system-help"
+            >
+              <option value="" disabled>Select system…</option>
+              @for (s of systems(); track s.id) {
+                <option [value]="s.id">{{ s.label }}</option>
+              }
+            </select>
+            <span id="container-system-help" class="sr-only">
+              Required. The ACL cascades with the parent system.
+            </span>
+          </label>
+
+          @if (containerSystemId()) {
+            <div class="space-y-2">
+              <label class="block text-xs text-zinc-500">
+                Search
+                <input
+                  type="search"
+                  [ngModel]="containerSearch()"
+                  (ngModelChange)="onContainerSearch($event)"
+                  name="containerSearch"
+                  placeholder="Filter by name, image, or id"
+                  class="mt-1 w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-zinc-100 text-sm normal-case tracking-normal"
+                  [attr.aria-controls]="'container-list-' + titleId()"
+                />
+              </label>
+
+              @if (containersLoading()) {
+                <p class="text-xs text-zinc-500" aria-live="polite">Loading containers…</p>
+              } @else if (containersError(); as err) {
+                <p role="alert" class="text-xs text-red-400">{{ err }}</p>
+              } @else if (filteredContainers().length === 0) {
+                <p class="text-xs text-zinc-500" aria-live="polite">
+                  @if (containers().length === 0) {
+                    This system has no containers.
+                  } @else {
+                    No containers match "{{ containerSearch() }}".
+                  }
+                </p>
+              } @else {
+                <!-- Single-select list of containers rendered as an accessible
+                     radio group. A radiogroup + arrow-key traversal is a better
+                     a11y contract than a custom click-list here. -->
+                <div
+                  [id]="'container-list-' + titleId()"
+                  role="radiogroup"
+                  [attr.aria-label]="'Containers on ' + (containerSystemId() ? 'selected system' : '')"
+                  class="border border-zinc-800 rounded divide-y divide-zinc-800 max-h-64 overflow-y-auto"
+                >
+                  @for (c of containerPageSlice(); track c.id) {
+                    <label class="flex items-center gap-2 px-3 py-1.5 text-xs text-zinc-200 cursor-pointer hover:bg-zinc-800/50">
+                      <input
+                        type="radio"
+                        name="containerPick"
+                        [value]="c.id"
+                        [checked]="selectedContainerRuntimeId() === c.id"
+                        (change)="selectedContainerRuntimeId.set(c.id)"
+                      />
+                      <span class="flex-1 min-w-0 truncate">
+                        <span class="font-medium">{{ containerDisplayName(c) }}</span>
+                        <span class="text-zinc-500"> · {{ c.image }}</span>
+                      </span>
+                      <span class="text-[10px] text-zinc-500 uppercase shrink-0">{{ c.runtime }}</span>
+                    </label>
+                  }
+                </div>
+
+                <div class="flex items-center justify-between text-[11px] text-zinc-500">
+                  <span aria-live="polite">
+                    Showing
+                    {{ (containerPage() - 1) * 25 + 1 }}–{{ (containerPage() - 1) * 25 + containerPageSlice().length }}
+                    of {{ filteredContainers().length }}
+                  </span>
+                  <span class="flex items-center gap-2">
+                    <button
+                      type="button"
+                      (click)="onContainerPage(-1)"
+                      [disabled]="containerPage() === 1"
+                      class="px-2 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 disabled:opacity-40"
+                      aria-label="Previous page of containers"
+                    >Prev</button>
+                    <span>Page {{ containerPage() }} / {{ containerPageCount() }}</span>
+                    <button
+                      type="button"
+                      (click)="onContainerPage(1)"
+                      [disabled]="containerPage() >= containerPageCount()"
+                      class="px-2 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 disabled:opacity-40"
+                      aria-label="Next page of containers"
+                    >Next</button>
+                  </span>
+                </div>
+              }
+            </div>
           }
-        </select>
-      </label>
+        </fieldset>
+      }
 
       <label class="block text-xs uppercase tracking-wide text-zinc-500">
         Base role <span class="text-zinc-600 normal-case">(optional)</span>

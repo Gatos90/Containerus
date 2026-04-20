@@ -62,7 +62,17 @@
                 {{ memberByUserId().get(acl.userId)?.email ?? acl.userId }}
               </td>
               <td class="px-3 py-2 text-zinc-300">
-                <span class="text-zinc-500">{{ acl.resourceType }}:</span>
+                @if (acl.resourceType === 'container') {
+                  <span
+                    class="inline-flex items-center gap-1 text-[10px] uppercase tracking-wide bg-amber-500/20 text-amber-300 rounded px-1.5 py-0.5 mr-1.5"
+                    aria-label="Container-scoped ACL"
+                  >
+                    <lucide-icon [img]="Box" [size]="10" aria-hidden="true" />
+                    container
+                  </span>
+                } @else {
+                  <span class="text-zinc-500">{{ acl.resourceType }}:</span>
+                }
                 {{ resourceLabel(acl) }}
               </td>
               <td class="px-3 py-2 text-zinc-400">
@@ -108,6 +118,29 @@
           }
         </tbody>
       </table>
+    </div>
+  }
+
+  @if (undoToast(); as toast) {
+    <!-- Undo affordance (CON-130 §2): polite region so SR users hear the
+         removal but can still tab to the button in the 5s window. -->
+    <div
+      role="status"
+      aria-live="polite"
+      class="fixed bottom-4 right-4 bg-zinc-900 border border-zinc-700 rounded-lg shadow-lg px-3 py-2 flex items-center gap-3 text-sm text-zinc-100"
+    >
+      <span>{{ toast.message }}</span>
+      <button
+        type="button"
+        (click)="undoLast()"
+        class="text-blue-400 hover:text-blue-300 underline"
+      >Undo</button>
+      <button
+        type="button"
+        (click)="dismissUndo()"
+        class="text-zinc-500 hover:text-zinc-300"
+        aria-label="Dismiss undo"
+      >×</button>
     </div>
   }
 
