@@ -178,4 +178,11 @@ export const routes: Routes = [
         (m) => m.RoleManagerComponent
       ),
   },
+  {
+    path: 'a11y-devshell',
+    loadComponent: () =>
+      import('./shared/components/a11y/devshell/a11y-devshell.component').then(
+        (m) => m.A11yDevshellComponent
+      ),
+  },
 ];

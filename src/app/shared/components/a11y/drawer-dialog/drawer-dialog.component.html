@@ -1,0 +1,23 @@
+@if (open()) {
+  <div
+    class="fixed inset-0 z-50 flex justify-end cx-drawer-backdrop"
+    [class.cx-drawer-dirty]="dirty()"
+    role="presentation"
+  >
+    <div
+      class="absolute inset-0 bg-black/60"
+      (click)="onBackdropClick()"
+      aria-hidden="true"
+    ></div>
+    <div
+      #panel
+      class="relative h-full w-[28rem] max-w-[min(32rem,100vw)] bg-zinc-900 border-l border-zinc-700 shadow-2xl focus:outline-none"
+      role="dialog"
+      aria-modal="true"
+      [attr.aria-labelledby]="titleId()"
+      tabindex="-1"
+    >
+      <ng-content></ng-content>
+    </div>
+  </div>
+}

@@ -1,0 +1,108 @@
+<div class="mx-auto max-w-4xl space-y-10 p-6 text-zinc-200">
+  <header>
+    <h1 class="text-xl font-semibold">§5 a11y Component Library</h1>
+    <p class="mt-1 text-sm text-zinc-400">
+      Shared components for Phase 1. Every interactive control is reachable
+      with Tab; focus rings use a 2px blue outline against the zinc-900 chrome.
+    </p>
+  </header>
+
+  <!-- ConnectionBadge ------------------------------------------------- -->
+  <section aria-labelledby="sec-badge">
+    <h2 id="sec-badge" class="mb-2 text-sm font-semibold uppercase tracking-wide text-zinc-500">Connection badge</h2>
+    <div class="flex items-center gap-3">
+      <app-connection-badge connectionId="backend-prod" connectionLabel="Prod East" size="md"></app-connection-badge>
+      <app-connection-badge connectionId="backend-staging" connectionLabel="Staging" size="md" interactive></app-connection-badge>
+      <app-connection-badge connectionId="backend-dev-team-42" connectionLabel="Dev 42" size="sm"></app-connection-badge>
+    </div>
+  </section>
+
+  <!-- StatusChip ------------------------------------------------------ -->
+  <section aria-labelledby="sec-chip">
+    <h2 id="sec-chip" class="mb-2 text-sm font-semibold uppercase tracking-wide text-zinc-500">Status chip</h2>
+    <div class="flex items-center gap-2">
+      <app-status-chip status="healthy" [count]="42"></app-status-chip>
+      <app-status-chip status="degraded" [count]="3"></app-status-chip>
+      <app-status-chip status="failing" [count]="1" label="1 pod OOMKilled"></app-status-chip>
+      <app-status-chip status="unknown"></app-status-chip>
+    </div>
+  </section>
+
+  <!-- DrawerDialog ---------------------------------------------------- -->
+  <section aria-labelledby="sec-drawer">
+    <h2 id="sec-drawer" class="mb-2 text-sm font-semibold uppercase tracking-wide text-zinc-500">Drawer dialog</h2>
+    <div class="flex gap-3">
+      <button #drawerTrigger type="button" class="rounded bg-blue-700 px-3 py-1.5 text-sm" (click)="openDrawer($event)">
+        Open drawer
+      </button>
+      <label class="inline-flex items-center gap-2 text-sm">
+        <input type="checkbox" [checked]="drawerDirty()" (change)="drawerDirty.set($any($event.target).checked)" />
+        Mark dirty
+      </label>
+    </div>
+    <app-drawer-dialog
+      [open]="drawerOpen()"
+      [dirty]="drawerDirty()"
+      [restoreFocusTo]="drawerTrigger()?.nativeElement ?? null"
+      (closed)="closeDrawer()"
+      (dirtyCloseAttempt)="confirmDiscard()"
+    >
+      <div class="p-4 space-y-3">
+        <h2 class="text-lg font-semibold">Edit access rule</h2>
+        <p class="text-sm text-zinc-400">Focus is trapped inside this panel. Esc closes.</p>
+        <button type="button" class="rounded bg-zinc-700 px-3 py-1.5 text-sm" (click)="closeDrawer()">Close</button>
+      </div>
+    </app-drawer-dialog>
+  </section>
+
+  <!-- VirtualGrid ----------------------------------------------------- -->
+  <section aria-labelledby="sec-grid">
+    <h2 id="sec-grid" class="mb-2 text-sm font-semibold uppercase tracking-wide text-zinc-500">Virtual grid (5,000 rows)</h2>
+    <ng-template #gridTemplate let-row>
+      <span class="flex-1 truncate">{{ row.actor }}</span>
+      <span class="text-xs text-zinc-400 font-mono">{{ row.action }}</span>
+    </ng-template>
+    <app-virtual-grid
+      [rows]="rows"
+      [rowTemplate]="gridTemplate()"
+      ariaLabel="Demo audit log"
+    ></app-virtual-grid>
+  </section>
+
+  <!-- ListStates ------------------------------------------------------ -->
+  <section aria-labelledby="sec-liststates">
+    <h2 id="sec-liststates" class="mb-2 text-sm font-semibold uppercase tracking-wide text-zinc-500">List states</h2>
+    <div class="flex gap-2 mb-3 text-xs">
+      <button type="button" class="rounded bg-zinc-800 px-2 py-1" (click)="listMode.set('idle')">idle</button>
+      <button type="button" class="rounded bg-zinc-800 px-2 py-1" (click)="listMode.set('loading')">loading</button>
+      <button type="button" class="rounded bg-zinc-800 px-2 py-1" (click)="listMode.set('empty')">empty</button>
+      <button type="button" class="rounded bg-zinc-800 px-2 py-1" (click)="listMode.set('error')">error</button>
+    </div>
+    <app-list-states
+      [loading]="listMode() === 'loading'"
+      [empty]="listMode() === 'empty'"
+      [error]="listMode() === 'error' ? 'Could not load rules (500)' : null"
+      emptyHeadline="No access rules"
+      emptyDescription="Add a rule to restrict who can exec into this container."
+    >
+      <p class="p-4 text-sm text-zinc-400">Children render here when idle.</p>
+    </app-list-states>
+  </section>
+
+  <!-- PermissionKey --------------------------------------------------- -->
+  <section aria-labelledby="sec-pk">
+    <h2 id="sec-pk" class="mb-2 text-sm font-semibold uppercase tracking-wide text-zinc-500">Permission key</h2>
+    <div class="flex flex-wrap items-center gap-3">
+      <app-permission-key value="container:exec"></app-permission-key>
+      <app-permission-key value="cluster:read"></app-permission-key>
+      <!-- No catalog entry → affordance is silently omitted. -->
+      <app-permission-key value="system:unknown-key"></app-permission-key>
+    </div>
+  </section>
+
+  <!-- MfaCodeInput ---------------------------------------------------- -->
+  <section aria-labelledby="sec-mfa">
+    <h2 id="sec-mfa" class="mb-2 text-sm font-semibold uppercase tracking-wide text-zinc-500">MFA code input</h2>
+    <app-mfa-code-input label="Enter your authenticator code" (codeEntered)="onMfaCode($event)"></app-mfa-code-input>
+  </section>
+</div>

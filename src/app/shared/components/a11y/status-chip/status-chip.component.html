@@ -1,0 +1,11 @@
+<span
+  class="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium"
+  [class]="variant().chipClass"
+>
+  <span aria-hidden="true" class="text-[10px] leading-none">{{ variant().glyph }}</span>
+  <span class="sr-only">{{ srText() }}</span>
+  <span aria-hidden="true">{{ resolvedLabel() }}</span>
+  @if (count() !== null) {
+    <span aria-hidden="true" class="tabular-nums opacity-90">{{ count() }}</span>
+  }
+</span>

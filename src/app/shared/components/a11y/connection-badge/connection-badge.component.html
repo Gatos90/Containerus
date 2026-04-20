@@ -1,0 +1,28 @@
+@if (interactive()) {
+  <button
+    type="button"
+    class="inline-flex items-center justify-center rounded-full ring-2 ring-offset-2 ring-offset-zinc-900 transition focus:outline-none focus-visible:ring-4"
+    [style.width.px]="dimension()"
+    [style.height.px]="dimension()"
+    [style.background]="palette().background"
+    [style.color]="palette().foreground"
+    [style.--tw-ring-color]="palette().ring"
+    [attr.aria-label]="ariaLabel()"
+    (click)="onClick($event)"
+    (keydown)="onKeydown($event)"
+  >
+    <span aria-hidden="true" class="text-[10px] leading-none font-bold">{{ glyph() }}</span>
+  </button>
+} @else {
+  <span
+    aria-hidden="true"
+    class="inline-flex items-center justify-center rounded-full ring-2 ring-offset-2 ring-offset-zinc-900"
+    [style.width.px]="dimension()"
+    [style.height.px]="dimension()"
+    [style.background]="palette().background"
+    [style.color]="palette().foreground"
+    [style.--tw-ring-color]="palette().ring"
+  >
+    <span class="text-[10px] leading-none font-bold">{{ glyph() }}</span>
+  </span>
+}

@@ -1,0 +1,32 @@
+<div
+  #scroller
+  class="relative overflow-auto border border-zinc-700 rounded focus-within:ring-2 focus-within:ring-blue-500/50"
+  [style.height.px]="viewportHeight()"
+  role="grid"
+  [attr.aria-rowcount]="rowCount()"
+  [attr.aria-label]="ariaLabel()"
+  tabindex="0"
+  (scroll)="onScroll($event)"
+  (keydown)="onKeydown($event)"
+>
+  <div [style.height.px]="totalHeight()" aria-hidden="true"></div>
+  <div
+    class="absolute inset-x-0 top-0"
+    [style.transform]="'translateY(' + topSpacerHeight() + 'px)'"
+  >
+    @for (entry of visibleRows(); track entry.row.id) {
+      <div
+        role="row"
+        [attr.aria-rowindex]="entry.index + 1"
+        [attr.data-grid-row]="entry.index"
+        [attr.tabindex]="focusedIndex() === entry.index ? 0 : -1"
+        class="flex items-center px-3 border-b border-zinc-800 outline-none focus:bg-blue-950/40 focus:ring-2 focus:ring-blue-500/60 focus:ring-inset"
+        [style.height.px]="rowHeight()"
+      >
+        <ng-container
+          *ngTemplateOutlet="rowTemplate(); context: { $implicit: entry.row, index: entry.index }"
+        ></ng-container>
+      </div>
+    }
+  </div>
+</div>

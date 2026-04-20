@@ -1,0 +1,23 @@
+<span class="inline-flex items-center gap-1">
+  <code class="rounded bg-zinc-800 px-1.5 py-0.5 text-xs font-mono text-zinc-200">{{ value() }}</code>
+  @if (hasDescription()) {
+    <button
+      type="button"
+      class="inline-flex h-5 w-5 items-center justify-center rounded-full border border-zinc-600 text-[10px] text-zinc-300 hover:border-zinc-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
+      [attr.aria-expanded]="open()"
+      [attr.aria-controls]="popoverIdSignal()"
+      [attr.aria-label]="'Description for ' + value()"
+      (click)="toggle($event)"
+      (keydown)="onKey($event)"
+    >
+      i
+    </button>
+    @if (open()) {
+      <span
+        [id]="popoverIdSignal()"
+        role="tooltip"
+        class="ml-1 rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-xs text-zinc-200 shadow-lg"
+      >{{ description() }}</span>
+    }
+  }
+</span>

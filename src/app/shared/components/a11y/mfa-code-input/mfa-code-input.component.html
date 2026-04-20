@@ -1,0 +1,17 @@
+<input
+  #input
+  type="text"
+  inputmode="numeric"
+  autocomplete="one-time-code"
+  [attr.maxlength]="length()"
+  [attr.minlength]="length()"
+  [attr.pattern]="pattern()"
+  [attr.aria-label]="label()"
+  [attr.aria-invalid]="invalid() ? 'true' : null"
+  [attr.aria-describedby]="describedById()"
+  [attr.disabled]="disabled() ? '' : null"
+  class="w-40 rounded border bg-zinc-900 px-3 py-2 text-center text-lg font-mono tracking-[0.4em] tabular-nums text-zinc-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+  [class.border-red-600]="invalid()"
+  [class.border-zinc-700]="!invalid()"
+  (input)="onInput($event)"
+/>
