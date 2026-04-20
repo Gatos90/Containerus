@@ -39,12 +39,40 @@ spec:
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           command: ["containerus-server", "--migrate-only"]
+          envFrom:
+            - configMapRef:
+                name: {{ include "containerus-server.fullname" . }}-config
           env:
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
                   name: {{ include "containerus-server.secretName" . }}
                   key: DATABASE_URL
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "containerus-server.secretName" . }}
+                  key: JWT_SECRET
+            - name: ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "containerus-server.secretName" . }}
+                  key: ENCRYPTION_KEY
+            - name: ENCRYPTION_SALT
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "containerus-server.secretName" . }}
+                  key: ENCRYPTION_SALT
+            - name: ADMIN_EMAIL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "containerus-server.secretName" . }}
+                  key: ADMIN_EMAIL
+            - name: ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "containerus-server.secretName" . }}
+                  key: ADMIN_PASSWORD
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
           resources:

@@ -27,11 +27,6 @@ spec:
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      securityContext:
-        runAsNonRoot: true
-        runAsUser: 101
-        runAsGroup: 101
-        fsGroup: 101
       containers:
         - name: web
           image: "{{ .Values.web.image.repository }}:{{ .Values.web.image.tag }}"
@@ -54,6 +49,7 @@ spec:
                 - SETUID
                 - SETGID
                 - NET_BIND_SERVICE
+                - DAC_OVERRIDE
           livenessProbe:
             httpGet:
               path: /
