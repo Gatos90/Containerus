@@ -1,3 +1,4 @@
+import '@angular/compiler';
 import { describe, it, expect, vi } from 'vitest';
 import { Injector, runInInjectionContext } from '@angular/core';
 import { PermissionKeyComponent } from './permission-key.component';

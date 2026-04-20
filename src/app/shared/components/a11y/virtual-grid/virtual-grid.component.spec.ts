@@ -1,3 +1,4 @@
+import '@angular/compiler';
 import { describe, it, expect, vi } from 'vitest';
 import { Injector, runInInjectionContext, ɵChangeDetectionScheduler, ɵEffectScheduler } from '@angular/core';
 import { VirtualGridComponent } from './virtual-grid.component';
