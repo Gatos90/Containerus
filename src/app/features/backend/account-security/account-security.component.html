@@ -291,7 +291,8 @@
               <label for="mfa-disable-code" class="text-xs text-zinc-400">Code</label>
               <app-mfa-code-input
                 inputId="mfa-disable-code"
-                [length]="6"
+                mode="mixed"
+                [length]="10"
                 label="Current TOTP or backup code"
                 [invalid]="!!mfaError()"
                 [disabled]="mfaBusy()"

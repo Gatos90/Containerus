@@ -73,7 +73,55 @@ describe('MfaCodeInputComponent', () => {
     it('builds a pattern matching the length', () => {
       const c = makeComponent();
       (c.length as any) = () => 8;
+      (c.mode as any) = () => 'totp';
       expect(c.pattern()).toBe('[0-9]{8}');
+    });
+
+    it('switches to an alphanumeric pattern in mixed mode', () => {
+      const c = makeComponent();
+      (c.length as any) = () => 10;
+      (c.mode as any) = () => 'mixed';
+      expect(c.pattern()).toBe('[A-Z0-9]{1,10}');
+    });
+  });
+
+  describe('mixed mode (backup codes)', () => {
+    it('accepts a dash-separated backup code paste and submits at full length', () => {
+      const c = makeComponent();
+      (c.length as any) = () => 10;
+      (c.mode as any) = () => 'mixed';
+      const changed = vi.fn();
+      const entered = vi.fn();
+      c.valueChanged.subscribe(changed);
+      c.codeEntered.subscribe(entered);
+
+      c.onInput(fakeInputEvent('ABCDE-FGHIJ'));
+
+      expect(c.value()).toBe('ABCDEFGHIJ');
+      expect(changed).toHaveBeenLastCalledWith('ABCDEFGHIJ');
+      expect(entered).toHaveBeenCalledWith('ABCDEFGHIJ');
+    });
+
+    it('upper-cases lower-case backup-code input so hashing matches the server', () => {
+      const c = makeComponent();
+      (c.length as any) = () => 10;
+      (c.mode as any) = () => 'mixed';
+      c.onInput(fakeInputEvent('abcde fghij'));
+      expect(c.value()).toBe('ABCDEFGHIJ');
+    });
+
+    it('still accepts a 6-digit TOTP entered into the mixed field', () => {
+      const c = makeComponent();
+      (c.length as any) = () => 10;
+      (c.mode as any) = () => 'mixed';
+      c.onInput(fakeInputEvent('123456'));
+      expect(c.value()).toBe('123456');
+    });
+
+    it('reports inputmode=text when mixed so the keyboard allows letters', () => {
+      const c = makeComponent();
+      (c.mode as any) = () => 'mixed';
+      expect(c.inputModeAttr()).toBe('text');
     });
   });
 

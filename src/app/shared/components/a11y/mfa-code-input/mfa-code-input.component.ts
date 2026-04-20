@@ -46,6 +46,14 @@ export class MfaCodeInputComponent {
    * the `aria-label` fallback is suppressed so the visible text wins.
    */
   readonly inputId = input<string | null>(null);
+  /**
+   * `'totp'` (default) accepts digits only and auto-submits when `length` is
+   * reached — matches the 6-digit authenticator-app UX. `'mixed'` accepts
+   * alphanumerics (upper-cased) so the same input can take either a TOTP or
+   * a 10-char backup code during MFA disable, where the server tries TOTP
+   * first and falls back to backup-code consumption.
+   */
+  readonly mode = input<'totp' | 'mixed'>('totp');
 
   /** Accessible name: defer to a paired `<label for>` when `inputId` is set. */
   readonly ariaLabelAttr = computed(() =>
@@ -58,19 +66,36 @@ export class MfaCodeInputComponent {
   private readonly inputRef = viewChild<ElementRef<HTMLInputElement>>('input');
 
   readonly value = signal('');
-  readonly pattern = computed(() => `[0-9]{${this.length()}}`);
+  readonly pattern = computed(() =>
+    this.mode() === 'totp'
+      ? `[0-9]{${this.length()}}`
+      : `[A-Z0-9]{1,${this.length()}}`,
+  );
+  readonly inputModeAttr = computed(() =>
+    this.mode() === 'totp' ? 'numeric' : 'text',
+  );
   readonly isComplete = computed(() => this.value().length === this.length());
 
   /**
    * Sanitize incoming keystrokes / paste:
-   * - strip non-digits
+   * - strip disallowed characters (digits-only in `'totp'`, alphanumerics in
+   *   `'mixed'` — the latter upper-cases to match the backup-code display
+   *   format, which the server normalises the same way)
    * - truncate to `length`
    * - auto-submit when full, so the user doesn't have to hit Enter after the
-   *   sixth keystroke (matches Apple / Google authenticator UX)
+   *   last keystroke (matches Apple / Google authenticator UX, and lets a
+   *   pasted backup code like "ABCDE-FGHIJ" submit the disable flow without
+   *   an extra click)
    */
   onInput(event: Event): void {
     const raw = (event.target as HTMLInputElement).value;
-    const cleaned = raw.replace(/\D/g, '').slice(0, this.length());
+    const cleaned =
+      this.mode() === 'totp'
+        ? raw.replace(/\D/g, '').slice(0, this.length())
+        : raw
+            .toUpperCase()
+            .replace(/[^A-Z0-9]/g, '')
+            .slice(0, this.length());
     this.value.set(cleaned);
     const el = this.inputRef()?.nativeElement;
     if (el && el.value !== cleaned) {

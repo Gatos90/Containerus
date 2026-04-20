@@ -254,4 +254,29 @@ describe('AccountSecurityComponent', () => {
     expect(fixture.componentInstance.mfaEnabled()).toBe(false);
     expect(fixture.componentInstance.mfaDrawerOpen()).toBe(false);
   });
+
+  // Regression: the disable field used to be a 6-digit-only input, which
+  // silently ate pasted backup codes (the only recovery path when the TOTP
+  // device is lost). The field must now accept a dash-separated backup code,
+  // strip the separator, and submit the normalised form to `disableMfaFor`.
+  it('accepts a dash-separated backup code paste in the disable flow', async () => {
+    const { fixture, backend } = configure({ mfaEnabled: true });
+    await fixture.componentInstance.ngOnInit();
+    await fixture.componentInstance.openDisableMfa({ currentTarget: null } as unknown as Event);
+    fixture.detectChanges();
+
+    const input = (fixture.nativeElement as HTMLElement).querySelector<HTMLInputElement>(
+      'input#mfa-disable-code',
+    );
+    expect(input).not.toBeNull();
+    // Simulate pasting the code the user copied off their recovery sheet.
+    input!.value = 'ABCDE-FGHIJ';
+    input!.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+    // Let the auto-submit microtask settle.
+    await Promise.resolve();
+
+    expect(fixture.componentInstance.mfaCode()).toBe('ABCDEFGHIJ');
+    expect(backend.disableMfaFor).toHaveBeenCalledWith('c1', 'ABCDEFGHIJ');
+  });
 });
