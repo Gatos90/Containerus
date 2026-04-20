@@ -200,6 +200,13 @@ export const routes: Routes = [
       ),
   },
   {
+    path: 'account/security',
+    loadComponent: () =>
+      import('./features/backend/account-security/account-security.component').then(
+        (m) => m.AccountSecurityComponent
+      ),
+  },
+  {
     path: 'a11y-devshell',
     loadComponent: () =>
       import('./shared/components/a11y/devshell/a11y-devshell.component').then(

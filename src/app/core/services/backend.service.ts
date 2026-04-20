@@ -30,6 +30,9 @@ import {
   RoleWithPermissions,
   SavedBackendConnection,
   UserProfile,
+  UserSession,
+  MfaEnrollResponse,
+  MfaVerifyEnrollmentResponse,
   AuditLogEntry,
   K8sApiResource,
   mapPod,
@@ -516,6 +519,64 @@ export class BackendService {
   async deleteAclFor(connectionId: string, projectId: string, aclId: string): Promise<void> {
     await this.requestFor(connectionId, 'DELETE', `/api/projects/${projectId}/acls/${aclId}`);
     this.notifyLocalPermissionEdit(connectionId);
+  }
+
+  // ==========================================================================
+  // Sessions + MFA (CON-132)
+  // --------------------------------------------------------------------------
+  // Sessions are projected off refresh_tokens; MFA uses TOTP with one-shot
+  // backup codes. Both surfaces are under the caller's own user — no project
+  // or system scoping is required.
+  // ==========================================================================
+
+  async listMySessionsFor(connectionId: string): Promise<UserSession[]> {
+    return this.requestFor<UserSession[]>(connectionId, 'GET', '/api/users/me/sessions');
+  }
+
+  async revokeMySessionFor(connectionId: string, sessionId: string): Promise<void> {
+    await this.requestFor(connectionId, 'DELETE', `/api/users/me/sessions/${sessionId}`);
+  }
+
+  async revokeAllOtherSessionsFor(connectionId: string): Promise<{ revoked: number }> {
+    return this.requestFor<{ revoked: number }>(
+      connectionId,
+      'DELETE',
+      '/api/users/me/sessions/all',
+    );
+  }
+
+  async enrollMfaFor(connectionId: string): Promise<MfaEnrollResponse> {
+    return this.requestFor<MfaEnrollResponse>(connectionId, 'POST', '/api/auth/mfa/enroll');
+  }
+
+  async verifyMfaEnrollmentFor(
+    connectionId: string,
+    code: string,
+  ): Promise<MfaVerifyEnrollmentResponse> {
+    const result = await this.requestFor<MfaVerifyEnrollmentResponse>(
+      connectionId,
+      'POST',
+      '/api/auth/mfa/verify',
+      { code },
+    );
+    // Re-fetch /auth/me so the cached `mfaEnabled` flag flips without a reload.
+    try {
+      const user = await this.requestFor<UserProfile>(connectionId, 'GET', '/api/auth/me');
+      this.updateConnection(connectionId, { user });
+    } catch {
+      // Non-fatal — the screen re-derives state from the verify response.
+    }
+    return result;
+  }
+
+  async disableMfaFor(connectionId: string, code: string): Promise<void> {
+    await this.requestFor(connectionId, 'POST', '/api/auth/mfa/disable', { code });
+    try {
+      const user = await this.requestFor<UserProfile>(connectionId, 'GET', '/api/auth/me');
+      this.updateConnection(connectionId, { user });
+    } catch {
+      // Non-fatal.
+    }
   }
 
   // ==========================================================================

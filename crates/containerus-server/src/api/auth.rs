@@ -92,6 +92,10 @@ pub struct MeResponse {
     pub user: UserResponse,
     pub is_company_admin: bool,
     pub permissions: Vec<String>,
+    /// Whether TOTP-based MFA is enabled for this user. Surfaced on `/auth/me`
+    /// so the Sessions & MFA screen (CON-132) can branch between enroll vs
+    /// disable flows without a second round-trip.
+    pub mfa_enabled: bool,
 }
 
 // ============================================================================
@@ -646,10 +650,13 @@ async fn me(
         perms
     };
 
+    let mfa_enabled = mfa::is_mfa_enabled(&state.db, auth.claims.sub).await?;
+
     Ok(Json(MeResponse {
         user: UserResponse::from(row),
         is_company_admin,
         permissions,
+        mfa_enabled,
     }))
 }
 

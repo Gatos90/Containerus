@@ -1,0 +1,318 @@
+<div class="p-4 sm:p-6 max-w-4xl mx-auto space-y-8">
+  <header class="flex flex-wrap items-center justify-between gap-3">
+    <h1 class="text-xl font-semibold text-zinc-100 flex items-center gap-2">
+      <lucide-icon [img]="Shield" [size]="20" aria-hidden="true" />
+      Sessions & two-factor authentication
+    </h1>
+    @if (userEmail(); as email) {
+      <p class="text-sm text-zinc-400">Signed in as {{ email }}</p>
+    }
+  </header>
+
+  @if (loadError()) {
+    <div role="alert" class="text-sm bg-red-950/30 text-red-300 rounded-lg p-3">{{ loadError() }}</div>
+  }
+
+  <!-- ======================================================================
+       Sessions
+       ====================================================================== -->
+  <section aria-labelledby="sessions-heading" class="space-y-3">
+    <div class="flex flex-wrap items-center justify-between gap-3">
+      <h2 id="sessions-heading" class="text-base font-semibold text-zinc-100 flex items-center gap-2">
+        <lucide-icon [img]="Monitor" [size]="18" aria-hidden="true" />
+        Active sessions
+      </h2>
+      <button
+        type="button"
+        (click)="revokeAllOtherSessions()"
+        [disabled]="otherSessionsCount() === 0 || sessionsBusy()"
+        class="bg-blue-600 hover:bg-blue-500 disabled:bg-zinc-800 disabled:text-zinc-500 text-white text-sm rounded-lg px-3 py-1.5 flex items-center gap-1.5"
+      >
+        @if (sessionsBusy()) {
+          <lucide-icon [img]="Loader2" [size]="14" class="animate-spin" aria-hidden="true" />
+        }
+        Revoke all other sessions
+        <span class="sr-only">
+          {{ otherSessionsCount() }} other session{{ otherSessionsCount() === 1 ? '' : 's' }}
+        </span>
+      </button>
+    </div>
+
+    @if (loading() && sessions().length === 0) {
+      <app-list-states [loading]="true" loadingLabel="Loading your active sessions…" />
+    } @else if (sessions().length === 0) {
+      <app-list-states
+        [empty]="true"
+        emptyHeadline="No active sessions"
+        emptyDescription="You have no other signed-in devices."
+      />
+    } @else {
+      <div class="bg-zinc-900 border border-zinc-800 rounded-xl overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead class="text-left text-xs uppercase tracking-wide text-zinc-500 border-b border-zinc-800">
+            <tr>
+              <th scope="col" class="px-3 py-2">Device</th>
+              <th scope="col" class="px-3 py-2">IP</th>
+              <th scope="col" class="px-3 py-2">Last active</th>
+              <th scope="col" class="px-3 py-2 text-right">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (session of sessions(); track session.id) {
+              <tr class="border-b border-zinc-800/50">
+                <td class="px-3 py-2 text-zinc-200">
+                  <div class="flex items-center gap-2 flex-wrap">
+                    <span>{{ humanizeUserAgent(session.userAgent) }}</span>
+                    @if (session.isCurrent) {
+                      <span
+                        class="text-[10px] uppercase tracking-wide bg-emerald-500/20 text-emerald-300 rounded px-1.5 py-0.5"
+                        aria-label="This is your current session"
+                      >current</span>
+                    }
+                  </div>
+                </td>
+                <td class="px-3 py-2 text-zinc-400 font-mono text-xs tabular-nums">
+                  {{ session.ipAddress ?? '—' }}
+                </td>
+                <td class="px-3 py-2 text-zinc-400">
+                  <time [attr.datetime]="session.lastUsedAt ?? session.createdAt">
+                    {{ session.lastUsedAt ?? session.createdAt | date:'medium' }}
+                  </time>
+                </td>
+                <td class="px-3 py-2 text-right">
+                  <button
+                    type="button"
+                    (click)="revokeSession(session)"
+                    [disabled]="session.isCurrent"
+                    class="text-zinc-400 hover:text-red-400 disabled:text-zinc-700 disabled:cursor-not-allowed p-1.5 rounded hover:bg-zinc-800 disabled:hover:bg-transparent"
+                    [attr.aria-label]="'Revoke session ' + sessionLabel(session)"
+                    [attr.aria-disabled]="session.isCurrent ? 'true' : null"
+                    [attr.title]="session.isCurrent ? 'Use sign out to end the current session' : null"
+                  >
+                    <lucide-icon [img]="Trash2" [size]="14" aria-hidden="true" />
+                  </button>
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    }
+  </section>
+
+  <!-- ======================================================================
+       MFA
+       ====================================================================== -->
+  <section aria-labelledby="mfa-heading" class="space-y-3">
+    <div class="flex flex-wrap items-center justify-between gap-3">
+      <h2 id="mfa-heading" class="text-base font-semibold text-zinc-100 flex items-center gap-2">
+        <lucide-icon [img]="mfaEnabled() ? ShieldCheck : Shield" [size]="18" aria-hidden="true" />
+        Two-factor authentication
+      </h2>
+      @if (mfaEnabled()) {
+        <button
+          type="button"
+          #disableTrigger
+          (click)="openDisableMfa($event)"
+          class="bg-zinc-800 hover:bg-zinc-700 text-zinc-100 text-sm rounded-lg px-3 py-1.5"
+        >Disable</button>
+      } @else {
+        <button
+          type="button"
+          #enableTrigger
+          (click)="openEnableMfa($event)"
+          class="bg-blue-600 hover:bg-blue-500 text-white text-sm rounded-lg px-3 py-1.5"
+        >Enable</button>
+      }
+    </div>
+    <div class="bg-zinc-900 border border-zinc-800 rounded-xl p-4 text-sm text-zinc-300">
+      @if (mfaEnabled()) {
+        <p class="flex items-center gap-2">
+          <lucide-icon [img]="CheckCircle2" [size]="16" class="text-emerald-400" aria-hidden="true" />
+          TOTP is active. You'll be asked for a 6-digit code after signing in.
+        </p>
+      } @else {
+        <p>
+          Add a time-based one-time code from an authenticator app
+          (Google Authenticator, 1Password, Authy, etc.) as a second factor when signing in.
+        </p>
+      }
+    </div>
+  </section>
+
+  <!-- ======================================================================
+       Status toast — polite so SR users hear revoke/MFA outcomes without
+       being yanked off the row they just acted on.
+       ====================================================================== -->
+  @if (toast(); as t) {
+    <div
+      [attr.role]="t.kind === 'error' ? 'alert' : 'status'"
+      [attr.aria-live]="t.kind === 'error' ? 'assertive' : 'polite'"
+      class="fixed bottom-4 right-4 bg-zinc-900 border rounded-lg shadow-lg px-3 py-2 flex items-center gap-3 text-sm text-zinc-100"
+      [class.border-red-700]="t.kind === 'error'"
+      [class.border-zinc-700]="t.kind !== 'error'"
+    >
+      <span>{{ t.message }}</span>
+      <button
+        type="button"
+        (click)="dismissToast()"
+        class="text-zinc-500 hover:text-zinc-300"
+        aria-label="Dismiss notification"
+      >×</button>
+    </div>
+  }
+
+  <!-- ======================================================================
+       MFA drawer — handles enrollment (enroll → verify → backup codes) and
+       disable (TOTP / backup code entry).
+       ====================================================================== -->
+  <app-drawer-dialog
+    [open]="mfaDrawerOpen()"
+    [restoreFocusTo]="mfaTrigger()"
+    titleId="mfa-drawer-title"
+    (closed)="onMfaDrawerClosed()"
+  >
+    <div class="flex flex-col h-full">
+      <header class="px-4 py-3 border-b border-zinc-800 flex items-center justify-between">
+        <h3 id="mfa-drawer-title" class="text-sm font-semibold text-zinc-100">
+          @switch (mfaStep()) {
+            @case ('enrolling') { Setting up two-factor authentication }
+            @case ('verify') { Verify your authenticator app }
+            @case ('backup-codes') { Save your backup codes }
+            @case ('disabling') { Disable two-factor authentication }
+            @default { Two-factor authentication }
+          }
+        </h3>
+        <button
+          type="button"
+          (click)="onMfaDrawerClosed()"
+          class="text-zinc-400 hover:text-zinc-200"
+          aria-label="Close"
+        >×</button>
+      </header>
+
+      <div class="flex-1 overflow-y-auto px-4 py-4 space-y-4 text-sm text-zinc-200">
+        @if (mfaError(); as err) {
+          <div role="alert" class="bg-red-950/30 text-red-300 rounded-lg p-3 flex items-start gap-2">
+            <lucide-icon [img]="AlertTriangle" [size]="14" aria-hidden="true" class="mt-0.5" />
+            <span>{{ err }}</span>
+          </div>
+        }
+
+        @switch (mfaStep()) {
+          @case ('enrolling') {
+            <div class="flex items-center gap-2 text-zinc-400">
+              <lucide-icon [img]="Loader2" [size]="16" class="animate-spin" aria-hidden="true" />
+              Generating your MFA secret…
+            </div>
+          }
+
+          @case ('verify') {
+            @if (enrollResponse(); as enrol) {
+              <ol class="list-decimal list-inside space-y-2 text-zinc-300">
+                <li>Open your authenticator app and add a new account.</li>
+                <li>Scan the QR code or enter the secret manually.</li>
+                <li>Type the 6-digit code below to confirm.</li>
+              </ol>
+              <div class="space-y-2">
+                <p class="text-xs text-zinc-500">Setup key (manual entry)</p>
+                <code
+                  class="block break-all font-mono text-xs bg-zinc-950 border border-zinc-800 rounded p-2 text-zinc-200"
+                >{{ enrol.secret }}</code>
+                <p class="text-xs text-zinc-500">otpauth URI</p>
+                <code
+                  class="block break-all font-mono text-[10px] bg-zinc-950 border border-zinc-800 rounded p-2 text-zinc-400"
+                >{{ enrol.otpauthUri }}</code>
+              </div>
+              <div class="space-y-2">
+                <label for="mfa-verify-code" class="text-xs text-zinc-400">6-digit code</label>
+                <app-mfa-code-input
+                  [invalid]="!!mfaError()"
+                  [disabled]="mfaBusy()"
+                  [describedById]="mfaError() ? 'mfa-verify-error' : null"
+                  (valueChanged)="onMfaCodeChanged($event)"
+                  (codeEntered)="submitVerify()"
+                />
+              </div>
+              <button
+                type="button"
+                (click)="submitVerify()"
+                [disabled]="mfaBusy()"
+                class="bg-blue-600 hover:bg-blue-500 disabled:bg-zinc-800 disabled:text-zinc-500 text-white text-sm rounded-lg px-3 py-2 w-full"
+              >
+                @if (mfaBusy()) {
+                  <lucide-icon [img]="Loader2" [size]="14" class="animate-spin inline mr-1" aria-hidden="true" />
+                }
+                Confirm and enable
+              </button>
+            }
+          }
+
+          @case ('backup-codes') {
+            <p class="text-zinc-300">
+              Store these codes somewhere safe. Each one lets you sign in once if you lose your
+              authenticator. You won't be shown them again.
+            </p>
+            <ul
+              role="list"
+              aria-label="MFA backup codes"
+              class="grid grid-cols-2 gap-2 font-mono text-sm bg-zinc-950 border border-zinc-800 rounded p-3"
+            >
+              @for (code of backupCodes(); track code) {
+                <li class="text-zinc-100 tabular-nums">{{ code }}</li>
+              }
+            </ul>
+            <div class="flex gap-2">
+              <button
+                type="button"
+                (click)="copyBackupCodes()"
+                class="bg-zinc-800 hover:bg-zinc-700 text-zinc-100 text-sm rounded-lg px-3 py-2 flex items-center gap-1.5"
+              >
+                <lucide-icon [img]="Copy" [size]="14" aria-hidden="true" />
+                Copy codes
+              </button>
+              <button
+                type="button"
+                (click)="finishBackupCodes()"
+                class="flex-1 bg-blue-600 hover:bg-blue-500 text-white text-sm rounded-lg px-3 py-2"
+              >I've saved my codes</button>
+            </div>
+          }
+
+          @case ('disabling') {
+            <p class="text-zinc-300">
+              Enter a current 6-digit code from your authenticator app, or one of your backup codes,
+              to disable MFA on this account.
+            </p>
+            <div class="space-y-2">
+              <label for="mfa-disable-code" class="text-xs text-zinc-400">Code</label>
+              <app-mfa-code-input
+                [length]="6"
+                label="Current TOTP or backup code"
+                [invalid]="!!mfaError()"
+                [disabled]="mfaBusy()"
+                [describedById]="mfaError() ? 'mfa-disable-error' : null"
+                (valueChanged)="onMfaCodeChanged($event)"
+                (codeEntered)="submitDisable()"
+              />
+              <p class="text-[11px] text-zinc-500">
+                Backup codes are 10 characters — paste the full code if you're using one.
+              </p>
+            </div>
+            <button
+              type="button"
+              (click)="submitDisable()"
+              [disabled]="mfaBusy()"
+              class="bg-red-600 hover:bg-red-500 disabled:bg-zinc-800 disabled:text-zinc-500 text-white text-sm rounded-lg px-3 py-2 w-full"
+            >
+              @if (mfaBusy()) {
+                <lucide-icon [img]="Loader2" [size]="14" class="animate-spin inline mr-1" aria-hidden="true" />
+              }
+              Disable MFA
+            </button>
+          }
+        }
+      </div>
+    </div>
+  </app-drawer-dialog>
+</div>

@@ -58,6 +58,42 @@ export interface AuthTokens {
   refreshToken: string;
 }
 
+// ============================================================================
+// Sessions (CON-132)
+// ============================================================================
+
+/**
+ * Projection of an active refresh token row from `GET /api/users/me/sessions`.
+ * The backend already marks at most one row with `isCurrent: true` — the UI
+ * uses that flag directly rather than trying to correlate the access-token JTI.
+ */
+export interface UserSession {
+  id: string;
+  userAgent: string | null;
+  ipAddress: string | null;
+  createdAt: string;
+  expiresAt: string;
+  lastUsedAt: string | null;
+  isCurrent: boolean;
+}
+
+// ============================================================================
+// MFA (CON-132)
+// ============================================================================
+
+export interface MfaEnrollResponse {
+  /** Raw base32-encoded TOTP secret — shown for manual entry. */
+  secret: string;
+  /** otpauth:// URI, rendered as QR by the UI. */
+  otpauthUri: string;
+}
+
+export interface MfaVerifyEnrollmentResponse {
+  enabled: boolean;
+  /** One-shot backup codes. Shown exactly once — the backend never re-emits them. */
+  backupCodes: string[];
+}
+
 export interface UserProfile {
   id: string;
   email: string;
@@ -66,6 +102,13 @@ export interface UserProfile {
   authProvider: string;
   isCompanyAdmin: boolean;
   createdAt: string;
+  /**
+   * Surfaced from the `mfa_enabled` field on `GET /api/auth/me` so the CON-132
+   * Sessions & MFA screen can pick between the enroll vs disable flows without
+   * a second round-trip. Optional so older backends that don't emit the field
+   * degrade cleanly to "unknown / treat as disabled".
+   */
+  mfaEnabled?: boolean;
 }
 
 // ============================================================================
