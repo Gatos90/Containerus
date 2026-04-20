@@ -141,6 +141,7 @@ impl TestHarness {
             connections: ConnectionManager::new(vault.clone()),
             k8s: ClusterManager::new(vault),
             permission_cache,
+            permission_events: containerus_server::ws::events::PermissionEventBus::new(),
             revocation_cache: TokenRevocationCache::new(),
             // Tests disable rate-limiting by setting a ceiling high enough to
             // never trip in a single run (mirrors `auth_limiter` above).

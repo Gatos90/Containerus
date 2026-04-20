@@ -17,6 +17,7 @@ pub mod vault;
 pub mod ws;
 
 use auth::middleware::{PermissionCache, TokenRevocationCache};
+use ws::events::PermissionEventBus;
 use sqlx::PgPool;
 use axum::http::header::{AUTHORIZATION, CONTENT_TYPE};
 use axum::http::Method;
@@ -42,6 +43,10 @@ pub struct AppState {
     pub connections: ConnectionManager,
     pub k8s: ClusterManager,
     pub permission_cache: PermissionCache,
+    /// CON-122: user-scoped fanout of permission-invalidation events to
+    /// connected WS clients. Publish after RBAC writes; subscribers sit
+    /// in `ws::permissions`.
+    pub permission_events: PermissionEventBus,
     pub revocation_cache: TokenRevocationCache,
     /// Per-email rate limit for `POST /api/auth/password/reset/request`
     /// (CON-118). Caps at 5 requests/hour per normalised email so the public
@@ -175,6 +180,7 @@ pub async fn run() {
         connections,
         k8s,
         permission_cache,
+        permission_events: PermissionEventBus::new(),
         revocation_cache,
         password_reset_email_limiter,
         password_reset_ip_limiter,

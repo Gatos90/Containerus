@@ -13,6 +13,7 @@ use uuid::Uuid;
 use crate::audit::log_action;
 use crate::auth::middleware::AuthUser;
 use crate::db::models::{Permission, Role, RoleWithPermissions};
+use crate::ws::events::InvalidationScope;
 use crate::AppState;
 
 // ============================================================================
@@ -222,6 +223,14 @@ async fn create_role(
     if let Err(e) = state.permission_cache.invalidate_role(&state.db, role_id).await {
         tracing::warn!("Failed to invalidate permission cache for role {role_id}: {e}");
     }
+    // CON-122: fan out the change to any live WS sessions held by
+    // members of this role. A freshly-created role has no members yet
+    // so this is usually a no-op, but we publish unconditionally so
+    // every mutation site looks identical.
+    state
+        .permission_events
+        .publish_for_role(&state.db, role_id, InvalidationScope::Role)
+        .await;
 
     let role = Role {
         id: role_id,
@@ -386,6 +395,12 @@ async fn update_role(
     if let Err(e) = state.permission_cache.invalidate_role(&state.db, id).await {
         tracing::warn!("Failed to invalidate permission cache for role {id}: {e}");
     }
+    // CON-122: notify every live session whose project membership uses
+    // this role so the client can flush its local permission cache.
+    state
+        .permission_events
+        .publish_for_role(&state.db, id, InvalidationScope::Role)
+        .await;
 
     let role = Role {
         id,
