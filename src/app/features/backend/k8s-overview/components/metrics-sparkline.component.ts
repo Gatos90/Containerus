@@ -12,6 +12,8 @@ export interface SparklinePoint {
   value: number;
 }
 
+let sparklineUid = 0;
+
 /**
  * CON-136 §5 sparkline — pure-SVG, no chart library.
  *
@@ -23,9 +25,11 @@ export interface SparklinePoint {
  *
  * Accessibility is explicit: the SVG gets a descriptive `aria-label`
  * composed from the unit + current value + delta, and the numeric summary
- * (latest, min, max) is rendered in a text block next to the chart. A
- * live region adjacent to the chart announces new sample deltas so
- * screen readers surface the same "it went up" signal sighted users get.
+ * (latest, min, max) is rendered in a text block next to the chart and
+ * linked via `aria-describedby`. The SVG is intentionally not keyboard-
+ * focusable — 6 metrics × N containers would explode the tab order, and
+ * keyboard scrubbing isn't wired — so the adjacent text is canonical for
+ * non-mouse users.
  */
 @Component({
   selector: 'app-metrics-sparkline',
@@ -39,22 +43,24 @@ export interface SparklinePoint {
       </figcaption>
 
       <!--
-        role="img" keeps the SVG out of the reading flow while still giving SRs
-        the aria-label summary. The 320px reflow (WCAG 1.4.10) is handled by
-        the parent grid dropping to a single column below sm; the SVG itself
-        uses preserveAspectRatio="none" to rescale cleanly.
+        The SVG is decorative for keyboard + screen-reader users: role="img"
+        is kept so SR rotors can discover the chart with its descriptive
+        aria-label, but the element is NOT tabbable. Per-sparkline tab stops
+        added up to 18 focus targets per pod (6 metrics x 3 containers), and
+        keyboard scrubbing isn't wired — the text summary beneath each chart
+        is the canonical representation for non-mouse users. Mouse users
+        still get the hover crosshair. 320px reflow (WCAG 1.4.10) is handled
+        by the parent grid collapsing to a single column below sm.
       -->
       <svg
         [attr.viewBox]="viewBox()"
         preserveAspectRatio="none"
         role="img"
         [attr.aria-label]="ariaLabel()"
+        [attr.aria-describedby]="summaryId"
         class="h-14 w-full rounded border border-zinc-800 bg-zinc-950"
         (mousemove)="onMove($event)"
         (mouseleave)="onLeave()"
-        (focus)="onFocus()"
-        (blur)="onLeave()"
-        tabindex="0"
       >
         @if (hasData()) {
           <polyline
@@ -90,13 +96,16 @@ export interface SparklinePoint {
       <!--
         Text equivalent (CON-136 §5 a11y). Sighted users see a compact
         summary; SR users get the same numbers without reading the SVG.
+        Associated to the SVG via aria-describedby so detailed values are
+        programmatically connected to the chart element rather than a
+        trailing, disconnected paragraph.
       -->
-      <p class="flex flex-wrap gap-x-3 gap-y-0.5 text-[10px] text-zinc-500">
-        <span>now: <span class="font-mono text-zinc-300">{{ currentDisplay() }}</span></span>
+      <p [id]="summaryId" class="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-zinc-400">
+        <span>now: <span class="font-mono text-zinc-200">{{ currentDisplay() }}</span></span>
         <span>min: <span class="font-mono">{{ minDisplay() }}</span></span>
         <span>max: <span class="font-mono">{{ maxDisplay() }}</span></span>
         @if (hoverIndex() !== null) {
-          <span class="text-zinc-300">at {{ hoverTimestampDisplay() }}: <span class="font-mono">{{ hoverValueDisplay() }}</span></span>
+          <span class="text-zinc-200">at {{ hoverTimestampDisplay() }}: <span class="font-mono">{{ hoverValueDisplay() }}</span></span>
         }
       </p>
     </figure>
@@ -114,6 +123,9 @@ export class MetricsSparklineComponent {
   readonly max = input<number | null>(null);
   /** Optional formatter for numeric values (bytes→human etc.). */
   readonly formatValue = input<(v: number) => string>((v) => v.toFixed(1));
+
+  /** Stable id for aria-describedby linking the SVG to its text summary. */
+  readonly summaryId = `metrics-sparkline-summary-${++sparklineUid}`;
 
   readonly width = signal(240);
   readonly height = signal(48);
@@ -163,13 +175,17 @@ export class MetricsSparklineComponent {
   readonly minDisplay = computed(() => this.displayValue(this.minValue()));
   readonly maxDisplay = computed(() => this.displayValue(this.maxValue()));
 
+  // Uses the words "up" / "down" instead of a +/− glyph. U+2212 reads
+  // inconsistently on VoiceOver / JAWS and ASCII "-" is often dropped
+  // entirely; words are unambiguous and also read more naturally than
+  // "minus 1.2 percent".
   readonly deltaDisplay = computed(() => {
     const pts = this.points();
     if (pts.length < 2) return 'no change';
     const delta = pts[pts.length - 1].value - pts[pts.length - 2].value;
     if (Math.abs(delta) < 1e-6) return 'no change';
-    const sign = delta > 0 ? '+' : '−';
-    return `${sign}${this.displayValue(Math.abs(delta))}`;
+    const direction = delta > 0 ? 'up' : 'down';
+    return `${direction} ${this.displayValue(Math.abs(delta))}`;
   });
 
   readonly ariaLabel = computed(() => {
@@ -224,18 +240,6 @@ export class MetricsSparklineComponent {
 
   onLeave(): void {
     this.hoverIndex.set(null);
-  }
-
-  /**
-   * Focus hint — pin the crosshair to the latest sample so keyboard users
-   * see the hover tooltip without having to mouse. APG guidance for
-   * charts recommends surfacing the "current" point on focus; the rest
-   * is already in the text equivalent below.
-   */
-  onFocus(): void {
-    const pts = this.points();
-    if (pts.length === 0) return;
-    this.hoverIndex.set(pts.length - 1);
   }
 
   private displayValue(v: number | null): string {

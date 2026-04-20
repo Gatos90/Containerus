@@ -46,7 +46,8 @@ const METRICS_REASONS: Record<MetricsUnavailableReason, MetricsReasonDescriptor>
     reason: 'unauthorized',
     chipStatus: 'failing',
     label: 'Unauthorized',
-    description: 'You do not have containers.metrics.view on this system.',
+    description:
+      "You don't have permission to view metrics on this system. Ask an admin for the containers.metrics.view permission.",
   },
   not_found: {
     reason: 'not_found',
@@ -121,7 +122,7 @@ interface ContainerSeries {
           -->
           <span class="sr-only" aria-live="polite">{{ cadenceAnnouncement() }}</span>
 
-          <span class="text-[10px] text-zinc-500" aria-hidden="true">
+          <span class="text-xs text-zinc-400" aria-hidden="true">
             every {{ cadenceSeconds() }}s
           </span>
           <button
@@ -153,8 +154,13 @@ interface ContainerSeries {
           <p class="text-xs text-zinc-400">{{ reasonDescriptor(reason).description }}</p>
         </div>
       } @else if (loading() && series().length === 0) {
+        <!--
+          prefers-reduced-motion (WCAG 2.3.3): spinner only animates when the
+          user hasn't requested reduced motion; otherwise the static glyph
+          plus text still signals "loading" without vestibular risk.
+        -->
         <div role="status" aria-busy="true" class="flex items-center gap-2 text-xs text-zinc-400">
-          <svg aria-hidden="true" class="h-3.5 w-3.5 animate-spin" viewBox="0 0 24 24" fill="none">
+          <svg aria-hidden="true" class="h-3.5 w-3.5 motion-safe:animate-spin" viewBox="0 0 24 24" fill="none">
             <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-opacity=".25" stroke-width="3"></circle>
             <path d="M4 12a8 8 0 0 1 8-8" stroke="currentColor" stroke-width="3" stroke-linecap="round"></path>
           </svg>
@@ -165,13 +171,6 @@ interface ContainerSeries {
           No samples recorded yet for this pod's containers. Check back in a moment.
         </p>
       } @else {
-        <!--
-          Polite live region for the latest-value announcement. One shared
-          region per panel keeps announcement volume bounded (announcing
-          six metrics per container would bury any user input).
-        -->
-        <span class="sr-only" aria-live="polite">{{ liveAnnouncement() }}</span>
-
         <div class="space-y-6">
           @for (cs of series(); track cs.containerId) {
             <article class="space-y-3 rounded border border-zinc-800 bg-zinc-950 p-3">
@@ -180,7 +179,7 @@ interface ContainerSeries {
                   <span class="text-zinc-500">Container</span>
                   <span class="ml-1 font-mono text-zinc-100">{{ cs.containerId }}</span>
                 </h3>
-                <span class="text-[10px] text-zinc-500">{{ cs.samples.length }} samples · {{ window() }}</span>
+                <span class="text-xs text-zinc-400">{{ cs.samples.length }} samples · {{ window() }}</span>
               </header>
 
               <!--
@@ -266,25 +265,17 @@ export class PodMetricsPanelComponent {
     return Math.round((opt?.intervalMs ?? 10_000) / 1000);
   });
 
+  // Announces only on state changes (pause/resume, range change) — the
+  // string content flips when `paused()` toggles or when `cadenceSeconds()`
+  // changes with the window. Per-sample value announcements intentionally
+  // aren't emitted: at a 10s poll cadence they bury any other screen-reader
+  // speech, and the visible sparkline plus the text summary beneath each
+  // chart already provide the same numbers on demand.
   readonly cadenceAnnouncement = computed(() =>
     this.paused()
       ? 'Metrics polling paused.'
-      : `Metrics polling every ${this.cadenceSeconds()} seconds.`,
+      : `Metrics polling every ${this.cadenceSeconds()} seconds at ${this.window()} range.`,
   );
-
-  readonly liveAnnouncement = computed(() => {
-    const ids = this.containerIds();
-    const map = this.seriesMap();
-    if (ids.length === 0) return '';
-    const parts: string[] = [];
-    for (const id of ids) {
-      const s = map.get(id);
-      if (!s || s.samples.length === 0) continue;
-      const last = s.samples[s.samples.length - 1];
-      parts.push(`${id}: CPU ${last.cpuPercent.toFixed(1)}%, memory ${last.memoryPercent.toFixed(1)}%`);
-    }
-    return parts.length === 0 ? '' : `Latest sample. ${parts.join('. ')}.`;
-  });
 
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   /** Monotonic token to cancel in-flight fetches when inputs change. */

@@ -136,6 +136,20 @@ describe('PodMetricsPanelComponent', () => {
     expect(panel.cadenceAnnouncement()).toContain('paused');
   });
 
+  it('cadenceAnnouncement includes the active range so window changes announce', () => {
+    const { panel } = makePanel();
+    expect(panel.cadenceAnnouncement()).toContain('1h');
+    panel.setWindow('24h');
+    expect(panel.cadenceAnnouncement()).toContain('24h');
+  });
+
+  it('does not expose a per-poll value live announcement', () => {
+    // Per-poll value announcements (~every 10s) bury other SR speech and
+    // are redundant with the on-screen sparkline + text summary.
+    const { panel } = makePanel();
+    expect((panel as unknown as Record<string, unknown>).liveAnnouncement).toBeUndefined();
+  });
+
   it('setWindow changes the polling cadence second count', () => {
     const { panel } = makePanel();
     expect(panel.cadenceSeconds()).toBe(10);
@@ -161,5 +175,11 @@ describe('PodMetricsPanelComponent', () => {
     const { panel } = makePanel();
     expect(panel.reasonDescriptor('unauthorized').chipStatus).toBe('failing');
     expect(panel.reasonDescriptor('not_found').label.toLowerCase()).toContain('no data');
+  });
+
+  it('unauthorized description explains the remediation instead of naming the raw permission first', () => {
+    const desc = METRICS_REASONS.unauthorized.description;
+    expect(desc.toLowerCase()).toContain("don't have permission");
+    expect(desc).toContain('containers.metrics.view');
   });
 });

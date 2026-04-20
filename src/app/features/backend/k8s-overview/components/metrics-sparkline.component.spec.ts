@@ -27,7 +27,7 @@ function makeSparkline() {
 }
 
 describe('MetricsSparklineComponent', () => {
-  it('aria-label reports current value, delta, and observed range', () => {
+  it('aria-label reports current value, delta direction, and observed range', () => {
     const cmp = makeSparkline();
     (cmp.points as any) = () => [
       { timestampMs: 0, value: 10 },
@@ -39,8 +39,19 @@ describe('MetricsSparklineComponent', () => {
     expect(aria).toContain('25.0%');
     expect(aria).toContain('10.0%');
     expect(aria).toContain('30.0%');
-    // Delta is last - previous, so 25 - 30 = -5.
-    expect(aria).toContain('−5.0');
+    // Delta is last - previous, so 25 - 30 = -5; uses the word "down" so
+    // screen readers read the direction unambiguously.
+    expect(aria).toContain('down 5.0');
+    expect(aria).not.toMatch(/[−+]/);
+  });
+
+  it('aria-label uses "up" for positive deltas', () => {
+    const cmp = makeSparkline();
+    (cmp.points as any) = () => [
+      { timestampMs: 0, value: 10 },
+      { timestampMs: 1000, value: 12 },
+    ];
+    expect(cmp.ariaLabel()).toContain('up 2.0');
   });
 
   it('reports "no data" when the series is empty', () => {
@@ -65,13 +76,17 @@ describe('MetricsSparklineComponent', () => {
     expect(cmp.polyline().split(' ').length).toBe(2);
   });
 
-  it('hover helpers clear when no index is selected', () => {
+  it('hover helpers stay cleared until mousemove picks an index', () => {
     const cmp = makeSparkline();
     (cmp.points as any) = () => [{ timestampMs: 1234, value: 10 }];
+    expect(cmp.hoverIndex()).toBeNull();
     expect(cmp.hoverValueDisplay()).toBe('');
-    cmp.onFocus();
-    // Focus pins to the latest sample.
-    expect(cmp.hoverIndex()).toBe(0);
-    expect(cmp.hoverValueDisplay()).toBe('10.0%');
+    cmp.onLeave();
+    expect(cmp.hoverIndex()).toBeNull();
+  });
+
+  it('exposes a stable summary id for aria-describedby wiring', () => {
+    const cmp = makeSparkline();
+    expect(cmp.summaryId).toMatch(/^metrics-sparkline-summary-\d+$/);
   });
 });
