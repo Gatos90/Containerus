@@ -26,6 +26,7 @@ spec:
         {{- end }}
       labels:
         {{- include "containerus-server.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: server
     spec:
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
