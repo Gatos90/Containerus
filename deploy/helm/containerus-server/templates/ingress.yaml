@@ -1,8 +1,10 @@
 {{- if .Values.ingress.enabled -}}
+{{- $fullName := include "containerus-server.fullname" . -}}
+{{- $svcPort := .Values.service.port -}}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: {{ include "containerus-server.fullname" . }}
+  name: {{ $fullName }}
   labels:
     {{- include "containerus-server.labels" . | nindent 4 }}
   {{- with .Values.ingress.annotations }}
@@ -27,9 +29,15 @@ spec:
             pathType: {{ .pathType }}
             backend:
               service:
-                name: {{ include "containerus-server.fullname" $ }}
+                {{- if .service }}
+                name: {{ tpl .service.name $ }}
                 port:
-                  number: {{ $.Values.service.port }}
+                  number: {{ .service.port }}
+                {{- else }}
+                name: {{ $fullName }}
+                port:
+                  number: {{ $svcPort }}
+                {{- end }}
           {{- end }}
     {{- end }}
 {{- end }}

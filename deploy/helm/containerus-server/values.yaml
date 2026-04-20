@@ -148,6 +148,31 @@ postgresql:
         cpu: 500m
         memory: 1Gi
 
+# Frontend (containerus-web) — Angular SPA served by nginx
+# When enabled, the ingress can route `/` to this Service and `/api/*` to the backend.
+web:
+  enabled: false
+  replicaCount: 1
+  image:
+    repository: ghcr.io/gatos90/containerus-web
+    pullPolicy: IfNotPresent
+    tag: ""
+  service:
+    type: ClusterIP
+    port: 80
+  # CONTAINERUS_API_BASE is injected into /assets/runtime-config.js at container start.
+  # "/api" lines up with the same-origin ingress rule `/api -> containerus-server`.
+  apiBase: "/api"
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+  nodeSelector: {}
+  tolerations: []
+
 # Prometheus monitoring
 serviceMonitor:
   enabled: false
