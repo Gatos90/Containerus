@@ -1,0 +1,35 @@
+# Multi-stage build for the Containerus Angular frontend served over nginx.
+# Build stage compiles the Angular app in production mode; runtime stage
+# serves the static assets via nginx on port 80. The runtime config file
+# is rewritten at container start so the image can be retargeted per env
+# (e.g. same-origin `/api` behind the ingress on 87.106.170.40).
+
+FROM node:22-bookworm-slim AS builder
+
+WORKDIR /app
+
+# The repo is a pnpm workspace — pnpm-lock.yaml is the authoritative lockfile
+# (package-lock.json in the initial commit is stale). Enable corepack so the
+# builder uses the same pnpm release that the contributors and CI do.
+RUN corepack enable && corepack prepare pnpm@9.15.4 --activate
+
+COPY package.json pnpm-lock.yaml ./
+RUN pnpm install --frozen-lockfile --prod=false
+
+COPY angular.json tsconfig.json tsconfig.app.json ./
+COPY src ./src
+
+RUN pnpm exec ng build --configuration=production
+
+FROM nginx:1.27-alpine
+
+COPY docker/nginx/default.conf /etc/nginx/conf.d/default.conf
+COPY docker/nginx/docker-entrypoint.sh /usr/local/bin/containerus-web-entrypoint.sh
+RUN chmod +x /usr/local/bin/containerus-web-entrypoint.sh
+
+COPY --from=builder /app/dist/containerus/browser /usr/share/nginx/html
+
+EXPOSE 80
+
+ENTRYPOINT ["/usr/local/bin/containerus-web-entrypoint.sh"]
+CMD ["nginx", "-g", "daemon off;"]
