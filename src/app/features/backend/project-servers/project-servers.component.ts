@@ -24,6 +24,7 @@ import {
 import { BackendService } from '../../../core/services/backend.service';
 import { BackendSystem } from '../../../core/models/backend.model';
 import { AppState } from '../../../state/app.state';
+import { HostKeyInfo, parseHostKeyError } from './host-key-error';
 
 @Component({
   selector: 'app-project-servers',
@@ -88,14 +89,17 @@ export class ProjectServersComponent implements OnChanges {
   // Inline confirm state
   confirmingDeleteSystemId = signal<string | null>(null);
 
-  // Host key mismatch modal
+  // Host key verification modal (unknown or mismatch)
   showHostKeyModal = signal(false);
-  hostKeyInfo = signal<{
-    systemId: string;
-    hostname: string;
-    expected: string;
-    received: string;
-  } | null>(null);
+  hostKeyInfo = signal<HostKeyInfo | null>(null);
+  hostKeyMismatch = computed(() => {
+    const info = this.hostKeyInfo();
+    return info?.kind === 'mismatch' ? info : null;
+  });
+  hostKeyUnknown = computed(() => {
+    const info = this.hostKeyInfo();
+    return info?.kind === 'unknown' ? info : null;
+  });
   trustingHostKey = signal(false);
 
   // Loading
@@ -357,20 +361,15 @@ export class ProjectServersComponent implements OnChanges {
 
   private isHostKeyError(msg: string): boolean {
     const lower = msg.toLowerCase();
-    return lower.includes('host key verification failed') || lower.includes('host key has changed');
+    return (
+      lower.includes('host key verification failed') ||
+      lower.includes('host key has changed') ||
+      lower.includes('unknown host key')
+    );
   }
 
   private openHostKeyModal(systemId: string, errorMsg: string): void {
-    const hostnameMatch = errorMsg.match(/host[:\s]+([^\s,]+)/i);
-    const expectedMatch = errorMsg.match(/expected[:\s]+([^\s,]+)/i);
-    const receivedMatch = errorMsg.match(/received[:\s]+([^\s,]+)/i) ?? errorMsg.match(/got[:\s]+([^\s,]+)/i);
-
-    this.hostKeyInfo.set({
-      systemId,
-      hostname: hostnameMatch?.[1] ?? 'unknown',
-      expected: expectedMatch?.[1] ?? 'unknown',
-      received: receivedMatch?.[1] ?? 'unknown',
-    });
+    this.hostKeyInfo.set(parseHostKeyError(systemId, errorMsg));
     this.showHostKeyModal.set(true);
   }
 

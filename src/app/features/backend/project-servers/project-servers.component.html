@@ -381,7 +381,7 @@
   </section>
 
   <!-- ================================================================== -->
-  <!-- HOST KEY MISMATCH MODAL                                             -->
+  <!-- HOST KEY VERIFICATION MODAL (unknown or mismatch)                   -->
   <!-- ================================================================== -->
   @if (showHostKeyModal()) {
     <div
@@ -395,23 +395,42 @@
       >
         <div class="flex items-center gap-2 text-amber-400">
           <lucide-icon [img]="AlertCircle" [size]="20" />
-          <h3 id="host-key-title" class="text-lg font-medium">Host Key Mismatch</h3>
+          <h3 id="host-key-title" class="text-lg font-medium">
+            {{ hostKeyMismatch() ? 'Host Key Mismatch' : 'Unknown Host Key' }}
+          </h3>
         </div>
 
-        <p class="text-sm text-zinc-300">
-          The SSH host key for <span class="font-mono text-zinc-100">{{ hostKeyInfo()?.hostname }}</span> does not match the expected key. This could indicate a man-in-the-middle attack or a server reinstallation.
-        </p>
-
-        <div class="bg-zinc-800 rounded-lg p-3 space-y-2 text-xs font-mono">
-          <div>
-            <span class="text-zinc-500">Expected: </span>
-            <span class="text-zinc-300">{{ hostKeyInfo()?.expected }}</span>
+        @if (hostKeyMismatch(); as m) {
+          <p class="text-sm text-zinc-300">
+            The SSH host key for <span class="font-mono text-zinc-100">{{ m.hostname }}</span> does not match the previously trusted key. This could indicate a man-in-the-middle attack or a server reinstallation.
+          </p>
+          <div class="bg-zinc-800 rounded-lg p-3 space-y-2 text-xs font-mono break-all">
+            <div>
+              <span class="text-zinc-500">Expected: </span>
+              <span class="text-zinc-300">{{ m.expectedFingerprint }}</span>
+            </div>
+            <div>
+              <span class="text-zinc-500">Received: </span>
+              <span class="text-amber-400">{{ m.receivedFingerprint }}</span>
+            </div>
           </div>
-          <div>
-            <span class="text-zinc-500">Received: </span>
-            <span class="text-amber-400">{{ hostKeyInfo()?.received }}</span>
+        } @else if (hostKeyUnknown(); as u) {
+          <p class="text-sm text-zinc-300">
+            This is the first time connecting to <span class="font-mono text-zinc-100">{{ u.hostname }}</span>. Verify the fingerprint below matches the server before trusting it.
+          </p>
+          <div class="bg-zinc-800 rounded-lg p-3 space-y-2 text-xs font-mono break-all">
+            @if (u.keyType) {
+              <div>
+                <span class="text-zinc-500">Key type: </span>
+                <span class="text-zinc-300">{{ u.keyType }}</span>
+              </div>
+            }
+            <div>
+              <span class="text-zinc-500">Fingerprint: </span>
+              <span class="text-amber-400">{{ u.fingerprint }}</span>
+            </div>
           </div>
-        </div>
+        }
 
         <div class="flex gap-2 justify-end">
           <button
@@ -429,7 +448,7 @@
               <lucide-icon [img]="Loader2" [size]="14" class="animate-spin" />
             }
             <lucide-icon [img]="Key" [size]="14" />
-            Trust New Key
+            {{ hostKeyMismatch() ? 'Trust New Key' : 'Trust This Host' }}
           </button>
         </div>
       </div>
