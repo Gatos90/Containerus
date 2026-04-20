@@ -1,0 +1,127 @@
+<div class="p-4 sm:p-6 max-w-6xl mx-auto space-y-6">
+  <header class="flex items-center justify-between gap-4">
+    <h1 class="text-xl font-semibold text-zinc-100 flex items-center gap-2">
+      <lucide-icon [img]="KeyRound" [size]="20" aria-hidden="true" />
+      Resource Access
+    </h1>
+    <button
+      type="button"
+      #addTrigger
+      (click)="openDrawer($event)"
+      class="bg-blue-600 hover:bg-blue-500 text-white text-sm rounded-lg px-3 py-1.5 flex items-center gap-1.5"
+    >
+      <lucide-icon [img]="Plus" [size]="14" aria-hidden="true" />
+      Add override
+    </button>
+  </header>
+
+  <div class="bg-zinc-900 border border-zinc-800 rounded-xl p-3 flex items-center gap-3">
+    <label class="flex items-center gap-2 text-xs text-zinc-400">
+      Project
+      <select
+        [ngModel]="selectedProjectId()"
+        (ngModelChange)="onProjectChange($event)"
+        class="bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1 text-sm text-zinc-100"
+      >
+        @for (p of projects(); track p.id) {
+          <option [value]="p.id">{{ p.name }}</option>
+        }
+      </select>
+    </label>
+  </div>
+
+  @if (loadError()) {
+    <div role="alert" class="text-sm bg-red-950/30 text-red-300 rounded-lg p-3">{{ loadError() }}</div>
+  }
+
+  @if (loading() && acls().length === 0) {
+    <app-list-states [loading]="true" loadingLabel="Loading resource access overrides…" />
+  } @else if (acls().length === 0) {
+    <app-list-states
+      [empty]="true"
+      emptyHeadline="No resource access overrides"
+      emptyDescription="Project members get the role assigned to them by default. Use overrides to grant or deny extra permissions on a single system, cluster, or environment."
+    />
+  } @else {
+    <table class="w-full text-sm bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
+      <thead class="text-left text-xs uppercase tracking-wide text-zinc-500 border-b border-zinc-800">
+        <tr>
+          <th scope="col" class="px-3 py-2">User</th>
+          <th scope="col" class="px-3 py-2">Resource</th>
+          <th scope="col" class="px-3 py-2">Base role</th>
+          <th scope="col" class="px-3 py-2">Extras</th>
+          <th scope="col" class="px-3 py-2">Denied</th>
+          <th scope="col" class="px-3 py-2 text-right">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (acl of acls(); track acl.id) {
+          <tr class="border-b border-zinc-800/50">
+            <td class="px-3 py-2 text-zinc-200">
+              {{ memberByUserId().get(acl.userId)?.email ?? acl.userId }}
+            </td>
+            <td class="px-3 py-2 text-zinc-300">
+              <span class="text-zinc-500">{{ acl.resourceType }}:</span>
+              {{ resourceLabel(acl) }}
+            </td>
+            <td class="px-3 py-2 text-zinc-400">
+              {{ acl.roleId ? roleById().get(acl.roleId)?.name ?? '—' : '—' }}
+            </td>
+            <td class="px-3 py-2">
+              @if (acl.extraPermissions.length === 0) {
+                <span class="text-zinc-600">—</span>
+              } @else {
+                <div class="flex flex-wrap gap-1">
+                  @for (k of acl.extraPermissions; track k) {
+                    <app-permission-key [value]="k" />
+                  }
+                </div>
+              }
+            </td>
+            <td class="px-3 py-2">
+              @if (acl.deniedPermissions.length === 0) {
+                <span class="text-zinc-600">—</span>
+              } @else {
+                <div class="flex flex-wrap gap-1">
+                  @for (k of acl.deniedPermissions; track k) {
+                    <app-permission-key [value]="k" />
+                  }
+                </div>
+              }
+            </td>
+            <td class="px-3 py-2 text-right">
+              <button
+                type="button"
+                (click)="deleteAcl(acl)"
+                class="text-zinc-400 hover:text-red-400 p-1.5 rounded hover:bg-zinc-800"
+                [attr.aria-label]="'Remove override for ' + (memberByUserId().get(acl.userId)?.email ?? acl.userId)"
+              >
+                <lucide-icon [img]="Trash2" [size]="14" aria-hidden="true" />
+              </button>
+            </td>
+          </tr>
+        }
+      </tbody>
+    </table>
+  }
+
+  <app-drawer-dialog
+    [open]="drawerOpen()"
+    [restoreFocusTo]="drawerTrigger()"
+    titleId="resource-access-drawer-title"
+    (closed)="onDrawerClosed()"
+  >
+    <app-resource-access-drawer
+      [members]="members()"
+      [roles]="roles()"
+      [permissions]="permissions()"
+      [systems]="systems()"
+      [clusters]="clusters()"
+      [envs]="envs()"
+      [connectionId]="connectionId()"
+      [saving]="saving()"
+      (create)="onCreateAcl($event)"
+      (cancel)="onDrawerClosed()"
+    />
+  </app-drawer-dialog>
+</div>

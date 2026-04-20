@@ -179,6 +179,20 @@ export const routes: Routes = [
       ),
   },
   {
+    path: 'access/people',
+    loadComponent: () =>
+      import('./features/backend/people/people.component').then(
+        (m) => m.PeopleComponent
+      ),
+  },
+  {
+    path: 'access/resources',
+    loadComponent: () =>
+      import('./features/backend/resource-access/resource-access.component').then(
+        (m) => m.ResourceAccessComponent
+      ),
+  },
+  {
     path: 'a11y-devshell',
     loadComponent: () =>
       import('./shared/components/a11y/devshell/a11y-devshell.component').then(

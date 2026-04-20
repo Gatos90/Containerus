@@ -1,0 +1,109 @@
+<section class="p-4 md:p-6 space-y-6" aria-labelledby="env-overview-heading">
+  <header class="flex items-baseline justify-between gap-4">
+    <h2 id="env-overview-heading" class="text-base font-medium text-zinc-200">Overview</h2>
+    <button
+      type="button"
+      (click)="refresh()"
+      [disabled]="loading()"
+      class="text-xs text-zinc-400 hover:text-zinc-200 disabled:opacity-50 underline-offset-2 hover:underline"
+    >Refresh</button>
+  </header>
+
+  <!-- Polite live region: announces health-summary transitions in both
+       directions per CON-125 §3.2. Debounced 750 ms in the component so a
+       flapping container doesn't spam SR users. -->
+  <p
+    aria-live="polite"
+    aria-atomic="true"
+    class="sr-only"
+  >{{ liveSummary() }}</p>
+
+  @if (error()) {
+    <div role="alert" class="text-sm bg-red-950/30 text-red-300 rounded-lg p-3">{{ error() }}</div>
+  }
+
+  <!-- Triage cards. text-first: each card leads with a numeric label, with
+       <app-status-chip> below to color-code state without making color the
+       sole channel (chip ships its own glyph). -->
+  <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+    <!-- Containers -->
+    <article class="bg-zinc-900 border border-zinc-800 rounded-xl p-4 flex flex-col gap-3">
+      <div class="flex items-center gap-2 text-xs uppercase tracking-wide text-zinc-500">
+        <lucide-icon [img]="Box" [size]="13" aria-hidden="true" />
+        <span>Containers</span>
+      </div>
+      <div class="text-3xl tabular-nums text-zinc-100" aria-live="off">
+        {{ containerCounts().total }}
+      </div>
+      <div class="flex items-center justify-between">
+        <app-status-chip
+          [status]="containerStatus()"
+          [count]="containerCounts().stopped + containerCounts().failing"
+          [label]="containerCounts().total === 0 ? 'No containers' : 'Unhealthy'"
+        />
+        <span class="text-xs text-zinc-500 tabular-nums">
+          {{ containerCounts().running }} running · {{ systemCount() }} systems
+        </span>
+      </div>
+    </article>
+
+    <!-- Clusters -->
+    <article class="bg-zinc-900 border border-zinc-800 rounded-xl p-4 flex flex-col gap-3">
+      <div class="flex items-center gap-2 text-xs uppercase tracking-wide text-zinc-500">
+        <lucide-icon [img]="Cloud" [size]="13" aria-hidden="true" />
+        <span>Clusters</span>
+      </div>
+      <div class="text-3xl tabular-nums text-zinc-100">{{ clusters().length }}</div>
+      <div class="flex items-center justify-between">
+        <app-status-chip
+          [status]="clusterStatus()"
+          [count]="clusterInactiveCount()"
+          [label]="clusters().length === 0 ? 'No clusters' : 'Inactive'"
+        />
+        <span class="text-xs text-zinc-500 tabular-nums">
+          {{ clusters().length - clusterInactiveCount() }} active
+        </span>
+      </div>
+    </article>
+
+    <!-- Recent activity -->
+    <article class="bg-zinc-900 border border-zinc-800 rounded-xl p-4 flex flex-col gap-3 sm:col-span-2 xl:col-span-1">
+      <div class="flex items-center gap-2 text-xs uppercase tracking-wide text-zinc-500">
+        <lucide-icon [img]="Activity" [size]="13" aria-hidden="true" />
+        <span>Recent activity</span>
+      </div>
+      @if (loading() && recentActivity().length === 0) {
+        <app-list-states [loading]="true" loadingLabel="Loading activity…" />
+      } @else if (recentActivity().length === 0) {
+        <app-list-states [empty]="true" emptyHeadline="No recent activity in this environment" />
+      } @else {
+        <ol class="space-y-1.5 text-xs">
+          @for (entry of recentActivity(); track entry.id) {
+            <li class="flex justify-between gap-2 text-zinc-300">
+              <span class="truncate">{{ entry.action }}</span>
+              <time class="text-zinc-500 tabular-nums" [attr.datetime]="entry.createdAt">
+                {{ formatTime(entry.createdAt) }}
+              </time>
+            </li>
+          }
+        </ol>
+      }
+    </article>
+
+    <!-- Members -->
+    <article class="bg-zinc-900 border border-zinc-800 rounded-xl p-4 flex flex-col gap-3">
+      <div class="flex items-center gap-2 text-xs uppercase tracking-wide text-zinc-500">
+        <lucide-icon [img]="Users" [size]="13" aria-hidden="true" />
+        <span>Members</span>
+      </div>
+      <div class="text-3xl tabular-nums text-zinc-100">
+        @if (memberCount() === null) { — } @else { {{ memberCount() }} }
+      </div>
+      <a
+        [routerLink]="['/access/people']"
+        [queryParams]="{ project: projectId }"
+        class="text-xs text-blue-400 hover:text-blue-300 underline-offset-2 hover:underline"
+      >Manage members →</a>
+    </article>
+  </div>
+</section>

@@ -164,6 +164,47 @@
               </label>
             </div>
 
+            <!-- Where used — counts members + ACL overrides referencing this
+                 role across every project on the active connection. Loaded
+                 lazily after selectRole() so the editor renders fast. -->
+            @if (!creating() && selectedRole()) {
+              <section
+                aria-labelledby="role-where-used-heading"
+                class="p-5 border-b border-zinc-800 space-y-2"
+              >
+                <h3 id="role-where-used-heading" class="text-xs uppercase tracking-wide text-zinc-400">
+                  Where used
+                </h3>
+                @if (whereUsedLoading() && !whereUsed()) {
+                  <p class="text-xs text-zinc-500" role="status" aria-live="polite">Counting…</p>
+                } @else if (whereUsed(); as w) {
+                  <p class="text-sm text-zinc-300">
+                    <span class="font-medium text-zinc-100">{{ w.members }}</span>
+                    {{ w.members === 1 ? 'member' : 'members' }}
+                    ·
+                    <span class="font-medium text-zinc-100">{{ w.acls }}</span>
+                    {{ w.acls === 1 ? 'override' : 'overrides' }}
+                    @if (w.partial) {
+                      <span class="text-amber-400 text-xs ml-2">(partial — some projects unavailable)</span>
+                    }
+                  </p>
+                  @if (w.projects.length > 0) {
+                    <ul class="text-xs text-zinc-500 space-y-0.5">
+                      @for (p of w.projects; track p.projectId) {
+                        <li>
+                          <span class="text-zinc-300">{{ p.projectName }}</span>
+                          — {{ p.members }} {{ p.members === 1 ? 'member' : 'members' }},
+                          {{ p.acls }} {{ p.acls === 1 ? 'override' : 'overrides' }}
+                        </li>
+                      }
+                    </ul>
+                  } @else if (w.members === 0 && w.acls === 0 && !w.partial) {
+                    <p class="text-xs text-zinc-500">Not currently assigned to anyone.</p>
+                  }
+                }
+              </section>
+            }
+
             <!-- Permission grid -->
             <div class="p-5 space-y-5">
               @for (group of permissionGroups(); track group.category) {

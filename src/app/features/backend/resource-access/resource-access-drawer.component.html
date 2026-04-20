@@ -1,0 +1,167 @@
+<div class="flex flex-col h-full">
+  <header class="flex items-center justify-between p-4 border-b border-zinc-700">
+    <h2 [id]="titleId()" class="text-base font-medium text-zinc-100">
+      Add resource access override
+    </h2>
+    <button
+      type="button"
+      (click)="onCancel()"
+      class="text-zinc-400 hover:text-zinc-100 p-1.5 rounded hover:bg-zinc-800"
+      aria-label="Close drawer"
+    >
+      <lucide-icon [img]="X" [size]="16" aria-hidden="true" />
+    </button>
+  </header>
+
+  <form
+    class="flex-1 overflow-y-auto p-4 space-y-5"
+    (submit)="$event.preventDefault(); onSubmit()"
+  >
+    <fieldset class="space-y-3">
+      <legend class="sr-only">Override target</legend>
+
+      <label class="block text-xs uppercase tracking-wide text-zinc-500">
+        User
+        <select
+          [ngModel]="userId()"
+          (ngModelChange)="userId.set($event)"
+          name="userId"
+          required
+          class="mt-1 w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-zinc-100 text-sm normal-case tracking-normal"
+        >
+          <option value="" disabled>Select user…</option>
+          @for (m of members(); track m.userId) {
+            <option [value]="m.userId">{{ m.displayName || m.email }}</option>
+          }
+        </select>
+      </label>
+
+      <label class="block text-xs uppercase tracking-wide text-zinc-500">
+        Resource type
+        <select
+          [ngModel]="resourceType()"
+          (ngModelChange)="resourceType.set($event)"
+          name="resourceType"
+          class="mt-1 w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-zinc-100 text-sm normal-case tracking-normal"
+        >
+          @for (t of resourceTypes; track t) {
+            <option [value]="t">{{ t }}</option>
+          }
+        </select>
+        <!-- Phase-1 deliberately omits `container` per CON-115 §8 Q1 — keep
+             until [CON-117] container-scope ACL enforcement lands. -->
+      </label>
+
+      <label class="block text-xs uppercase tracking-wide text-zinc-500">
+        Resource
+        <select
+          [ngModel]="resourceId()"
+          (ngModelChange)="resourceId.set($event)"
+          name="resourceId"
+          required
+          class="mt-1 w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-zinc-100 text-sm normal-case tracking-normal"
+        >
+          <option value="" disabled>Select {{ resourceType() }}…</option>
+          @for (r of resourceOptions(); track r.id) {
+            <option [value]="r.id">{{ r.label }}</option>
+          }
+        </select>
+      </label>
+
+      <label class="block text-xs uppercase tracking-wide text-zinc-500">
+        Base role <span class="text-zinc-600 normal-case">(optional)</span>
+        <select
+          [ngModel]="roleId()"
+          (ngModelChange)="roleId.set($event)"
+          name="roleId"
+          class="mt-1 w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-zinc-100 text-sm normal-case tracking-normal"
+        >
+          <option value="">— None —</option>
+          @for (r of roles(); track r.id) {
+            <option [value]="r.id">{{ r.name }}</option>
+          }
+        </select>
+      </label>
+    </fieldset>
+
+    <fieldset class="space-y-2">
+      <legend class="text-xs uppercase tracking-wide text-zinc-500">Permissions</legend>
+      <p class="text-[11px] text-zinc-500">
+        Toggle a permission to grant ("Extra") or remove ("Deny") relative to the base role.
+      </p>
+      @for (group of permissionsByCategory(); track group.category) {
+        <details class="rounded border border-zinc-800">
+          <summary class="px-3 py-1.5 cursor-pointer text-xs text-zinc-300 bg-zinc-800/50">
+            {{ group.category }}
+            <span class="text-zinc-500">({{ group.perms.length }})</span>
+          </summary>
+          <ul class="divide-y divide-zinc-800">
+            @for (perm of group.perms; track perm.key) {
+              <li class="flex items-center gap-2 px-3 py-1.5 text-xs">
+                <app-permission-key [value]="perm.key" />
+                <span class="ml-auto flex items-center gap-3">
+                  <label class="flex items-center gap-1 text-emerald-400 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      [checked]="extraSet().has(perm.key)"
+                      (change)="toggleExtra(perm.key)"
+                    />
+                    Extra
+                  </label>
+                  <label class="flex items-center gap-1 text-red-400 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      [checked]="deniedSet().has(perm.key)"
+                      (change)="toggleDenied(perm.key)"
+                    />
+                    Deny
+                  </label>
+                </span>
+              </li>
+            }
+          </ul>
+        </details>
+      }
+    </fieldset>
+
+    <!-- Live "Effective permissions" preview — text-first list of what the
+         user will actually have once this override saves. Polite live region
+         re-announces only the count to keep SR users informed without
+         flooding when a category is bulk-toggled. -->
+    <fieldset>
+      <legend class="text-xs uppercase tracking-wide text-zinc-500">
+        Effective permissions
+      </legend>
+      <p
+        aria-live="polite"
+        aria-atomic="true"
+        class="sr-only"
+      >{{ effectivePermissions().length }} effective permissions.</p>
+      @if (effectivePermissions().length === 0) {
+        <p class="text-xs text-zinc-500 mt-1">No permissions yet — pick a base role or add extras.</p>
+      } @else {
+        <ul class="flex flex-wrap gap-1 mt-2">
+          @for (key of effectivePermissions(); track key) {
+            <li>
+              <app-permission-key [value]="key" />
+            </li>
+          }
+        </ul>
+      }
+    </fieldset>
+  </form>
+
+  <footer class="flex justify-end gap-2 p-4 border-t border-zinc-700">
+    <button
+      type="button"
+      (click)="onCancel()"
+      class="px-3 py-1.5 text-sm text-zinc-300 hover:text-zinc-100"
+    >Cancel</button>
+    <button
+      type="button"
+      (click)="onSubmit()"
+      [disabled]="!canSubmit() || saving()"
+      class="px-3 py-1.5 text-sm rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white"
+    >Save override</button>
+  </footer>
+</div>

@@ -1,0 +1,214 @@
+<div class="p-4 sm:p-6 max-w-6xl mx-auto space-y-6">
+  <header class="flex items-center justify-between gap-4">
+    <h1 class="text-xl font-semibold text-zinc-100 flex items-center gap-2">
+      <lucide-icon [img]="Users" [size]="20" aria-hidden="true" />
+      People
+    </h1>
+    <button
+      type="button"
+      #inviteBtn
+      (click)="openInvite($event)"
+      class="bg-blue-600 hover:bg-blue-500 text-white text-sm rounded-lg px-3 py-1.5 flex items-center gap-1.5"
+    >
+      <lucide-icon [img]="UserPlus" [size]="14" aria-hidden="true" />
+      Invite member
+    </button>
+  </header>
+
+  <div class="bg-zinc-900 border border-zinc-800 rounded-xl p-3 flex items-center gap-3">
+    <label class="flex items-center gap-2 text-xs text-zinc-400">
+      Project
+      <select
+        [ngModel]="selectedProjectId()"
+        (ngModelChange)="onProjectChange($event)"
+        class="bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1 text-sm text-zinc-100"
+      >
+        @for (p of projects(); track p.id) {
+          <option [value]="p.id">{{ p.name }}</option>
+        }
+      </select>
+    </label>
+  </div>
+
+  @if (loadError()) {
+    <div role="alert" class="text-sm bg-red-950/30 text-red-300 rounded-lg p-3">{{ loadError() }}</div>
+  }
+
+  <section aria-labelledby="people-members-heading" class="space-y-3">
+    <h2 id="people-members-heading" class="text-sm font-medium text-zinc-300">Members</h2>
+
+    @if (loading() && members().length === 0) {
+      <app-list-states [loading]="true" loadingLabel="Loading members…" />
+    } @else if (members().length === 0) {
+      <app-list-states
+        [empty]="true"
+        emptyHeadline="No members"
+        emptyDescription="Invite a teammate to give them access to this project."
+      />
+    } @else {
+      <table class="w-full text-sm bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
+        <thead class="text-left text-xs uppercase tracking-wide text-zinc-500 border-b border-zinc-800">
+          <tr>
+            <th scope="col" class="px-3 py-2">User</th>
+            <th scope="col" class="px-3 py-2">Email</th>
+            <th scope="col" class="px-3 py-2">Role</th>
+            <th scope="col" class="px-3 py-2">Joined</th>
+            <th scope="col" class="px-3 py-2 text-right">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (m of members(); track m.userId) {
+            <tr class="border-b border-zinc-800/50">
+              <td class="px-3 py-2 text-zinc-200">{{ m.displayName || m.email }}</td>
+              <td class="px-3 py-2 text-zinc-400">{{ m.email }}</td>
+              <td class="px-3 py-2 text-zinc-300">{{ m.roleName }}</td>
+              <td class="px-3 py-2 text-zinc-500">{{ formatDate(m.joinedAt) }}</td>
+              <td class="px-3 py-2 text-right">
+                <button
+                  type="button"
+                  (click)="removeMember(m)"
+                  class="text-zinc-400 hover:text-red-400 p-1.5 rounded hover:bg-zinc-800"
+                  [attr.aria-label]="'Remove ' + m.email"
+                >
+                  <lucide-icon [img]="Trash2" [size]="14" aria-hidden="true" />
+                </button>
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    }
+  </section>
+
+  <section aria-labelledby="people-invites-heading" class="space-y-3">
+    <h2 id="people-invites-heading" class="text-sm font-medium text-zinc-300">Pending invites</h2>
+
+    @if (invitesUnavailable()) {
+      <app-list-states
+        [empty]="true"
+        emptyHeadline="Pending invites are not yet available"
+        emptyDescription="The invites endpoint is rolling out in a follow-up release. New invites are still delivered by email."
+      />
+    } @else if (invites().length === 0) {
+      <app-list-states
+        [empty]="true"
+        emptyHeadline="No pending invites"
+        emptyDescription="When you invite someone, they'll appear here until they accept."
+      />
+    } @else {
+      <table class="w-full text-sm bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
+        <thead class="text-left text-xs uppercase tracking-wide text-zinc-500 border-b border-zinc-800">
+          <tr>
+            <th scope="col" class="px-3 py-2">Email</th>
+            <th scope="col" class="px-3 py-2">Role</th>
+            <th scope="col" class="px-3 py-2">Sent</th>
+            <th scope="col" class="px-3 py-2">Expires</th>
+            <th scope="col" class="px-3 py-2 text-right">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (i of invites(); track i.id) {
+            <tr class="border-b border-zinc-800/50">
+              <td class="px-3 py-2 text-zinc-200">{{ i.email }}</td>
+              <td class="px-3 py-2 text-zinc-300">{{ i.roleName || roleById().get(i.roleId)?.name || '—' }}</td>
+              <td class="px-3 py-2 text-zinc-500">{{ formatDate(i.invitedAt) }}</td>
+              <td class="px-3 py-2 text-zinc-500">{{ formatDate(i.expiresAt) }}</td>
+              <td class="px-3 py-2 text-right">
+                <span class="inline-flex gap-1">
+                  <button
+                    type="button"
+                    (click)="resendInvite(i)"
+                    class="text-zinc-400 hover:text-blue-400 p-1.5 rounded hover:bg-zinc-800"
+                    [attr.aria-label]="'Resend invite to ' + i.email"
+                  >
+                    <lucide-icon [img]="Send" [size]="14" aria-hidden="true" />
+                  </button>
+                  <button
+                    type="button"
+                    (click)="revokeInvite(i)"
+                    class="text-zinc-400 hover:text-red-400 p-1.5 rounded hover:bg-zinc-800"
+                    [attr.aria-label]="'Revoke invite for ' + i.email"
+                  >
+                    <lucide-icon [img]="Trash2" [size]="14" aria-hidden="true" />
+                  </button>
+                </span>
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    }
+  </section>
+
+  <app-drawer-dialog
+    [open]="inviteOpen()"
+    [restoreFocusTo]="inviteTrigger()"
+    titleId="people-invite-title"
+    (closed)="onInviteClosed()"
+  >
+    <div class="flex flex-col h-full">
+      <header class="flex items-center justify-between p-4 border-b border-zinc-700">
+        <h2 id="people-invite-title" class="text-base font-medium text-zinc-100">Invite member</h2>
+        <button
+          type="button"
+          (click)="onInviteClosed()"
+          class="text-zinc-400 hover:text-zinc-100 p-1.5 rounded hover:bg-zinc-800"
+          aria-label="Close drawer"
+        >
+          <lucide-icon [img]="X" [size]="16" aria-hidden="true" />
+        </button>
+      </header>
+
+      <form
+        class="flex-1 overflow-y-auto p-4 space-y-4"
+        (submit)="$event.preventDefault(); submitInvite()"
+      >
+        <label class="block text-xs uppercase tracking-wide text-zinc-500">
+          Email
+          <input
+            type="email"
+            required
+            [ngModel]="inviteEmail()"
+            (ngModelChange)="inviteEmail.set($event)"
+            name="inviteEmail"
+            placeholder="colleague@company.com"
+            class="mt-1 w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-zinc-100 text-sm normal-case tracking-normal"
+          />
+        </label>
+
+        <label class="block text-xs uppercase tracking-wide text-zinc-500">
+          Role
+          <select
+            [ngModel]="inviteRoleId()"
+            (ngModelChange)="inviteRoleId.set($event)"
+            name="inviteRoleId"
+            required
+            class="mt-1 w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-zinc-100 text-sm normal-case tracking-normal"
+          >
+            @for (r of roles(); track r.id) {
+              <option [value]="r.id">{{ r.name }}</option>
+            }
+          </select>
+        </label>
+
+        @if (inviteError()) {
+          <p role="alert" class="text-sm text-red-300">{{ inviteError() }}</p>
+        }
+      </form>
+
+      <footer class="flex justify-end gap-2 p-4 border-t border-zinc-700">
+        <button
+          type="button"
+          (click)="onInviteClosed()"
+          class="px-3 py-1.5 text-sm text-zinc-300 hover:text-zinc-100"
+        >Cancel</button>
+        <button
+          type="button"
+          (click)="submitInvite()"
+          [disabled]="!inviteEmail().trim() || !inviteRoleId() || inviteSaving()"
+          class="px-3 py-1.5 text-sm rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white"
+        >Send invite</button>
+      </footer>
+    </div>
+  </app-drawer-dialog>
+</div>

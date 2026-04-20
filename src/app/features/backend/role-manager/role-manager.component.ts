@@ -19,6 +19,19 @@ import {
   RoleWithPermissions,
 } from '../../../core/models/backend.model';
 
+/**
+ * CON-125 §3.3 — "where used" snapshot for the selected role. Counts member
+ * assignments and ACL overrides across every project on the active
+ * connection. Per-project failures are absorbed (counted as `partial`) so a
+ * single 403 on one project doesn't blank the panel.
+ */
+interface WhereUsedSummary {
+  members: number;
+  acls: number;
+  projects: { projectId: string; projectName: string; members: number; acls: number }[];
+  partial: boolean;
+}
+
 interface PermissionGroup {
   category: string;
   permissions: PermissionDef[];
@@ -52,6 +65,9 @@ export class RoleManagerComponent implements OnInit {
   selectedRoleId = signal<string | null>(null);
   selectedRole = signal<RoleWithPermissions | null>(null);
   creating = signal(false);
+
+  whereUsed = signal<WhereUsedSummary | null>(null);
+  whereUsedLoading = signal(false);
 
   // Draft state for the currently-edited role. Keeping it as plain fields + a
   // Set for permissions keeps the permission grid toggles cheap.
@@ -140,6 +156,7 @@ export class RoleManagerComponent implements OnInit {
     this.creating.set(false);
     this.selectedRoleId.set(roleId);
     this.selectedRole.set(null);
+    this.whereUsed.set(null);
     this.saveError.set(null);
     try {
       const role = await this.backend.getRoleFor(connectionId, roleId);
@@ -150,9 +167,61 @@ export class RoleManagerComponent implements OnInit {
       const perms = new Set(role.permissions);
       this.draftPermissions.set(new Set(perms));
       this.originalPermissions.set(perms);
+      // Don't await — load the panel in the background so the editor renders fast.
+      void this.loadWhereUsed(roleId);
     } catch (err) {
       this.saveError.set(err instanceof Error ? err.message : 'Failed to load role.');
     }
+  }
+
+  private async loadWhereUsed(roleId: string): Promise<void> {
+    const connectionId = this.connectionId;
+    if (!connectionId) return;
+    const conn = this.backend.connectedBackends().find((c) => c.id === connectionId);
+    const projects = conn?.projects ?? [];
+    if (projects.length === 0) {
+      this.whereUsed.set({ members: 0, acls: 0, projects: [], partial: false });
+      return;
+    }
+
+    this.whereUsedLoading.set(true);
+    let partial = false;
+    const perProject = await Promise.all(
+      projects.map(async (p) => {
+        const [members, acls] = await Promise.all([
+          this.backend.getProjectMembersFor(connectionId, p.id).catch(() => {
+            partial = true;
+            return [] as { roleId: string }[];
+          }),
+          this.backend.listAclsFor(connectionId, p.id).catch(() => {
+            partial = true;
+            return [] as { roleId: string | null }[];
+          }),
+        ]);
+        return {
+          projectId: p.id,
+          projectName: p.name,
+          members: members.filter((m) => m.roleId === roleId).length,
+          acls: acls.filter((a) => a.roleId === roleId).length,
+        };
+      }),
+    );
+
+    // Bail if the user picked another role mid-flight.
+    if (this.selectedRoleId() !== roleId) {
+      this.whereUsedLoading.set(false);
+      return;
+    }
+
+    const totalMembers = perProject.reduce((acc, p) => acc + p.members, 0);
+    const totalAcls = perProject.reduce((acc, p) => acc + p.acls, 0);
+    this.whereUsed.set({
+      members: totalMembers,
+      acls: totalAcls,
+      projects: perProject.filter((p) => p.members > 0 || p.acls > 0),
+      partial,
+    });
+    this.whereUsedLoading.set(false);
   }
 
   startCreate(): void {
@@ -173,6 +242,7 @@ export class RoleManagerComponent implements OnInit {
     this.selectedRole.set(null);
     this.draftPermissions.set(new Set());
     this.originalPermissions.set(new Set());
+    this.whereUsed.set(null);
     this.saveError.set(null);
   }
 

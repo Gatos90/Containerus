@@ -1,69 +1,238 @@
-<div class="p-4 sm:p-6 space-y-6">
-  <!-- Header -->
-  <div>
-    <h1 class="text-xl sm:text-2xl font-bold">Audit Log</h1>
-    <p class="text-sm text-zinc-400 mt-1">Kubernetes API server audit events</p>
+<div class="p-6 max-w-6xl mx-auto space-y-6">
+  <div class="flex items-center justify-between">
+    <h1 class="text-xl font-semibold text-zinc-100 flex items-center gap-2">
+      <lucide-icon [img]="ScrollText" [size]="20" aria-hidden="true" />
+      Audit Log
+    </h1>
+    <button
+      type="button"
+      (click)="refresh()"
+      [disabled]="loading()"
+      class="text-zinc-300 hover:text-zinc-100 text-sm rounded-lg px-3 py-1.5 flex items-center gap-1.5 bg-zinc-800 hover:bg-zinc-700 transition-colors disabled:opacity-50"
+    >
+      <lucide-icon [img]="RefreshCw" [size]="14" aria-hidden="true" />
+      Refresh
+    </button>
+  </div>
+
+  <!-- Saved-filter chips. Persisted set per CON-115 §3.3; this is the
+       Phase-1 shipped trio. Each chip toggles its preset on/off and clears
+       any conflicting form values. -->
+  <div role="group" aria-label="Saved audit filters" class="flex flex-wrap gap-2">
+    @for (chip of savedFilters; track chip.key) {
+      <button
+        type="button"
+        (click)="applySavedFilter(chip)"
+        [attr.aria-pressed]="activeSavedFilter() === chip.key"
+        class="text-xs px-2.5 py-1 rounded-full border transition-colors"
+        [class]="activeSavedFilter() === chip.key
+          ? 'bg-blue-600/30 border-blue-500/60 text-blue-100'
+          : 'bg-zinc-900 border-zinc-700 text-zinc-300 hover:border-zinc-500'"
+      >{{ chip.label }}</button>
+    }
   </div>
 
   <!-- Filters -->
-  <div class="flex flex-col sm:flex-row gap-3">
-    <div class="relative flex-1 sm:max-w-xs">
-      <input
-        type="text"
-        placeholder="Search user, resource, name..."
-        [ngModel]="searchQuery()"
-        (ngModelChange)="searchQuery.set($event)"
-        class="w-full h-9 px-4 bg-zinc-800 border border-zinc-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-      />
+  <div class="bg-zinc-900 border border-zinc-800 rounded-xl p-4 space-y-3">
+    <div class="flex items-center gap-2 text-xs uppercase tracking-wide text-zinc-500">
+      <lucide-icon [img]="Filter" [size]="12" aria-hidden="true" />
+      Filters
+      @if (hasActiveFilters()) {
+        <button
+          type="button"
+          (click)="clearFilters()"
+          class="ml-auto text-zinc-400 hover:text-zinc-100 flex items-center gap-1"
+        >
+          <lucide-icon [img]="X" [size]="12" aria-hidden="true" />
+          Clear
+        </button>
+      }
     </div>
-    <select
-      [ngModel]="verbFilter()"
-      (ngModelChange)="verbFilter.set($event)"
-      class="h-9 px-3 bg-zinc-800 border border-zinc-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-    >
-      <option value="">All Verbs</option>
-      <option value="create">create</option>
-      <option value="update">update</option>
-      <option value="delete">delete</option>
-      <option value="get">get</option>
-      <option value="list">list</option>
-      <option value="watch">watch</option>
-    </select>
+
+    <div class="grid grid-cols-2 md:grid-cols-3 gap-3">
+      <label class="block">
+        <span class="block text-[11px] text-zinc-500 mb-1">Project</span>
+        <select
+          [ngModel]="selectedProjectId()"
+          (ngModelChange)="onProjectChange($event)"
+          class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-zinc-100 text-sm"
+        >
+          <option value="" disabled>Select Project</option>
+          @for (project of projects(); track project.id) {
+            <option [value]="project.id">{{ project.name }}</option>
+          }
+        </select>
+      </label>
+
+      <label class="block">
+        <span class="block text-[11px] text-zinc-500 mb-1">Action</span>
+        <select
+          [(ngModel)]="actionFilter"
+          (ngModelChange)="onFilterChange()"
+          class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-zinc-100 text-sm"
+        >
+          <option value="">All actions</option>
+          <option value="system.create">system.create</option>
+          <option value="system.delete">system.delete</option>
+          <option value="system.connect">system.connect</option>
+          <option value="container.start">container.start</option>
+          <option value="container.stop">container.stop</option>
+          <option value="container.restart">container.restart</option>
+          <option value="container.remove">container.remove</option>
+          <option value="member.invite">member.invite</option>
+          <option value="member.remove">member.remove</option>
+          <option value="member.role_change">member.role_change</option>
+          <option value="cluster.create">cluster.create</option>
+          <option value="cluster.delete">cluster.delete</option>
+          <option value="auth.login.failed">auth.login.failed</option>
+        </select>
+      </label>
+
+      <label class="block">
+        <span class="block text-[11px] text-zinc-500 mb-1">Resource type</span>
+        <select
+          [(ngModel)]="resourceTypeFilter"
+          (ngModelChange)="onFilterChange()"
+          class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-zinc-100 text-sm"
+        >
+          <option value="">All types</option>
+          <option value="system">system</option>
+          <option value="container">container</option>
+          <option value="cluster">cluster</option>
+          <option value="member">member</option>
+          <option value="role">role</option>
+          <option value="project">project</option>
+          <option value="environment">environment</option>
+        </select>
+      </label>
+
+      <label class="block">
+        <span class="block text-[11px] text-zinc-500 mb-1">Actor (user id)</span>
+        <input
+          type="text"
+          [(ngModel)]="userIdFilter"
+          (ngModelChange)="onFilterChangeDebounced()"
+          placeholder="UUID — leave blank for all"
+          class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-zinc-100 text-sm font-mono"
+        />
+      </label>
+
+      <label class="block">
+        <span class="block text-[11px] text-zinc-500 mb-1">From</span>
+        <input
+          type="datetime-local"
+          [(ngModel)]="fromFilter"
+          (ngModelChange)="onFilterChange()"
+          class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-zinc-100 text-sm"
+        />
+      </label>
+
+      <label class="block">
+        <span class="block text-[11px] text-zinc-500 mb-1">To</span>
+        <input
+          type="datetime-local"
+          [(ngModel)]="toFilter"
+          (ngModelChange)="onFilterChange()"
+          class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-zinc-100 text-sm"
+        />
+      </label>
+    </div>
   </div>
 
-  <!-- Audit Log Table -->
-  <div class="overflow-x-auto rounded-lg border border-zinc-700">
-    <table class="w-full text-sm">
-      <thead class="bg-zinc-800">
-        <tr>
-          <th scope="col" class="px-4 py-3 text-left font-medium text-zinc-300">Timestamp</th>
-          <th scope="col" class="px-4 py-3 text-left font-medium text-zinc-300">User</th>
-          <th scope="col" class="px-4 py-3 text-left font-medium text-zinc-300">Verb</th>
-          <th scope="col" class="px-4 py-3 text-left font-medium text-zinc-300">Resource</th>
-          <th scope="col" class="px-4 py-3 text-left font-medium text-zinc-300">Namespace</th>
-          <th scope="col" class="px-4 py-3 text-left font-medium text-zinc-300">Name</th>
-          <th scope="col" class="px-4 py-3 text-right font-medium text-zinc-300">Status</th>
-        </tr>
-      </thead>
-      <tbody class="divide-y divide-zinc-800">
-        @for (entry of filteredEntries(); track entry.id) {
-          <tr class="hover:bg-zinc-800/50 transition-colors">
-            <td class="px-4 py-3 font-mono text-xs text-zinc-500 whitespace-nowrap">{{ entry.timestamp }}</td>
-            <td class="px-4 py-3 text-zinc-300">{{ entry.user }}</td>
-            <td class="px-4 py-3">
-              <span class="px-2 py-0.5 rounded text-xs font-medium" [class]="verbBadgeClass(entry.verb)">{{ entry.verb }}</span>
-            </td>
-            <td class="px-4 py-3 text-zinc-400">{{ entry.resource }}</td>
-            <td class="px-4 py-3 text-zinc-500">{{ entry.namespace || '—' }}</td>
-            <td class="px-4 py-3 font-mono text-xs text-zinc-400">{{ entry.name || '—' }}</td>
-            <td class="px-4 py-3 text-right font-medium" [class]="statusBadgeClass(entry.statusCode)">{{ entry.statusCode }}</td>
-          </tr>
-        } @empty {
-          <tr>
-            <td colspan="7" class="px-4 py-8 text-center text-zinc-500">No audit entries match your filters.</td>
-          </tr>
+  @if (loading()) {
+    <div role="status" aria-live="polite" class="flex items-center gap-2 text-zinc-400 py-4">
+      Loading audit logs…
+    </div>
+  }
+
+  @if (loadError()) {
+    <div role="alert" class="text-red-400 text-sm bg-red-950/30 rounded-lg p-3">
+      {{ loadError() }}
+    </div>
+  }
+
+  <!-- Header sits above the VirtualGrid so SRs hear column names; the body
+       below gets a single-tab-stop listbox keyboard model + real-dataset
+       aria-rowindex via VirtualGrid even when only the visible window is mounted. -->
+  <div class="bg-zinc-900 rounded-xl border border-zinc-800 overflow-hidden">
+    <div
+      role="row"
+      class="flex gap-3 px-3 py-2 text-xs uppercase tracking-wide text-zinc-500 border-b border-zinc-800"
+    >
+      <span role="columnheader" class="w-40 shrink-0">Time</span>
+      <span role="columnheader" class="w-48 shrink-0">User</span>
+      <span role="columnheader" class="w-44 shrink-0">Action</span>
+      <span role="columnheader" class="flex-1 min-w-0">Resource</span>
+      @if (showIpColumn()) {
+        <span role="columnheader" class="w-32 shrink-0">IP</span>
+      }
+      <span role="columnheader" class="flex-1 min-w-0">Details</span>
+    </div>
+
+    @if (rows().length === 0 && !loading()) {
+      <div class="text-center py-12 text-zinc-500">
+        No audit log entries found
+      </div>
+    } @else {
+      <app-virtual-grid
+        [rows]="rows()"
+        [rowHeight]="40"
+        [viewportHeight]="520"
+        [ariaLabel]="'Audit log entries'"
+        [rowTemplate]="rowTpl"
+      />
+    }
+  </div>
+
+  <ng-template #rowTpl let-row>
+    <div class="flex gap-3 w-full text-xs items-center">
+      <span class="text-zinc-400 truncate w-40 shrink-0">{{ formatTime(row.entry.createdAt) }}</span>
+      <span class="text-zinc-300 font-mono truncate w-48 shrink-0">{{ row.entry.userId ?? 'System' }}</span>
+      <span class="w-44 shrink-0">
+        <span class="text-xs px-1.5 py-0.5 rounded" [class]="getActionClass(row.entry.action)">
+          {{ row.entry.action }}
+        </span>
+      </span>
+      <span class="text-zinc-300 truncate flex-1 min-w-0">
+        @if (row.entry.resourceType) {
+          <span class="text-zinc-500">{{ row.entry.resourceType }}:</span>
+          {{ row.entry.resourceId ?? '' }}
         }
-      </tbody>
-    </table>
+      </span>
+      @if (showIpColumn()) {
+        <span class="text-zinc-400 font-mono truncate w-32 shrink-0">{{ row.entry.ipAddress ?? '—' }}</span>
+      }
+      <span class="text-zinc-500 truncate flex-1 min-w-0" [title]="formatDetails(row.entry.details)">
+        {{ formatDetails(row.entry.details) }}
+      </span>
+    </div>
+  </ng-template>
+
+  <!-- Pagination -->
+  <div class="flex items-center justify-between">
+    <span class="text-sm text-zinc-400">
+      Showing {{ entries().length }} entries
+    </span>
+    <div class="flex items-center gap-2">
+      <button
+        type="button"
+        (click)="prevPage()"
+        [disabled]="offset() === 0"
+        aria-label="Previous page"
+        class="p-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 disabled:cursor-not-allowed text-zinc-300"
+      >
+        <lucide-icon [img]="ChevronLeft" [size]="16" aria-hidden="true" />
+      </button>
+      <span class="text-sm text-zinc-400">Page {{ page() }}</span>
+      <button
+        type="button"
+        (click)="nextPage()"
+        [disabled]="entries().length < pageSize"
+        aria-label="Next page"
+        class="p-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 disabled:cursor-not-allowed text-zinc-300"
+      >
+        <lucide-icon [img]="ChevronRight" [size]="16" aria-hidden="true" />
+      </button>
+    </div>
   </div>
 </div>

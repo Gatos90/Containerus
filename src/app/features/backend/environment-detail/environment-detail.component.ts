@@ -5,13 +5,14 @@ import { BackendService } from '../../../core/services/backend.service';
 import { BackendConnection, Environment, Project } from '../../../core/models/backend.model';
 import {
   LucideAngularModule,
-  ArrowLeft, ChevronRight, ChevronDown, Monitor, Server, Loader2, Trash2, Cloud, Search, RefreshCw, Plus, Settings,
+  ArrowLeft, ChevronRight, ChevronDown, LayoutDashboard, Monitor, Server, Loader2, Trash2, Cloud, Search, RefreshCw, Plus, Settings,
 } from 'lucide-angular';
 import { ProjectResourcesComponent } from '../project-resources/project-resources.component';
 import { ProjectServersComponent } from '../project-servers/project-servers.component';
 import { K8sDashboardComponent } from '../k8s-dashboard/k8s-dashboard.component';
+import { EnvironmentOverviewComponent } from './environment-overview.component';
 
-type EnvironmentTab = 'resources' | 'servers' | 'kubernetes';
+type EnvironmentTab = 'overview' | 'resources' | 'servers' | 'kubernetes';
 
 @Component({
   selector: 'app-environment-detail',
@@ -22,6 +23,7 @@ type EnvironmentTab = 'resources' | 'servers' | 'kubernetes';
     ProjectResourcesComponent,
     ProjectServersComponent,
     K8sDashboardComponent,
+    EnvironmentOverviewComponent,
   ],
   template: `
     <div class="flex flex-col h-full">
@@ -273,6 +275,13 @@ type EnvironmentTab = 'resources' | 'servers' | 'kubernetes';
         <!-- Tab content -->
         <div class="flex-1 overflow-auto">
           @switch (activeTab()) {
+            @case ('overview') {
+              <app-environment-overview
+                [connectionId]="connectionId()"
+                [projectId]="projectId()"
+                [environmentId]="envId()"
+              />
+            }
             @case ('resources') {
               <app-project-resources
                 [connectionId]="connectionId()"
@@ -313,6 +322,7 @@ export class EnvironmentDetailComponent implements OnInit {
 
   readonly ArrowLeft = ArrowLeft;
   readonly ChevronRight = ChevronRight;
+  readonly LayoutDashboard = LayoutDashboard;
   readonly Monitor = Monitor;
   readonly Server = Server;
   readonly Loader2 = Loader2;
@@ -338,10 +348,11 @@ export class EnvironmentDetailComponent implements OnInit {
   environment = signal<Environment | undefined>(undefined);
   loading = signal(false);
   error = signal<string | null>(null);
-  activeTab = signal<EnvironmentTab>('resources');
+  activeTab = signal<EnvironmentTab>('overview');
   confirmingDeleteEnv = signal(false);
 
   readonly tabs: { key: EnvironmentTab; label: string; icon: any }[] = [
+    { key: 'overview', label: 'Overview', icon: LayoutDashboard },
     { key: 'resources', label: 'Resources', icon: Monitor },
     { key: 'servers', label: 'Servers', icon: Server },
     { key: 'kubernetes', label: 'Kubernetes', icon: Cloud },
