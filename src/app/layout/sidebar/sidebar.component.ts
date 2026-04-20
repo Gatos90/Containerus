@@ -9,6 +9,7 @@ import { TerminalService } from '../../core/services/terminal.service';
 import { BackendService } from '../../core/services/backend.service';
 import { UiPreferencesState } from '../../state/ui-preferences.state';
 import { ContainerSystem, ExtendedSystemInfo, LiveSystemMetrics, OsType } from '../../core/models/system.model';
+import { MobileConnectionSheetComponent } from '../topbar/mobile-connection-sheet.component';
 
 export interface LoadLevelInfo {
   level: 'low' | 'medium' | 'high' | 'critical';
@@ -37,7 +38,7 @@ interface NavGroup {
 
 @Component({
   selector: 'app-sidebar',
-  imports: [CommonModule, RouterLink, RouterLinkActive, LucideAngularModule, DecimalPipe],
+  imports: [CommonModule, RouterLink, RouterLinkActive, LucideAngularModule, DecimalPipe, MobileConnectionSheetComponent],
   templateUrl: './sidebar.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -52,6 +53,9 @@ export class SidebarComponent {
 
   // State for "More" bottom sheet
   showMoreSheet = signal(false);
+
+  // CON-127 — mobile-only connection switcher sheet
+  showConnectionSheet = signal(false);
 
   // State for connected systems expansion
   systemsExpanded = signal(false);

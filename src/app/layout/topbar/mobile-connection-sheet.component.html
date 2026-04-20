@@ -1,0 +1,91 @@
+@if (open()) {
+  <div class="fixed inset-0 z-50 md:hidden" role="presentation">
+    <!-- Backdrop -->
+    <div
+      class="absolute inset-0 bg-black/60"
+      (click)="close()"
+      aria-hidden="true"
+    ></div>
+
+    <!-- Bottom sheet -->
+    <div
+      class="absolute bottom-0 left-0 right-0 bg-zinc-900 rounded-t-2xl safe-bottom max-h-[85dvh] flex flex-col"
+      role="dialog"
+      aria-modal="true"
+      [attr.aria-labelledby]="listboxId + '-title'"
+    >
+      <!-- Handle -->
+      <div class="flex justify-center py-3 flex-shrink-0" aria-hidden="true">
+        <div class="w-12 h-1 bg-zinc-700 rounded-full"></div>
+      </div>
+
+      <!-- Header -->
+      <div class="flex items-center justify-between px-4 pb-2 flex-shrink-0">
+        <h2 [id]="listboxId + '-title'" class="text-sm font-semibold text-zinc-100">
+          Switch connection
+        </h2>
+        <button
+          type="button"
+          (click)="close()"
+          class="text-zinc-400 hover:text-zinc-200 px-2 py-1 text-xs rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+          aria-label="Close connection switcher"
+        >
+          Cancel
+        </button>
+      </div>
+
+      <!-- Listbox -->
+      <ul
+        #listbox
+        [id]="listboxId"
+        role="listbox"
+        aria-label="Connections"
+        tabindex="0"
+        [attr.aria-activedescendant]="optionId(activeIndex())"
+        (keydown)="onListboxKeydown($event)"
+        class="px-2 pb-6 overflow-auto flex-1 min-h-0 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-inset"
+      >
+        @for (opt of options(); track opt.id; let i = $index) {
+          <li
+            [id]="optionId(i)"
+            role="option"
+            [attr.aria-selected]="activeIndex() === i"
+            (mouseenter)="activeIndex.set(i)"
+            (click)="selectIndex(i)"
+            class="flex items-center gap-3 px-3 py-3 rounded-xl cursor-pointer touch-target min-h-[44px]"
+            [class.bg-zinc-800]="activeIndex() === i"
+            [style.border]="accentFor(opt) ? '1px solid ' + accentFor(opt) : null"
+          >
+            @if (opt.id === 'local') {
+              <span
+                class="inline-flex items-center justify-center w-8 h-8 rounded-full border-2 border-zinc-400 text-xs text-zinc-300 flex-shrink-0"
+                aria-hidden="true"
+              >L</span>
+            } @else {
+              <app-connection-badge
+                [connectionId]="opt.id"
+                [connectionLabel]="opt.label"
+                size="md"
+              />
+            }
+            <span class="flex-1 min-w-0">
+              <span class="block text-zinc-100 truncate">{{ opt.label }}</span>
+              @if (opt.sub) {
+                <span class="block text-xs text-zinc-500 truncate">{{ opt.sub }}</span>
+              }
+            </span>
+            <span class="flex items-center gap-1.5 text-[11px] text-zinc-400 flex-shrink-0">
+              <span
+                class="w-2 h-2 rounded-full"
+                [ngClass]="statusDotClass(opt.status)"
+                aria-hidden="true"
+              ></span>
+              <span class="sr-only">,</span>
+              {{ statusLabel(opt.status) }}
+            </span>
+          </li>
+        }
+      </ul>
+    </div>
+  </div>
+}
