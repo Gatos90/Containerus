@@ -32,7 +32,7 @@
         <lucide-icon [img]="Box" [size]="13" aria-hidden="true" />
         <span>Containers</span>
       </div>
-      <div class="text-3xl tabular-nums text-zinc-100" aria-live="off">
+      <div class="text-3xl tabular-nums text-zinc-100">
         {{ containerCounts().total }}
       </div>
       <div class="flex items-center justify-between">
@@ -97,13 +97,15 @@
         <span>Members</span>
       </div>
       <div class="text-3xl tabular-nums text-zinc-100">
-        @if (memberCount() === null) { — } @else { {{ memberCount() }} }
+        @if (memberCount() === null) {
+          <span aria-hidden="true">—</span><span class="sr-only">Unknown</span>
+        } @else { {{ memberCount() }} }
       </div>
       <a
         [routerLink]="['/access/people']"
         [queryParams]="{ project: projectId }"
         class="text-xs text-blue-400 hover:text-blue-300 underline-offset-2 hover:underline"
-      >Manage members →</a>
+      >Manage members <span aria-hidden="true">→</span></a>
     </article>
   </div>
 </section>

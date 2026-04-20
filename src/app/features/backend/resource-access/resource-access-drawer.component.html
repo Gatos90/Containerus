@@ -105,16 +105,18 @@
                       type="checkbox"
                       [checked]="extraSet().has(perm.key)"
                       (change)="toggleExtra(perm.key)"
+                      [attr.aria-label]="'Extra: ' + perm.key"
                     />
-                    Extra
+                    <span aria-hidden="true">Extra</span>
                   </label>
                   <label class="flex items-center gap-1 text-red-400 cursor-pointer">
                     <input
                       type="checkbox"
                       [checked]="deniedSet().has(perm.key)"
                       (change)="toggleDenied(perm.key)"
+                      [attr.aria-label]="'Deny: ' + perm.key"
                     />
-                    Deny
+                    <span aria-hidden="true">Deny</span>
                   </label>
                 </span>
               </li>
@@ -136,7 +138,7 @@
         aria-live="polite"
         aria-atomic="true"
         class="sr-only"
-      >{{ effectivePermissions().length }} effective permissions.</p>
+      >@if (lastMovement(); as move) {{{ move }} }{{ effectivePermissions().length }} effective permissions.</p>
       @if (effectivePermissions().length === 0) {
         <p class="text-xs text-zinc-500 mt-1">No permissions yet — pick a base role or add extras.</p>
       } @else {

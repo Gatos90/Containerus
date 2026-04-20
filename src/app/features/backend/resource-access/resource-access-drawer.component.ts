@@ -76,6 +76,11 @@ export class ResourceAccessDrawerComponent implements OnInit {
   readonly extraSet = signal<Set<string>>(new Set());
   readonly deniedSet = signal<Set<string>>(new Set());
 
+  // Causal phrase for the polite live region: set whenever a toggle crosses
+  // sides (Extra ⇄ Deny) so a screen-reader user hears *what* moved, not just
+  // the effective-count delta. Cleared on any same-side toggle.
+  readonly lastMovement = signal<string | null>(null);
+
   // The selected role's full permission list, fetched lazily so the
   // "effective" preview is correct.
   readonly rolePermissions = signal<readonly string[]>([]);
@@ -167,6 +172,7 @@ export class ResourceAccessDrawerComponent implements OnInit {
   }
 
   toggleExtra(key: string): void {
+    const wasDenied = this.deniedSet().has(key);
     this.extraSet.update((set) => {
       const next = new Set(set);
       if (next.has(key)) next.delete(key);
@@ -175,28 +181,35 @@ export class ResourceAccessDrawerComponent implements OnInit {
     });
     // A permission cannot be both extra and denied. Flip-flopping clears the
     // opposite side rather than leaving an internally inconsistent draft.
-    if (this.deniedSet().has(key)) {
+    if (wasDenied) {
       this.deniedSet.update((set) => {
         const next = new Set(set);
         next.delete(key);
         return next;
       });
+      this.lastMovement.set(`${key} moved from Deny to Extra.`);
+    } else {
+      this.lastMovement.set(null);
     }
   }
 
   toggleDenied(key: string): void {
+    const wasExtra = this.extraSet().has(key);
     this.deniedSet.update((set) => {
       const next = new Set(set);
       if (next.has(key)) next.delete(key);
       else next.add(key);
       return next;
     });
-    if (this.extraSet().has(key)) {
+    if (wasExtra) {
       this.extraSet.update((set) => {
         const next = new Set(set);
         next.delete(key);
         return next;
       });
+      this.lastMovement.set(`${key} moved from Extra to Deny.`);
+    } else {
+      this.lastMovement.set(null);
     }
   }
 

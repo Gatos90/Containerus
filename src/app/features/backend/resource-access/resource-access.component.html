@@ -43,66 +43,72 @@
       emptyDescription="Project members get the role assigned to them by default. Use overrides to grant or deny extra permissions on a single system, cluster, or environment."
     />
   } @else {
-    <table class="w-full text-sm bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
-      <thead class="text-left text-xs uppercase tracking-wide text-zinc-500 border-b border-zinc-800">
-        <tr>
-          <th scope="col" class="px-3 py-2">User</th>
-          <th scope="col" class="px-3 py-2">Resource</th>
-          <th scope="col" class="px-3 py-2">Base role</th>
-          <th scope="col" class="px-3 py-2">Extras</th>
-          <th scope="col" class="px-3 py-2">Denied</th>
-          <th scope="col" class="px-3 py-2 text-right">Actions</th>
-        </tr>
-      </thead>
-      <tbody>
-        @for (acl of acls(); track acl.id) {
-          <tr class="border-b border-zinc-800/50">
-            <td class="px-3 py-2 text-zinc-200">
-              {{ memberByUserId().get(acl.userId)?.email ?? acl.userId }}
-            </td>
-            <td class="px-3 py-2 text-zinc-300">
-              <span class="text-zinc-500">{{ acl.resourceType }}:</span>
-              {{ resourceLabel(acl) }}
-            </td>
-            <td class="px-3 py-2 text-zinc-400">
-              {{ acl.roleId ? roleById().get(acl.roleId)?.name ?? '—' : '—' }}
-            </td>
-            <td class="px-3 py-2">
-              @if (acl.extraPermissions.length === 0) {
-                <span class="text-zinc-600">—</span>
-              } @else {
-                <div class="flex flex-wrap gap-1">
-                  @for (k of acl.extraPermissions; track k) {
-                    <app-permission-key [value]="k" />
-                  }
-                </div>
-              }
-            </td>
-            <td class="px-3 py-2">
-              @if (acl.deniedPermissions.length === 0) {
-                <span class="text-zinc-600">—</span>
-              } @else {
-                <div class="flex flex-wrap gap-1">
-                  @for (k of acl.deniedPermissions; track k) {
-                    <app-permission-key [value]="k" />
-                  }
-                </div>
-              }
-            </td>
-            <td class="px-3 py-2 text-right">
-              <button
-                type="button"
-                (click)="deleteAcl(acl)"
-                class="text-zinc-400 hover:text-red-400 p-1.5 rounded hover:bg-zinc-800"
-                [attr.aria-label]="'Remove override for ' + (memberByUserId().get(acl.userId)?.email ?? acl.userId)"
-              >
-                <lucide-icon [img]="Trash2" [size]="14" aria-hidden="true" />
-              </button>
-            </td>
+    <div class="bg-zinc-900 border border-zinc-800 rounded-xl overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead class="text-left text-xs uppercase tracking-wide text-zinc-500 border-b border-zinc-800">
+          <tr>
+            <th scope="col" class="px-3 py-2">User</th>
+            <th scope="col" class="px-3 py-2">Resource</th>
+            <th scope="col" class="px-3 py-2">Base role</th>
+            <th scope="col" class="px-3 py-2">Extras</th>
+            <th scope="col" class="px-3 py-2">Denied</th>
+            <th scope="col" class="px-3 py-2 text-right">Actions</th>
           </tr>
-        }
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          @for (acl of acls(); track acl.id) {
+            <tr class="border-b border-zinc-800/50">
+              <td class="px-3 py-2 text-zinc-200">
+                {{ memberByUserId().get(acl.userId)?.email ?? acl.userId }}
+              </td>
+              <td class="px-3 py-2 text-zinc-300">
+                <span class="text-zinc-500">{{ acl.resourceType }}:</span>
+                {{ resourceLabel(acl) }}
+              </td>
+              <td class="px-3 py-2 text-zinc-400">
+                @if (acl.roleId && roleById().get(acl.roleId); as r) {
+                  {{ r.name }}
+                } @else {
+                  <span aria-hidden="true">—</span><span class="sr-only">No base role</span>
+                }
+              </td>
+              <td class="px-3 py-2">
+                @if (acl.extraPermissions.length === 0) {
+                  <span aria-hidden="true" class="text-zinc-600">—</span><span class="sr-only">None</span>
+                } @else {
+                  <div class="flex flex-wrap gap-1">
+                    @for (k of acl.extraPermissions; track k) {
+                      <app-permission-key [value]="k" />
+                    }
+                  </div>
+                }
+              </td>
+              <td class="px-3 py-2">
+                @if (acl.deniedPermissions.length === 0) {
+                  <span aria-hidden="true" class="text-zinc-600">—</span><span class="sr-only">None</span>
+                } @else {
+                  <div class="flex flex-wrap gap-1">
+                    @for (k of acl.deniedPermissions; track k) {
+                      <app-permission-key [value]="k" />
+                    }
+                  </div>
+                }
+              </td>
+              <td class="px-3 py-2 text-right">
+                <button
+                  type="button"
+                  (click)="deleteAcl(acl)"
+                  class="text-zinc-400 hover:text-red-400 p-1.5 rounded hover:bg-zinc-800"
+                  [attr.aria-label]="'Remove override for ' + (memberByUserId().get(acl.userId)?.email ?? acl.userId)"
+                >
+                  <lucide-icon [img]="Trash2" [size]="14" aria-hidden="true" />
+                </button>
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
   }
 
   <app-drawer-dialog

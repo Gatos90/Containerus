@@ -1,34 +1,35 @@
 <div class="p-6 max-w-7xl mx-auto space-y-6">
   <div class="flex items-center justify-between">
     <h1 class="text-xl font-semibold text-zinc-100 flex items-center gap-2">
-      <lucide-icon [img]="ShieldCheck" [size]="20" />
+      <lucide-icon [img]="ShieldCheck" [size]="20" aria-hidden="true" />
       Role Manager
     </h1>
     <button
+      type="button"
       (click)="startCreate()"
       class="bg-blue-600 hover:bg-blue-500 text-white text-sm rounded-lg px-3 py-1.5 flex items-center gap-1.5 transition-colors"
     >
-      <lucide-icon [img]="Plus" [size]="14" />
+      <lucide-icon [img]="Plus" [size]="14" aria-hidden="true" />
       New role
     </button>
   </div>
 
   @if (loadError()) {
-    <div class="text-red-400 text-sm bg-red-950/30 rounded-lg p-3 flex items-center gap-2">
-      <lucide-icon [img]="AlertTriangle" [size]="16" />
+    <div role="alert" class="text-red-400 text-sm bg-red-950/30 rounded-lg p-3 flex items-center gap-2">
+      <lucide-icon [img]="AlertTriangle" [size]="16" aria-hidden="true" />
       {{ loadError() }}
     </div>
   }
 
   @if (loading()) {
     <div class="flex items-center gap-2 text-zinc-400 py-4">
-      <lucide-icon [img]="Loader2" [size]="16" class="animate-spin" />
+      <lucide-icon [img]="Loader2" [size]="16" class="animate-spin" aria-hidden="true" />
       Loading roles...
     </div>
   } @else {
-    <div class="grid grid-cols-12 gap-6">
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
       <!-- Role list -->
-      <div class="col-span-4 bg-zinc-900 rounded-xl border border-zinc-800 overflow-hidden">
+      <div class="lg:col-span-4 bg-zinc-900 rounded-xl border border-zinc-800 overflow-hidden">
         <div class="px-4 py-3 border-b border-zinc-800 text-xs uppercase tracking-wide text-zinc-500">
           Roles ({{ roles().length }})
         </div>
@@ -36,15 +37,17 @@
           @for (role of roles(); track role.id) {
             <li>
               <button
+                type="button"
                 (click)="selectRole(role.id)"
                 [class.bg-zinc-800]="selectedRoleId() === role.id"
+                [attr.aria-current]="selectedRoleId() === role.id ? 'true' : null"
                 class="w-full text-left px-4 py-3 hover:bg-zinc-800/60 transition-colors flex items-center justify-between gap-3"
               >
                 <div class="min-w-0">
                   <div class="text-sm font-medium text-zinc-100 truncate flex items-center gap-1.5">
                     {{ role.name }}
                     @if (role.isSystem) {
-                      <lucide-icon [img]="Lock" [size]="12" class="text-zinc-500" />
+                      <lucide-icon [img]="Lock" [size]="12" class="text-zinc-500" aria-hidden="true" />
                     }
                   </div>
                   <div class="text-xs text-zinc-500 truncate">{{ role.slug }}</div>
@@ -67,7 +70,7 @@
       </div>
 
       <!-- Role editor -->
-      <div class="col-span-8">
+      <div class="lg:col-span-8">
         @if (!creating() && !selectedRole()) {
           <div class="bg-zinc-900 rounded-xl border border-zinc-800 p-8 text-center text-sm text-zinc-500">
             Select a role on the left, or create a new one.
@@ -80,7 +83,7 @@
                   {{ creating() ? 'New role' : selectedRole()?.name }}
                   @if (isSystemRole()) {
                     <span class="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400">
-                      <lucide-icon [img]="Lock" [size]="10" /> read-only
+                      <lucide-icon [img]="Lock" [size]="10" aria-hidden="true" /> read-only
                     </span>
                   }
                   @if (hasChanges() && !isSystemRole()) {
@@ -93,32 +96,35 @@
               </div>
               <div class="flex items-center gap-2">
                 <button
+                  type="button"
                   (click)="cancelEdit()"
                   class="text-zinc-400 hover:text-zinc-200 text-sm rounded-lg px-3 py-1.5 flex items-center gap-1.5 transition-colors"
                 >
-                  <lucide-icon [img]="X" [size]="14" />
+                  <lucide-icon [img]="X" [size]="14" aria-hidden="true" />
                   Close
                 </button>
                 @if (!isSystemRole() && !creating()) {
                   <button
+                    type="button"
                     (click)="deleteRole()"
                     [disabled]="saving()"
                     class="bg-red-950 hover:bg-red-900 text-red-300 disabled:opacity-50 text-sm rounded-lg px-3 py-1.5 flex items-center gap-1.5 transition-colors"
                   >
-                    <lucide-icon [img]="Trash2" [size]="14" />
+                    <lucide-icon [img]="Trash2" [size]="14" aria-hidden="true" />
                     Delete
                   </button>
                 }
                 @if (!isSystemRole()) {
                   <button
+                    type="button"
                     (click)="save()"
                     [disabled]="saving() || !hasChanges()"
                     class="bg-blue-600 hover:bg-blue-500 disabled:bg-zinc-700 disabled:text-zinc-400 text-white text-sm rounded-lg px-3 py-1.5 flex items-center gap-1.5 transition-colors"
                   >
                     @if (saving()) {
-                      <lucide-icon [img]="Loader2" [size]="14" class="animate-spin" />
+                      <lucide-icon [img]="Loader2" [size]="14" class="animate-spin" aria-hidden="true" />
                     } @else {
-                      <lucide-icon [img]="Save" [size]="14" />
+                      <lucide-icon [img]="Save" [size]="14" aria-hidden="true" />
                     }
                     {{ creating() ? 'Create role' : 'Save changes' }}
                   </button>
@@ -127,8 +133,8 @@
             </div>
 
             @if (saveError()) {
-              <div class="mx-5 mt-4 text-red-400 text-sm bg-red-950/30 rounded-lg p-3 flex items-center gap-2">
-                <lucide-icon [img]="AlertTriangle" [size]="16" />
+              <div role="alert" class="mx-5 mt-4 text-red-400 text-sm bg-red-950/30 rounded-lg p-3 flex items-center gap-2">
+                <lucide-icon [img]="AlertTriangle" [size]="16" aria-hidden="true" />
                 {{ saveError() }}
               </div>
             }
@@ -213,7 +219,9 @@
                     <h3 class="text-xs uppercase tracking-wide text-zinc-400">{{ group.category }}</h3>
                     @if (!isSystemRole()) {
                       <button
+                        type="button"
                         (click)="toggleCategory(group.category, !isCategoryFullyEnabled(group.category))"
+                        [attr.aria-pressed]="isCategoryFullyEnabled(group.category)"
                         class="text-[11px] text-zinc-400 hover:text-zinc-200"
                       >
                         {{ isCategoryFullyEnabled(group.category) ? 'Clear all' : 'Select all' }}

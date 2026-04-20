@@ -46,37 +46,39 @@
         emptyDescription="Invite a teammate to give them access to this project."
       />
     } @else {
-      <table class="w-full text-sm bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
-        <thead class="text-left text-xs uppercase tracking-wide text-zinc-500 border-b border-zinc-800">
-          <tr>
-            <th scope="col" class="px-3 py-2">User</th>
-            <th scope="col" class="px-3 py-2">Email</th>
-            <th scope="col" class="px-3 py-2">Role</th>
-            <th scope="col" class="px-3 py-2">Joined</th>
-            <th scope="col" class="px-3 py-2 text-right">Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          @for (m of members(); track m.userId) {
-            <tr class="border-b border-zinc-800/50">
-              <td class="px-3 py-2 text-zinc-200">{{ m.displayName || m.email }}</td>
-              <td class="px-3 py-2 text-zinc-400">{{ m.email }}</td>
-              <td class="px-3 py-2 text-zinc-300">{{ m.roleName }}</td>
-              <td class="px-3 py-2 text-zinc-500">{{ formatDate(m.joinedAt) }}</td>
-              <td class="px-3 py-2 text-right">
-                <button
-                  type="button"
-                  (click)="removeMember(m)"
-                  class="text-zinc-400 hover:text-red-400 p-1.5 rounded hover:bg-zinc-800"
-                  [attr.aria-label]="'Remove ' + m.email"
-                >
-                  <lucide-icon [img]="Trash2" [size]="14" aria-hidden="true" />
-                </button>
-              </td>
+      <div class="bg-zinc-900 border border-zinc-800 rounded-xl overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead class="text-left text-xs uppercase tracking-wide text-zinc-500 border-b border-zinc-800">
+            <tr>
+              <th scope="col" class="px-3 py-2">User</th>
+              <th scope="col" class="px-3 py-2">Email</th>
+              <th scope="col" class="px-3 py-2">Role</th>
+              <th scope="col" class="px-3 py-2">Joined</th>
+              <th scope="col" class="px-3 py-2 text-right">Actions</th>
             </tr>
-          }
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            @for (m of members(); track m.userId) {
+              <tr class="border-b border-zinc-800/50">
+                <td class="px-3 py-2 text-zinc-200">{{ m.displayName || m.email }}</td>
+                <td class="px-3 py-2 text-zinc-400">{{ m.email }}</td>
+                <td class="px-3 py-2 text-zinc-300">{{ m.roleName }}</td>
+                <td class="px-3 py-2 text-zinc-500">{{ formatDate(m.joinedAt) }}</td>
+                <td class="px-3 py-2 text-right">
+                  <button
+                    type="button"
+                    (click)="removeMember(m)"
+                    class="text-zinc-400 hover:text-red-400 p-1.5 rounded hover:bg-zinc-800"
+                    [attr.aria-label]="'Remove ' + m.email"
+                  >
+                    <lucide-icon [img]="Trash2" [size]="14" aria-hidden="true" />
+                  </button>
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
     }
   </section>
 
@@ -96,47 +98,55 @@
         emptyDescription="When you invite someone, they'll appear here until they accept."
       />
     } @else {
-      <table class="w-full text-sm bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
-        <thead class="text-left text-xs uppercase tracking-wide text-zinc-500 border-b border-zinc-800">
-          <tr>
-            <th scope="col" class="px-3 py-2">Email</th>
-            <th scope="col" class="px-3 py-2">Role</th>
-            <th scope="col" class="px-3 py-2">Sent</th>
-            <th scope="col" class="px-3 py-2">Expires</th>
-            <th scope="col" class="px-3 py-2 text-right">Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          @for (i of invites(); track i.id) {
-            <tr class="border-b border-zinc-800/50">
-              <td class="px-3 py-2 text-zinc-200">{{ i.email }}</td>
-              <td class="px-3 py-2 text-zinc-300">{{ i.roleName || roleById().get(i.roleId)?.name || '—' }}</td>
-              <td class="px-3 py-2 text-zinc-500">{{ formatDate(i.invitedAt) }}</td>
-              <td class="px-3 py-2 text-zinc-500">{{ formatDate(i.expiresAt) }}</td>
-              <td class="px-3 py-2 text-right">
-                <span class="inline-flex gap-1">
-                  <button
-                    type="button"
-                    (click)="resendInvite(i)"
-                    class="text-zinc-400 hover:text-blue-400 p-1.5 rounded hover:bg-zinc-800"
-                    [attr.aria-label]="'Resend invite to ' + i.email"
-                  >
-                    <lucide-icon [img]="Send" [size]="14" aria-hidden="true" />
-                  </button>
-                  <button
-                    type="button"
-                    (click)="revokeInvite(i)"
-                    class="text-zinc-400 hover:text-red-400 p-1.5 rounded hover:bg-zinc-800"
-                    [attr.aria-label]="'Revoke invite for ' + i.email"
-                  >
-                    <lucide-icon [img]="Trash2" [size]="14" aria-hidden="true" />
-                  </button>
-                </span>
-              </td>
+      <div class="bg-zinc-900 border border-zinc-800 rounded-xl overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead class="text-left text-xs uppercase tracking-wide text-zinc-500 border-b border-zinc-800">
+            <tr>
+              <th scope="col" class="px-3 py-2">Email</th>
+              <th scope="col" class="px-3 py-2">Role</th>
+              <th scope="col" class="px-3 py-2">Sent</th>
+              <th scope="col" class="px-3 py-2">Expires</th>
+              <th scope="col" class="px-3 py-2 text-right">Actions</th>
             </tr>
-          }
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            @for (i of invites(); track i.id) {
+              <tr class="border-b border-zinc-800/50">
+                <td class="px-3 py-2 text-zinc-200">{{ i.email }}</td>
+                <td class="px-3 py-2 text-zinc-300">
+                  @if (i.roleName || roleById().get(i.roleId)?.name; as roleLabel) {
+                    {{ roleLabel }}
+                  } @else {
+                    <span aria-hidden="true">—</span><span class="sr-only">No role</span>
+                  }
+                </td>
+                <td class="px-3 py-2 text-zinc-500">{{ formatDate(i.invitedAt) }}</td>
+                <td class="px-3 py-2 text-zinc-500">{{ formatDate(i.expiresAt) }}</td>
+                <td class="px-3 py-2 text-right">
+                  <span class="inline-flex gap-1">
+                    <button
+                      type="button"
+                      (click)="resendInvite(i)"
+                      class="text-zinc-400 hover:text-blue-400 p-1.5 rounded hover:bg-zinc-800"
+                      [attr.aria-label]="'Resend invite to ' + i.email"
+                    >
+                      <lucide-icon [img]="Send" [size]="14" aria-hidden="true" />
+                    </button>
+                    <button
+                      type="button"
+                      (click)="revokeInvite(i)"
+                      class="text-zinc-400 hover:text-red-400 p-1.5 rounded hover:bg-zinc-800"
+                      [attr.aria-label]="'Revoke invite for ' + i.email"
+                    >
+                      <lucide-icon [img]="Trash2" [size]="14" aria-hidden="true" />
+                    </button>
+                  </span>
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
     }
   </section>
 
@@ -160,6 +170,7 @@
       </header>
 
       <form
+        id="people-invite-form"
         class="flex-1 overflow-y-auto p-4 space-y-4"
         (submit)="$event.preventDefault(); submitInvite()"
       >
@@ -203,8 +214,8 @@
           class="px-3 py-1.5 text-sm text-zinc-300 hover:text-zinc-100"
         >Cancel</button>
         <button
-          type="button"
-          (click)="submitInvite()"
+          type="submit"
+          form="people-invite-form"
           [disabled]="!inviteEmail().trim() || !inviteRoleId() || inviteSaving()"
           class="px-3 py-1.5 text-sm rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white"
         >Send invite</button>

@@ -118,4 +118,40 @@ describe('ResourceAccessDrawerComponent', () => {
     const f = configure();
     await assertNoA11yViolations(f.nativeElement);
   });
+
+  it('each Extra/Deny checkbox has an accessible name containing the permission key', () => {
+    const f = configure();
+    const checkboxes = f.nativeElement.querySelectorAll<HTMLInputElement>(
+      'input[type="checkbox"]',
+    );
+    // We expect one Extra + one Deny checkbox per permission (3 perms → 6 total).
+    expect(checkboxes.length).toBe(PERMS.length * 2);
+    for (const cb of Array.from(checkboxes)) {
+      const label = cb.getAttribute('aria-label') ?? '';
+      expect(label).toMatch(/^(Extra|Deny): [a-z.]+$/);
+      // Ensure the permission key from the catalog is part of the name —
+      // prevents future regressions where the label loses the key.
+      const keyPart = label.split(': ')[1];
+      expect(PERMS.map((p) => p.key)).toContain(keyPart);
+    }
+  });
+
+  it('announces causal phrase when a toggle crosses Extra ⇄ Deny', () => {
+    const f = configure();
+    const c = f.componentInstance;
+
+    c.toggleExtra('system.write');
+    expect(c.lastMovement()).toBeNull();
+
+    c.toggleDenied('system.write');
+    expect(c.lastMovement()).toBe('system.write moved from Extra to Deny.');
+
+    // Same-side toggle (off) should clear the movement message.
+    c.toggleDenied('system.write');
+    expect(c.lastMovement()).toBeNull();
+
+    c.toggleDenied('container.start');
+    c.toggleExtra('container.start');
+    expect(c.lastMovement()).toBe('container.start moved from Deny to Extra.');
+  });
 });
