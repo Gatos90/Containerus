@@ -158,6 +158,13 @@ export const routes: Routes = [
       ),
   },
   {
+    path: 'k8s/overview',
+    loadComponent: () =>
+      import('./features/backend/k8s-overview/k8s-overview-page.component').then(
+        (m) => m.K8sOverviewPageComponent
+      ),
+  },
+  {
     path: 'audit-log',
     loadComponent: () =>
       import('./features/backend/audit-log/audit-log.component').then(

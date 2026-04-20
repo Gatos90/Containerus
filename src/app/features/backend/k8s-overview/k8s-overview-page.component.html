@@ -1,0 +1,169 @@
+<div class="p-4 space-y-4">
+  <!--
+    Polite announcer for health-state transitions. Kept outside the drill
+    tree so switching namespaces/workloads does not re-announce transient
+    failing-counts. Only pushes when the rollup changes.
+  -->
+  <div class="sr-only" role="status" aria-live="polite">{{ announcement() }}</div>
+
+  <header class="flex flex-wrap items-center gap-3">
+    <h1 class="text-lg font-semibold text-zinc-100">Kubernetes</h1>
+    <app-k8s-cluster-switcher
+      [clusters]="clusters()"
+      [activeClusterId]="activeClusterId()"
+      (select)="onSelectCluster($event)"
+    />
+    <app-k8s-namespace-filter
+      [namespaces]="namespaceNames()"
+      [activeNamespace]="activeNamespace()"
+      (select)="onSelectNamespace($event)"
+    />
+    @if (loading()) {
+      <span class="text-xs text-zinc-500" aria-live="polite">Loading cluster…</span>
+    }
+  </header>
+
+  <!-- Breadcrumb drill trail -->
+  <nav aria-label="Resource hierarchy" class="text-xs text-zinc-500">
+    <ol class="flex items-center gap-1">
+      <li>
+        <button
+          type="button"
+          class="rounded px-1 hover:text-zinc-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-400"
+          [disabled]="!activeNamespace() && !activeWorkload()"
+          (click)="onSelectNamespace(null)"
+        >
+          {{ activeCluster()?.name ?? 'Cluster' }}
+        </button>
+      </li>
+      @if (activeNamespace(); as ns) {
+        <li aria-hidden="true">›</li>
+        <li>
+          <button
+            type="button"
+            class="rounded px-1 hover:text-zinc-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-400"
+            [disabled]="!activeWorkload()"
+            (click)="onSelectWorkload(null)"
+          >{{ ns }}</button>
+        </li>
+      }
+      @if (activeWorkload(); as wl) {
+        <li aria-hidden="true">›</li>
+        <li class="text-zinc-300">{{ wl }}</li>
+      }
+    </ol>
+  </nav>
+
+  @if (clustersError()) {
+    <div role="alert" class="rounded border border-red-900 bg-red-950/40 p-3 text-sm text-red-300">
+      {{ clustersError() }}
+    </div>
+  }
+
+  @if (isLocal()) {
+    <p class="rounded border border-zinc-800 bg-zinc-950 p-4 text-sm text-zinc-400">
+      Kubernetes clusters live on registered backend connections. Switch to a
+      backend in the topbar to browse clusters.
+    </p>
+  } @else if (clusters().length === 0 && !clustersLoading()) {
+    <p class="rounded border border-zinc-800 bg-zinc-950 p-4 text-sm text-zinc-400">
+      No clusters registered for this connection.
+    </p>
+  } @else {
+    <!-- Cluster-level summary (always shown) -->
+    <section aria-labelledby="k8s-summary-heading" class="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
+      <h2 id="k8s-summary-heading" class="mb-3 text-sm font-medium text-zinc-200">
+        Overview
+      </h2>
+      <div class="flex flex-wrap gap-2">
+        <app-status-chip
+          [status]="clusterPhaseSummary().status"
+          [label]="'Cluster'"
+          [count]="clusterPhaseSummary().counts.total"
+        />
+        <app-status-chip status="healthy" label="Running" [count]="clusterPhaseSummary().counts.running" />
+        <app-status-chip status="degraded" label="Pending" [count]="clusterPhaseSummary().counts.pending" />
+        <app-status-chip status="failing" label="Failing" [count]="clusterPhaseSummary().counts.failed" />
+        <app-status-chip status="unknown" label="Unknown" [count]="clusterPhaseSummary().counts.unknown" />
+      </div>
+    </section>
+
+    <!-- Drill-level 1: namespace grid (only when no namespace picked) -->
+    @if (!activeNamespace()) {
+      <section aria-labelledby="k8s-ns-heading" class="space-y-2">
+        <h2 id="k8s-ns-heading" class="text-sm font-medium text-zinc-200">Namespaces</h2>
+        <div class="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          @for (row of namespaceRows(); track row.name) {
+            <app-k8s-triage-card
+              [headline]="row.name"
+              sub="namespace"
+              [status]="row.status"
+              [readyCounts]="row.readyCounts"
+              [chipCount]="row.failingCount > 0 ? row.failingCount : null"
+              (activate)="onSelectNamespace(row.name)"
+            />
+          }
+          @if (namespaceRows().length === 0 && !loading()) {
+            <p class="text-xs text-zinc-500">No namespaces.</p>
+          }
+        </div>
+      </section>
+    }
+
+    <!-- Drill-level 2: workload grid (visible once a namespace is active) -->
+    @if (activeNamespace() && !activeWorkload()) {
+      <section aria-labelledby="k8s-wl-heading" class="space-y-2">
+        <h2 id="k8s-wl-heading" class="text-sm font-medium text-zinc-200">Workloads</h2>
+        <div class="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          @for (row of workloadRows(); track row.kind + '/' + row.name + '/' + row.namespace) {
+            @if (row.namespace === activeNamespace()) {
+              <app-k8s-triage-card
+                [headline]="row.name"
+                [sub]="row.kind"
+                [status]="row.status"
+                [readyCounts]="row.ready"
+                (activate)="onSelectWorkload(row)"
+              />
+            }
+          }
+          @if (workloadRows().length === 0 && !loading()) {
+            <p class="text-xs text-zinc-500">No deployments in this namespace.</p>
+          }
+        </div>
+      </section>
+    }
+
+    <!-- Drill-level 3: pods (workload scope OR namespace scope when no workload picked) -->
+    <section aria-labelledby="k8s-pods-heading" class="space-y-2">
+      <h2 id="k8s-pods-heading" class="text-sm font-medium text-zinc-200">Pods</h2>
+      <ul class="grid gap-2">
+        @for (pod of filteredPods(); track trackPod($index, pod)) {
+          <li>
+            <app-k8s-triage-card
+              [headline]="pod.name"
+              [sub]="pod.namespace + ' · ' + (pod.node ?? 'unscheduled')"
+              [status]="podStatus(pod)"
+              [readyCounts]="pod.ready"
+              [chipLabel]="pod.status"
+              (activate)="openPod(pod, $event.element)"
+            />
+          </li>
+        }
+        @if (filteredPods().length === 0 && !loading()) {
+          <li class="text-xs text-zinc-500">No pods to display.</li>
+        }
+      </ul>
+    </section>
+  }
+</div>
+
+@if (activePod() && activeClusterId(); as clusterId) {
+  <app-k8s-pod-drawer
+    [open]="true"
+    [pod]="activePod()"
+    [connectionId]="connectionId()"
+    [clusterId]="clusterId"
+    [restoreFocusTo]="podDrawerTrigger()"
+    (close)="closePodDrawer()"
+  />
+}
