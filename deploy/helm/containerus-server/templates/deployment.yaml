@@ -53,6 +53,15 @@ spec:
             - configMapRef:
                 name: {{ include "containerus-server.fullname" . }}-config
           env:
+            # The server image is built with `useradd --no-create-home`, so the
+            # runtime user's HOME is `/` — combined with `readOnlyRootFilesystem`,
+            # that makes `dirs::home_dir()` resolve to a path the SSH host-key
+            # trust flow cannot write to. Point HOME at the `/tmp` emptyDir (the
+            # only writable volume) so `known_hosts::add_host_key` can persist
+            # trusted server keys for the pod's lifetime.
+            # Persistence across pod restarts is tracked as a follow-up.
+            - name: HOME
+              value: /tmp
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
