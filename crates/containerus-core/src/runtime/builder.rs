@@ -61,6 +61,26 @@ impl CommandBuilder {
         }
     }
 
+    /// Build a one-shot stats command for a single container (CON-121).
+    ///
+    /// Uses `--no-stream` on Docker/Podman so the call returns immediately
+    /// with the current snapshot. Apple Container Runtime does not expose a
+    /// stats command today, so we return a `true` no-op whose stdout the
+    /// parser treats as an empty sample — the endpoint still returns the
+    /// rolling buffer for the other runtimes.
+    pub fn container_stats(runtime: ContainerRuntime, container_id: &str) -> String {
+        let id = Self::shell_escape(container_id);
+        match runtime {
+            ContainerRuntime::Docker => {
+                format!("docker stats --no-stream --format '{{{{json .}}}}' {}", id)
+            }
+            ContainerRuntime::Podman => {
+                format!("podman stats --no-stream --format json {}", id)
+            }
+            ContainerRuntime::Apple => "true".to_string(),
+        }
+    }
+
     /// Build container action command (start, stop, restart, etc.)
     pub fn container_action(
         runtime: ContainerRuntime,
@@ -1201,5 +1221,36 @@ mod tests {
     fn test_live_metrics_for_remote_always_unix() {
         let cmd = CommandBuilder::get_live_metrics_for_remote();
         assert!(cmd.contains("/proc/stat"));
+    }
+
+    #[test]
+    fn test_container_stats_docker_no_stream_json() {
+        let cmd = CommandBuilder::container_stats(ContainerRuntime::Docker, "abc123");
+        assert!(cmd.starts_with("docker stats --no-stream"));
+        assert!(cmd.contains("{{json .}}"));
+        assert!(cmd.contains("abc123"));
+    }
+
+    #[test]
+    fn test_container_stats_podman_json() {
+        let cmd = CommandBuilder::container_stats(ContainerRuntime::Podman, "abc");
+        assert!(cmd.starts_with("podman stats --no-stream"));
+        assert!(cmd.contains("--format json"));
+    }
+
+    #[test]
+    fn test_container_stats_apple_is_noop() {
+        // Apple Container has no stats command; we emit a harmless no-op.
+        assert_eq!(
+            CommandBuilder::container_stats(ContainerRuntime::Apple, "abc"),
+            "true"
+        );
+    }
+
+    #[test]
+    fn test_container_stats_shell_escapes_ids() {
+        let cmd = CommandBuilder::container_stats(ContainerRuntime::Docker, "evil;rm -rf /");
+        // shell_escape single-quotes the id so the `;` is literal.
+        assert!(cmd.contains("'evil;rm -rf /'"));
     }
 }

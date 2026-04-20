@@ -94,6 +94,16 @@ fn endpoints() -> Vec<Endpoint> {
             permission: "containers.start",
             body: Some(|| serde_json::json!({"action": "start", "runtime": "docker"})),
         },
+        // CON-121: per-container metrics endpoint — every built-in role has
+        // it via the default grant in migration 0012, so non-members and the
+        // company-admin edge rows are what the matrix actually exercises.
+        Endpoint {
+            method: Method::GET,
+            uri: |_, s| format!("/api/systems/{s}/containers/dummy/metrics?window=1h"),
+            label: "GET /systems/{id}/containers/{ctr}/metrics",
+            permission: "containers.metrics.view",
+            body: None,
+        },
         // images category — developer allow, viewer deny
         Endpoint {
             method: Method::POST,
@@ -126,6 +136,7 @@ fn role_perms(role: uuid::Uuid) -> &'static [&'static str] {
             "systems.view",
             "systems.delete",
             "containers.start",
+            "containers.metrics.view",
             "images.pull",
             "files.write",
         ]
@@ -137,6 +148,7 @@ fn role_perms(role: uuid::Uuid) -> &'static [&'static str] {
             "systems.view",
             "systems.delete",
             "containers.start",
+            "containers.metrics.view",
             "images.pull",
             "files.write",
         ]
@@ -147,6 +159,7 @@ fn role_perms(role: uuid::Uuid) -> &'static [&'static str] {
             "audit.view",
             "systems.view",
             "containers.start",
+            "containers.metrics.view",
             "images.pull",
         ]
     } else if role == ROLE_VIEWER {
@@ -155,6 +168,7 @@ fn role_perms(role: uuid::Uuid) -> &'static [&'static str] {
             "projects.members.view",
             "audit.view",
             "systems.view",
+            "containers.metrics.view",
         ]
     } else {
         &[]

@@ -63,6 +63,12 @@ pub struct AppState {
     /// ceiling by spamming single-invite calls. Keyed on
     /// `{project_id}:{user_id}` — per-project, per-inviter.
     pub project_invite_limiter: KeyedRateLimiter,
+    /// CON-121: rolling in-memory buffer of container stats samples,
+    /// populated lazily by the `/containers/{id}/metrics` endpoint.
+    pub container_metrics: api::container_metrics::ContainerMetricsStore,
+    /// CON-121: per-system throttle for `docker stats` scrapes so the
+    /// shared SSH connection isn't hammered by a bursty UI.
+    pub container_metrics_limiter: KeyedRateLimiter,
 }
 
 /// Build the full axum router (API + WebSocket + middleware stack) for the
@@ -185,6 +191,13 @@ pub async fn run() {
     let project_invite_limiter =
         KeyedRateLimiter::new(100, std::time::Duration::from_secs(3600));
 
+    // Container metrics throttle (CON-121). Keyed on system_id so all
+    // containers on one host share a single budget — prevents a dashboard
+    // cycling through container ids from bypassing the limit by rotating
+    // keys. 60/min matches the MIN_SAMPLE_INTERVAL floor in the module.
+    let container_metrics_limiter =
+        KeyedRateLimiter::new(60, std::time::Duration::from_secs(60));
+
     let state = AppState {
         db,
         config,
@@ -197,6 +210,8 @@ pub async fn run() {
         password_reset_email_limiter,
         password_reset_ip_limiter,
         project_invite_limiter,
+        container_metrics: api::container_metrics::ContainerMetricsStore::new(),
+        container_metrics_limiter,
     };
 
     // Background: cleanup idle SSH connections.

@@ -431,3 +431,24 @@ impl Container {
         }
     }
 }
+
+/// Single point-in-time sample of a container's runtime stats (CON-121).
+///
+/// Values are captured from `docker stats --no-stream` (or the runtime's
+/// equivalent) and normalised to bytes + percentages so the downsampler and
+/// the API payload can stay runtime-agnostic. `timestamp_ms` is the sample
+/// time in Unix milliseconds, assigned by the server at collection — the
+/// runtime's own stats command doesn't emit one consistently.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ContainerStatsSample {
+    pub timestamp_ms: i64,
+    pub cpu_percent: f32,
+    pub memory_bytes: u64,
+    pub memory_limit_bytes: u64,
+    pub memory_percent: f32,
+    pub net_rx_bytes: u64,
+    pub net_tx_bytes: u64,
+    pub block_read_bytes: u64,
+    pub block_write_bytes: u64,
+}

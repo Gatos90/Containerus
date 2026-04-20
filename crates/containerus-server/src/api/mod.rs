@@ -4,6 +4,7 @@ pub mod audit;
 pub mod auth;
 pub mod clusters;
 pub mod company;
+pub mod container_metrics;
 pub mod containers;
 pub mod environments;
 pub mod files;
@@ -57,6 +58,7 @@ pub fn router(auth_limiter: RateLimiter) -> Router<AppState> {
         // Single-resource operations (access resolved via system/cluster -> env -> project chain)
         .nest("/api/systems", systems::router())
         .nest("/api/systems", containers::router())
+        .nest("/api/systems", container_metrics::router())
         .nest("/api/systems", files::router())
         .nest("/api/clusters", clusters::router())
         // Project-scoped routes

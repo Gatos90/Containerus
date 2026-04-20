@@ -2144,6 +2144,138 @@ impl OutputParser {
             format!("{}B", bytes)
         }
     }
+
+    // ========================================================================
+    // Container Stats Parsing (CON-121)
+    // ========================================================================
+
+    /// Parse a single container stats snapshot from `docker stats --no-stream
+    /// --format '{{json .}}'` (or the Podman equivalent).
+    ///
+    /// Docker emits one JSON object per line; Podman 4+ emits a single-object
+    /// JSON array. Both fields we care about (`CPUPerc`, `MemUsage`, `NetIO`,
+    /// `BlockIO`) are rendered as strings like `"5.168MiB / 3.836GiB"`, so we
+    /// parse the human-readable units here and normalise to bytes. The caller
+    /// stamps the sample's `timestamp_ms` at collection time.
+    pub fn parse_container_stats(
+        output: &str,
+        runtime: ContainerRuntime,
+        timestamp_ms: i64,
+    ) -> Option<ContainerStatsSample> {
+        if runtime == ContainerRuntime::Apple {
+            // Apple Container Runtime has no stats command today (CON-121
+            // notes this as an acceptable gap). Return None so the buffer is
+            // simply not populated for Apple systems.
+            return None;
+        }
+        let trimmed = output.trim();
+        if trimmed.is_empty() {
+            return None;
+        }
+        // Docker: one JSON object per line. Podman 4+: single JSON array.
+        // Take the first object in either case — we only ever query one id.
+        let first_obj: Value = if trimmed.starts_with('[') {
+            let arr: Vec<Value> = serde_json::from_str(trimmed).ok()?;
+            arr.into_iter().next()?
+        } else {
+            let first_line = trimmed.lines().next()?.trim();
+            serde_json::from_str(first_line).ok()?
+        };
+        let obj = first_obj.as_object()?;
+
+        let cpu_percent = obj
+            .get("CPUPerc")
+            .and_then(|v| v.as_str())
+            .and_then(Self::parse_percent_string)
+            .unwrap_or(0.0);
+        let mem_percent = obj
+            .get("MemPerc")
+            .and_then(|v| v.as_str())
+            .and_then(Self::parse_percent_string)
+            .unwrap_or(0.0);
+        let (mem_used, mem_limit) = obj
+            .get("MemUsage")
+            .and_then(|v| v.as_str())
+            .and_then(Self::parse_stats_ratio)
+            .unwrap_or((0, 0));
+        let (net_rx, net_tx) = obj
+            .get("NetIO")
+            .and_then(|v| v.as_str())
+            .and_then(Self::parse_stats_ratio)
+            .unwrap_or((0, 0));
+        let (block_read, block_write) = obj
+            .get("BlockIO")
+            .and_then(|v| v.as_str())
+            .and_then(Self::parse_stats_ratio)
+            .unwrap_or((0, 0));
+
+        Some(ContainerStatsSample {
+            timestamp_ms,
+            cpu_percent,
+            memory_bytes: mem_used,
+            memory_limit_bytes: mem_limit,
+            memory_percent: mem_percent,
+            net_rx_bytes: net_rx,
+            net_tx_bytes: net_tx,
+            block_read_bytes: block_read,
+            block_write_bytes: block_write,
+        })
+    }
+
+    /// Parse `"12.34%"` → `12.34`. Accepts trailing whitespace and missing
+    /// `%` (Podman sometimes emits `"--"` for stopped containers).
+    fn parse_percent_string(s: &str) -> Option<f32> {
+        let trimmed = s.trim().trim_end_matches('%').trim();
+        if trimmed.is_empty() || trimmed == "--" {
+            return None;
+        }
+        trimmed.parse::<f32>().ok()
+    }
+
+    /// Parse `"5.168MiB / 3.836GiB"` → `(used_bytes, total_bytes)`.
+    fn parse_stats_ratio(s: &str) -> Option<(u64, u64)> {
+        let (left, right) = s.split_once('/')?;
+        let used = Self::parse_human_size(left.trim())?;
+        let total = Self::parse_human_size(right.trim())?;
+        Some((used, total))
+    }
+
+    /// Parse `docker stats` size tokens like `"5.168MiB"`, `"648B"`,
+    /// `"3.836GiB"`, `"0B"`, `"1.2kB"`. Binary suffixes (`MiB`, `GiB`,
+    /// `KiB`) use 1024-base; decimal suffixes (`kB`, `MB`, `GB`) use 1000-
+    /// base; a bare `B` is bytes.
+    fn parse_human_size(s: &str) -> Option<u64> {
+        let s = s.trim();
+        if s.is_empty() || s == "--" {
+            return Some(0);
+        }
+        // Find where the numeric prefix ends.
+        let split_idx = s
+            .find(|c: char| c.is_alphabetic())
+            .unwrap_or(s.len());
+        let (num_part, unit_part) = s.split_at(split_idx);
+        let num: f64 = num_part.trim().parse().ok()?;
+        let unit = unit_part.trim();
+        let mult: f64 = match unit {
+            "" | "B" => 1.0,
+            "kB" => 1_000.0,
+            "KB" | "K" => 1_000.0,
+            "KiB" | "KiB/s" => 1_024.0,
+            "MB" | "M" => 1_000_000.0,
+            "MiB" | "MiB/s" => 1_048_576.0,
+            "GB" | "G" => 1_000_000_000.0,
+            "GiB" | "GiB/s" => 1_073_741_824.0,
+            "TB" | "T" => 1_000_000_000_000.0,
+            "TiB" | "TiB/s" => 1_099_511_627_776.0,
+            _ => return None,
+        };
+        let bytes = num * mult;
+        if bytes.is_finite() && bytes >= 0.0 {
+            Some(bytes as u64)
+        } else {
+            None
+        }
+    }
 }
 
 #[cfg(test)]
@@ -2341,5 +2473,84 @@ lrwxrwxrwx  1 user group     6 2024-01-15 10:30 link -> target"#;
 
         let visible = entries.iter().find(|e| e.name == "visible").unwrap();
         assert!(!visible.is_hidden);
+    }
+
+    // -------------------------------------------------------------------------
+    // CON-121: container stats parsing
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn test_parse_human_size_suffixes() {
+        assert_eq!(OutputParser::parse_human_size("0B"), Some(0));
+        assert_eq!(OutputParser::parse_human_size("648B"), Some(648));
+        assert_eq!(OutputParser::parse_human_size("1kB"), Some(1_000));
+        assert_eq!(OutputParser::parse_human_size("1KiB"), Some(1_024));
+        assert_eq!(OutputParser::parse_human_size("1MB"), Some(1_000_000));
+        assert_eq!(OutputParser::parse_human_size("1MiB"), Some(1_048_576));
+        assert_eq!(OutputParser::parse_human_size("1GiB"), Some(1_073_741_824));
+        assert_eq!(
+            OutputParser::parse_human_size("3.836GiB"),
+            Some((3.836_f64 * 1_073_741_824.0) as u64)
+        );
+        assert_eq!(OutputParser::parse_human_size("--"), Some(0));
+        assert!(OutputParser::parse_human_size("nonsense").is_none());
+    }
+
+    #[test]
+    fn test_parse_stats_ratio_splits_on_slash() {
+        let (u, t) = OutputParser::parse_stats_ratio("5.168MiB / 3.836GiB").unwrap();
+        assert!(u > 5 * 1024 * 1024 && u < 6 * 1024 * 1024);
+        assert!(t > 3 * 1024 * 1024 * 1024 && t < 4 * 1024 * 1024 * 1024);
+    }
+
+    #[test]
+    fn test_parse_percent_string_edge_cases() {
+        assert_eq!(OutputParser::parse_percent_string("12.5%"), Some(12.5));
+        assert_eq!(OutputParser::parse_percent_string("0.00%"), Some(0.0));
+        assert!(OutputParser::parse_percent_string("--").is_none());
+        assert!(OutputParser::parse_percent_string("").is_none());
+    }
+
+    #[test]
+    fn test_parse_container_stats_docker_line() {
+        // Real-shape output from `docker stats --no-stream --format '{{json .}}'`.
+        let line = r#"{"BlockIO":"0B / 8.19kB","CPUPerc":"1.23%","Container":"abc","ID":"abc","MemPerc":"0.12%","MemUsage":"5.168MiB / 3.836GiB","Name":"foo","NetIO":"648B / 128B","PIDs":"3"}"#;
+        let sample = OutputParser::parse_container_stats(line, ContainerRuntime::Docker, 1700)
+            .expect("sample present");
+        assert_eq!(sample.timestamp_ms, 1700);
+        assert!((sample.cpu_percent - 1.23).abs() < 0.01);
+        assert!((sample.memory_percent - 0.12).abs() < 0.01);
+        assert!(sample.memory_bytes > 5 * 1024 * 1024);
+        assert!(sample.memory_limit_bytes > 3 * 1024 * 1024 * 1024);
+        assert_eq!(sample.net_rx_bytes, 648);
+        assert_eq!(sample.net_tx_bytes, 128);
+        // 8.19 * 1000 rounds to 8189/8190 depending on f64 → u64 truncation;
+        // assert a tight range rather than a single exact value.
+        assert!((8_180..=8_190).contains(&sample.block_write_bytes));
+    }
+
+    #[test]
+    fn test_parse_container_stats_podman_array() {
+        // Podman 4+ emits a JSON array with object fields in the same shape.
+        let out = r#"[{"CPUPerc":"0.00%","MemPerc":"--","MemUsage":"-- / --","NetIO":"-- / --","BlockIO":"-- / --"}]"#;
+        let sample = OutputParser::parse_container_stats(out, ContainerRuntime::Podman, 42)
+            .expect("sample present");
+        // Stopped containers: all fields collapse to zero, never panic.
+        assert_eq!(sample.cpu_percent, 0.0);
+        assert_eq!(sample.memory_bytes, 0);
+        assert_eq!(sample.memory_limit_bytes, 0);
+    }
+
+    #[test]
+    fn test_parse_container_stats_apple_is_none() {
+        // Apple Container has no stats command; we return None so the buffer
+        // stays empty rather than inserting bogus zero samples.
+        assert!(OutputParser::parse_container_stats("anything", ContainerRuntime::Apple, 1).is_none());
+    }
+
+    #[test]
+    fn test_parse_container_stats_empty_output_is_none() {
+        assert!(OutputParser::parse_container_stats("", ContainerRuntime::Docker, 1).is_none());
+        assert!(OutputParser::parse_container_stats("   \n  ", ContainerRuntime::Docker, 1).is_none());
     }
 }
