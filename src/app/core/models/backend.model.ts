@@ -187,6 +187,29 @@ export interface ProjectMember {
   roleName: string;
   roleSlug: string;
   joinedAt: string;
+  /**
+   * CON-134 — `users.is_active` projected through the member query so the
+   * People screen can show a status badge and route the row action between
+   * "Deactivate" and "Reactivate". Optional so older backends that haven't
+   * picked up the Phase-3 backend bump still parse.
+   */
+  isActive?: boolean;
+}
+
+/**
+ * CON-134 — response from `PATCH /api/admin/users/{userId}`. The full shape
+ * is intentionally narrow: the UI only reads `isActive` to confirm the flip,
+ * `id` to target the right row, and `email` for status announcements.
+ */
+export interface AdminUserResponse {
+  id: string;
+  email: string;
+  displayName: string;
+  avatarUrl?: string | null;
+  isActive: boolean;
+  authProvider: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface InviteMemberRequest {

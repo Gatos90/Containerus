@@ -3,6 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { ToastState } from '../../state/toast.state';
 import { PermissionBannerState } from '../../state/permission-banner.state';
 import {
+  AdminUserResponse,
   AuthTokens,
   BackendConnection,
   BackendSystem,
@@ -478,6 +479,30 @@ export class BackendService {
 
   async removeCompanyAdminFor(connectionId: string, userId: string): Promise<void> {
     await this.requestFor(connectionId, 'DELETE', `/api/company/admins/${userId}`);
+  }
+
+  /**
+   * CON-134 — admin-only user deactivation/reactivation. Wraps
+   * `PATCH /api/admin/users/{userId}` from CON-119. The backend is
+   * company-admin gated and refuses self-targeting with a 400, so the UI
+   * hides the action on the caller's own row rather than relying on the
+   * server rejection for guidance.
+   *
+   * On deactivation the backend also wipes refresh tokens + MFA for the
+   * target user — the People screen surfaces that in the confirm copy so
+   * admins aren't surprised after the fact.
+   */
+  async setUserActiveFor(
+    connectionId: string,
+    userId: string,
+    isActive: boolean,
+  ): Promise<AdminUserResponse> {
+    return this.requestFor<AdminUserResponse>(
+      connectionId,
+      'PATCH',
+      `/api/admin/users/${userId}`,
+      { isActive },
+    );
   }
 
   // ==========================================================================

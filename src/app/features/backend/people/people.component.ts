@@ -15,12 +15,15 @@ import {
   Trash2,
   Send,
   X,
+  UserMinus,
+  UserCheck,
 } from 'lucide-angular';
 
 import {
   DrawerDialogComponent,
   ListStatesComponent,
 } from '../../../shared/components/a11y';
+import { ConfirmDialogComponent } from '../../../shared/components/confirm-dialog/confirm-dialog.component';
 import { BackendService } from '../../../core/services/backend.service';
 import {
   PendingInvite,
@@ -35,7 +38,20 @@ import {
  * (BackendEngineer subtask spawned from CON-125); when it 404s the column
  * collapses to a friendly "not yet available" empty state rather than
  * surfacing the raw error.
+ *
+ * CON-134 — the Members table gained an `Active` status column and a
+ * per-row Deactivate/Reactivate action that drives
+ * `PATCH /api/admin/users/{userId}` (CON-119). The action is hidden for
+ * non-admins and for the caller's own row, mirroring the server-side
+ * self-deactivation 400 so the button never appears broken.
  */
+type ToastKind = 'success' | 'error';
+
+interface StatusToast {
+  readonly message: string;
+  readonly kind: ToastKind;
+}
+
 @Component({
   selector: 'app-people',
   standalone: true,
@@ -45,6 +61,7 @@ import {
     LucideAngularModule,
     ListStatesComponent,
     DrawerDialogComponent,
+    ConfirmDialogComponent,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './people.component.html',
@@ -57,6 +74,8 @@ export class PeopleComponent implements OnInit {
   readonly Trash2 = Trash2;
   readonly Send = Send;
   readonly X = X;
+  readonly UserMinus = UserMinus;
+  readonly UserCheck = UserCheck;
 
   readonly loading = signal(false);
   readonly loadError = signal<string | null>(null);
@@ -77,10 +96,49 @@ export class PeopleComponent implements OnInit {
   readonly inviteSaving = signal(false);
   readonly inviteError = signal<string | null>(null);
 
+  /**
+   * CON-134 — destructive confirm for Deactivate. Reactivate skips the modal
+   * because it has no side effects on sessions/MFA; flipping a false-positive
+   * back on shouldn't need a two-tap ceremony.
+   */
+  readonly deactivateOpen = signal(false);
+  readonly deactivateTarget = signal<ProjectMember | null>(null);
+  readonly deactivateBusy = signal(false);
+  readonly deactivateTrigger = signal<HTMLElement | null>(null);
+  /** userIds currently mid-flight — disables their row action + shows busy state. */
+  readonly pendingActiveFlip = signal<ReadonlySet<string>>(new Set());
+
+  readonly toast = signal<StatusToast | null>(null);
+  private toastTimer: ReturnType<typeof setTimeout> | null = null;
+
   readonly roleById = computed(() => {
     const map = new Map<string, Role>();
     for (const r of this.roles()) map.set(r.id, r);
     return map;
+  });
+
+  /**
+   * Caller's own user id. Used to hide the Deactivate/Reactivate action on
+   * the caller's own row — the backend returns 400 for self-targeting, but
+   * we'd rather not render a button that's guaranteed to fail.
+   */
+  readonly currentUserId = computed(
+    () => this.backend.connectedBackends().find(c => c.id === this.connectionId())?.user?.id ?? null,
+  );
+
+  /**
+   * CON-134 — gate the Deactivate/Reactivate UI on `users.deactivate` OR
+   * company-admin. We intentionally do not use `hasPermission` with a
+   * project id here: deactivation is a company-wide operation, so the
+   * control has to be visible regardless of which project is selected in
+   * the project picker.
+   */
+  readonly canDeactivateUsers = computed(() => {
+    const conn = this.backend.connectedBackends().find(c => c.id === this.connectionId());
+    if (!conn) return false;
+    return Object.values(conn.projectPermissions).some(
+      p => p.isCompanyAdmin || p.permissions.includes('users.deactivate'),
+    );
   });
 
   async ngOnInit(): Promise<void> {
@@ -206,6 +264,123 @@ export class PeopleComponent implements OnInit {
     } catch (e: any) {
       this.loadError.set(e?.message ?? 'Failed to remove member');
     }
+  }
+
+  /**
+   * CON-134 — open the destructive confirm for Deactivate. We capture the
+   * triggering button so the dialog can restore focus to it on close,
+   * matching the invite drawer's focus-return contract.
+   */
+  openDeactivateConfirm(member: ProjectMember, event: Event): void {
+    this.deactivateTrigger.set(event.currentTarget as HTMLElement);
+    this.deactivateTarget.set(member);
+    this.deactivateOpen.set(true);
+  }
+
+  onDeactivateCancelled(): void {
+    this.deactivateOpen.set(false);
+    // Return focus to whatever triggered the confirm so keyboard users don't
+    // lose their place in the members table.
+    const trigger = this.deactivateTrigger();
+    if (trigger) {
+      queueMicrotask(() => trigger.focus());
+    }
+    this.deactivateTarget.set(null);
+  }
+
+  async onDeactivateConfirmed(): Promise<void> {
+    const member = this.deactivateTarget();
+    if (!member) return;
+    this.deactivateBusy.set(true);
+    try {
+      await this.setUserActive(member, false);
+      this.deactivateOpen.set(false);
+      this.deactivateTarget.set(null);
+    } finally {
+      this.deactivateBusy.set(false);
+    }
+  }
+
+  /**
+   * CON-134 — reactivation has no destructive side-effects (sessions stay
+   * revoked, MFA stays cleared — the backend intentionally doesn't restore
+   * those because it would be hostile to ops flipping a false-positive back
+   * on). One-tap is fine.
+   */
+  async reactivateMember(member: ProjectMember): Promise<void> {
+    await this.setUserActive(member, true);
+  }
+
+  private async setUserActive(member: ProjectMember, isActive: boolean): Promise<void> {
+    const connectionId = this.connectionId();
+    if (!connectionId) return;
+
+    this.markPending(member.userId, true);
+    try {
+      const updated = await this.backend.setUserActiveFor(connectionId, member.userId, isActive);
+      // Patch the row in place so the status column + action flip without a
+      // full reload flicker.
+      this.members.update(list =>
+        list.map(m =>
+          m.userId === updated.id ? { ...m, isActive: updated.isActive } : m,
+        ),
+      );
+      this.announceToast({
+        kind: 'success',
+        message: isActive
+          ? `${member.email} reactivated.`
+          : `${member.email} deactivated. Sessions revoked and MFA cleared.`,
+      });
+    } catch (e: any) {
+      this.announceToast({
+        kind: 'error',
+        message: e?.message ?? `Failed to ${isActive ? 'reactivate' : 'deactivate'} ${member.email}.`,
+      });
+    } finally {
+      this.markPending(member.userId, false);
+    }
+  }
+
+  private markPending(userId: string, pending: boolean): void {
+    const next = new Set(this.pendingActiveFlip());
+    if (pending) next.add(userId);
+    else next.delete(userId);
+    this.pendingActiveFlip.set(next);
+  }
+
+  isPending(userId: string): boolean {
+    return this.pendingActiveFlip().has(userId);
+  }
+
+  private announceToast(t: StatusToast): void {
+    this.toast.set(t);
+    if (this.toastTimer) clearTimeout(this.toastTimer);
+    // Success toasts self-dismiss, errors stick until the user acts again.
+    if (t.kind === 'success') {
+      this.toastTimer = setTimeout(() => this.toast.set(null), 5000);
+    }
+  }
+
+  dismissToast(): void {
+    if (this.toastTimer) {
+      clearTimeout(this.toastTimer);
+      this.toastTimer = null;
+    }
+    this.toast.set(null);
+  }
+
+  /**
+   * CON-134 — guard used by the template to decide whether to render the
+   * Deactivate (when active) or Reactivate (when inactive) row action, or
+   * nothing at all (self-row / non-admin / unknown isActive).
+   */
+  canFlipActive(member: ProjectMember): boolean {
+    if (!this.canDeactivateUsers()) return false;
+    if (member.userId === this.currentUserId()) return false;
+    // If the backend didn't project `is_active` (older server, field
+    // optional in the model), fall back to showing nothing rather than
+    // rendering an action that could mean either direction.
+    return member.isActive !== undefined;
   }
 
   formatDate(iso: string | null | undefined): string {

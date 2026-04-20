@@ -197,6 +197,10 @@ pub struct ProjectMemberResponse {
     pub role_name: String,
     pub role_slug: String,
     pub joined_at: DateTime<Utc>,
+    /// CON-134 — surfaces `users.is_active` so the People screen can render a
+    /// status column + gate the Deactivate/Reactivate action without a second
+    /// round-trip per row. Mirrors `AdminUserResponse.is_active` from CON-119.
+    pub is_active: bool,
 }
 
 /// Pending project invite (CON-129). Emitted by

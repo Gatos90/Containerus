@@ -533,7 +533,8 @@ async fn list_members(
 
     let members = sqlx::query_as::<_, ProjectMemberResponse>(
         "SELECT pm.user_id, u.email, u.display_name, u.avatar_url,
-                pm.role_id, r.name as role_name, r.slug as role_slug, pm.joined_at
+                pm.role_id, r.name as role_name, r.slug as role_slug, pm.joined_at,
+                u.is_active
          FROM project_members pm
          JOIN users u ON u.id = pm.user_id
          JOIN roles r ON r.id = pm.role_id

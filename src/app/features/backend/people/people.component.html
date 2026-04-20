@@ -53,26 +53,69 @@
               <th scope="col" class="px-3 py-2">User</th>
               <th scope="col" class="px-3 py-2">Email</th>
               <th scope="col" class="px-3 py-2">Role</th>
+              <!-- CON-134: status column distinguishes active vs deactivated users. -->
+              <th scope="col" class="px-3 py-2">Status</th>
               <th scope="col" class="px-3 py-2">Joined</th>
               <th scope="col" class="px-3 py-2 text-right">Actions</th>
             </tr>
           </thead>
           <tbody>
             @for (m of members(); track m.userId) {
-              <tr class="border-b border-zinc-800/50">
+              <tr class="border-b border-zinc-800/50" [class.opacity-60]="m.isActive === false">
                 <td class="px-3 py-2 text-zinc-200">{{ m.displayName || m.email }}</td>
                 <td class="px-3 py-2 text-zinc-400">{{ m.email }}</td>
                 <td class="px-3 py-2 text-zinc-300">{{ m.roleName }}</td>
+                <td class="px-3 py-2">
+                  @if (m.isActive === false) {
+                    <span
+                      class="inline-flex items-center rounded-full bg-red-950/40 text-red-300 border border-red-800/50 px-2 py-0.5 text-xs"
+                    >Deactivated</span>
+                  } @else if (m.isActive === true) {
+                    <span
+                      class="inline-flex items-center rounded-full bg-emerald-950/40 text-emerald-300 border border-emerald-800/50 px-2 py-0.5 text-xs"
+                    >Active</span>
+                  } @else {
+                    <span class="text-zinc-500 text-xs" aria-hidden="true">—</span>
+                    <span class="sr-only">Status unavailable</span>
+                  }
+                </td>
                 <td class="px-3 py-2 text-zinc-500">{{ formatDate(m.joinedAt) }}</td>
                 <td class="px-3 py-2 text-right">
-                  <button
-                    type="button"
-                    (click)="removeMember(m)"
-                    class="text-zinc-400 hover:text-red-400 p-1.5 rounded hover:bg-zinc-800"
-                    [attr.aria-label]="'Remove ' + m.email"
-                  >
-                    <lucide-icon [img]="Trash2" [size]="14" aria-hidden="true" />
-                  </button>
+                  <span class="inline-flex gap-1">
+                    @if (canFlipActive(m)) {
+                      @if (m.isActive) {
+                        <button
+                          type="button"
+                          (click)="openDeactivateConfirm(m, $event)"
+                          [disabled]="isPending(m.userId)"
+                          class="text-zinc-400 hover:text-red-400 p-1.5 rounded hover:bg-zinc-800 disabled:opacity-50"
+                          [attr.aria-label]="'Deactivate ' + m.email"
+                          [attr.aria-busy]="isPending(m.userId) ? 'true' : null"
+                        >
+                          <lucide-icon [img]="UserMinus" [size]="14" aria-hidden="true" />
+                        </button>
+                      } @else {
+                        <button
+                          type="button"
+                          (click)="reactivateMember(m)"
+                          [disabled]="isPending(m.userId)"
+                          class="text-zinc-400 hover:text-emerald-400 p-1.5 rounded hover:bg-zinc-800 disabled:opacity-50"
+                          [attr.aria-label]="'Reactivate ' + m.email"
+                          [attr.aria-busy]="isPending(m.userId) ? 'true' : null"
+                        >
+                          <lucide-icon [img]="UserCheck" [size]="14" aria-hidden="true" />
+                        </button>
+                      }
+                    }
+                    <button
+                      type="button"
+                      (click)="removeMember(m)"
+                      class="text-zinc-400 hover:text-red-400 p-1.5 rounded hover:bg-zinc-800"
+                      [attr.aria-label]="'Remove ' + m.email"
+                    >
+                      <lucide-icon [img]="Trash2" [size]="14" aria-hidden="true" />
+                    </button>
+                  </span>
                 </td>
               </tr>
             }
@@ -222,4 +265,47 @@
       </footer>
     </div>
   </app-drawer-dialog>
+
+  <!-- CON-134: destructive confirm for Deactivate. Names the target user and
+       lists the server-side side-effects (sessions, MFA) so admins aren't
+       surprised. Whitespace-pre-line in confirm-dialog lets \n be a break. -->
+  @if (deactivateTarget(); as target) {
+    <app-confirm-dialog
+      [open]="deactivateOpen()"
+      variant="destructive"
+      title="Deactivate user?"
+      [message]="
+        'Deactivating ' + target.email + ' will:' +
+        '\n• revoke all of their active sessions' +
+        '\n• clear their MFA secrets and backup codes' +
+        '\n• deny login until an admin reactivates the account' +
+        '\n\nResource access grants (ACLs) are preserved, so reactivation restores prior project access.'
+      "
+      confirmText="Deactivate"
+      cancelText="Cancel"
+      [busy]="deactivateBusy()"
+      (confirmed)="onDeactivateConfirmed()"
+      (cancelled)="onDeactivateCancelled()"
+    />
+  }
+
+  <!-- CON-134: status announcement. Polite for success, assertive for errors.
+       Fixed to the viewport corner so it doesn't shift the members table. -->
+  @if (toast(); as t) {
+    <div
+      [attr.role]="t.kind === 'error' ? 'alert' : 'status'"
+      [attr.aria-live]="t.kind === 'error' ? 'assertive' : 'polite'"
+      class="fixed bottom-4 right-4 bg-zinc-900 border rounded-lg shadow-lg px-3 py-2 flex items-center gap-3 text-sm text-zinc-100 max-w-[calc(100vw-2rem)]"
+      [class.border-red-700]="t.kind === 'error'"
+      [class.border-zinc-700]="t.kind !== 'error'"
+    >
+      <span>{{ t.message }}</span>
+      <button
+        type="button"
+        (click)="dismissToast()"
+        class="text-zinc-500 hover:text-zinc-300"
+        aria-label="Dismiss notification"
+      >×</button>
+    </div>
+  }
 </div>
