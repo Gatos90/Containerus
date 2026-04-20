@@ -1,4 +1,5 @@
 pub mod acls;
+pub mod admin_users;
 pub mod audit;
 pub mod auth;
 pub mod clusters;
@@ -67,4 +68,6 @@ pub fn router(auth_limiter: RateLimiter) -> Router<AppState> {
         .nest("/api/company", company::router())
         // Per-user session management (authed; no rate-limit wrapper)
         .nest("/api/users/me/sessions", sessions::router())
+        // Admin-only user management (CON-119: deactivate/reactivate)
+        .nest("/api/admin/users", admin_users::router())
 }
