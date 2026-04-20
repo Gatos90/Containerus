@@ -32,6 +32,9 @@ import { FirstSuccessComponent } from '../../../shared/components/first-success/
 import { HelpTooltipComponent } from '../../../shared/components/help-tooltip/help-tooltip.component';
 import { ConfirmDialogComponent } from '../../../shared/components/confirm-dialog/confirm-dialog.component';
 import { AppModalDirective } from '../../../shared/directives/app-modal.directive';
+import { ConnectionBadgeComponent } from '../../../shared/components/a11y';
+import { BackendService } from '../../../core/services/backend.service';
+import { LOCAL_CONNECTION_ID } from '../../../state/ui-preferences.state';
 import { ContainerRuntime } from '../../../core/models/container.model';
 import { ContainerSystem, ExtendedSystemInfo, JumpHost, JumpHostCredentials, LiveSystemMetrics, NewSystemRequest, OsType, SshAuthMethod, SshHostEntry, UpdateSystemRequest } from '../../../core/models/system.model';
 
@@ -55,13 +58,14 @@ import { ToastState } from '../../../state/toast.state';
 @Component({
   selector: 'app-system-list',
   standalone: true,
-  imports: [CommonModule, FormsModule, LucideAngularModule, EmptyStateComponent, SetupWizardComponent, FirstSuccessComponent, HelpTooltipComponent, ConfirmDialogComponent, AppModalDirective],
+  imports: [CommonModule, FormsModule, LucideAngularModule, EmptyStateComponent, SetupWizardComponent, FirstSuccessComponent, HelpTooltipComponent, ConfirmDialogComponent, AppModalDirective, ConnectionBadgeComponent],
   templateUrl: './system-list.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class SystemListComponent implements OnInit {
   readonly systemState = inject(SystemState);
   readonly appState = inject(AppState);
+  private readonly backend = inject(BackendService);
   private readonly systemService = inject(SystemService);
   private readonly keychainService = inject(KeychainService);
   private readonly terminalState = inject(TerminalState);
@@ -301,6 +305,18 @@ export class SystemListComponent implements OnInit {
 
   getConnectionState(systemId: string): string {
     return this.systemState.getConnectionState(systemId);
+  }
+
+  /** Connection id the row belongs to: a backend id or the local sentinel. */
+  connectionIdFor(systemId: string): string {
+    return this.backend.getBackendForSystem(systemId) ?? LOCAL_CONNECTION_ID;
+  }
+
+  connectionLabelFor(systemId: string): string {
+    const connId = this.backend.getBackendForSystem(systemId);
+    if (!connId) return 'Local';
+    const conn = this.backend.getConnection(connId);
+    return conn?.label ?? connId;
   }
 
   async connect(systemId: string): Promise<void> {

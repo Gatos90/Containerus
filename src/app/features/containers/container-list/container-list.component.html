@@ -284,6 +284,13 @@
             <div class="flex items-start justify-between gap-2">
               <div class="flex-1 min-w-0">
                 <div class="flex items-center gap-1.5">
+                  <app-connection-badge
+                    [connectionId]="connectionIdFor(workload.container.systemId)"
+                    [connectionLabel]="connectionLabelFor(workload.container.systemId)"
+                    size="sm"
+                    class="flex-shrink-0"
+                  ></app-connection-badge>
+                  <span class="sr-only">Connection: {{ connectionLabelFor(workload.container.systemId) }}.</span>
                   <lucide-icon
                     [img]="getRuntimeIcon(workload.container.runtime)"
                     class="w-3.5 h-3.5 flex-shrink-0"

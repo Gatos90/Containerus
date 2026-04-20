@@ -101,6 +101,13 @@
       <div class="bg-zinc-900 rounded-xl border border-zinc-700/50 p-3 sm:p-4 space-y-3 hover:bg-zinc-800 transition-colors">
         <!-- Mobile: Stack layout -->
         <div class="flex items-start sm:items-center gap-3 sm:gap-4">
+          <app-connection-badge
+            [connectionId]="connectionIdFor(system.id)"
+            [connectionLabel]="connectionLabelFor(system.id)"
+            size="sm"
+            class="flex-shrink-0 mt-0.5 sm:mt-0"
+          ></app-connection-badge>
+          <span class="sr-only">Connection: {{ connectionLabelFor(system.id) }}.</span>
           <lucide-icon [img]="Server" class="w-5 h-5 sm:w-6 sm:h-6 text-zinc-400 flex-shrink-0 mt-0.5 sm:mt-0"></lucide-icon>
 
           <div class="flex-1 min-w-0">

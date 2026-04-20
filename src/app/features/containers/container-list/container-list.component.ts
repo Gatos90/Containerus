@@ -64,6 +64,8 @@ import { EmptyStateComponent } from '../../../shared/components/empty-state/empt
 import { HelpTooltipComponent } from '../../../shared/components/help-tooltip/help-tooltip.component';
 import { AppModalDirective } from '../../../shared/directives/app-modal.directive';
 import { ConfirmDialogComponent } from '../../../shared/components/confirm-dialog/confirm-dialog.component';
+import { ConnectionBadgeComponent } from '../../../shared/components/a11y';
+import { LOCAL_CONNECTION_ID } from '../../../state/ui-preferences.state';
 import { Router } from '@angular/router';
 
 export type Workload =
@@ -93,6 +95,7 @@ interface SystemDisplayInfo {
     ContainerWorkloadComponent,
     AppModalDirective,
     ConfirmDialogComponent,
+    ConnectionBadgeComponent,
   ],
   templateUrl: './container-list.component.html',
   host: {
@@ -636,6 +639,18 @@ export class ContainerListComponent implements OnInit {
   trackWorkload(index: number, workload: Workload): string {
     if (workload.kind === 'container') return workload.container.id;
     return `pod:${workload.connectionId}/${workload.clusterId}/${workload.pod.namespace}/${workload.pod.name}`;
+  }
+
+  /** Connection id the row belongs to: a backend id or the local sentinel. */
+  connectionIdFor(systemId: string): string {
+    return this.backend.getBackendForSystem(systemId) ?? LOCAL_CONNECTION_ID;
+  }
+
+  connectionLabelFor(systemId: string): string {
+    const connId = this.backend.getBackendForSystem(systemId);
+    if (!connId) return 'Local';
+    const conn = this.backend.getConnection(connId);
+    return conn?.label ?? connId;
   }
 
   readonly pendingPodDelete = signal<(Workload & { kind: 'pod' }) | null>(null);
