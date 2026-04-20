@@ -1,18 +1,17 @@
 # Staging overlay for the shared test server at 87.106.170.40.
 # Applied on top of the release's currently-stored values via:
 #   helm upgrade containerus-server ./deploy/helm/containerus-server \
-#     --reuse-values -f deploy/helm/containerus-server/values-staging.yaml
+#     --reset-then-reuse-values -f deploy/helm/containerus-server/values-staging.yaml
 # (secrets + DB URL stay in the stored release values; this file only carries
-#  what needs to change to add the frontend + split ingress paths.)
+#  what needs to change for this environment.)
+#
+# Staging exposes the backend API only. The Containerus desktop app runs on
+# each user's machine and points at http://87.106.170.40.nip.io — it calls the
+# backend directly under /api/*. We intentionally do NOT deploy the Angular
+# web frontend here (see CON-108).
 
 web:
-  enabled: true
-  replicaCount: 1
-  image:
-    repository: ghcr.io/gatos90/containerus-web
-    pullPolicy: IfNotPresent
-    tag: "sha-4e6cdf5"
-  apiBase: "/api"
+  enabled: false
 
 ingress:
   enabled: true
@@ -21,15 +20,6 @@ ingress:
   hosts:
     - host: 87.106.170.40.nip.io
       paths:
-        # /api wins over / because more-specific prefixes match first in traefik/ingress-nginx
-        - path: /api
-          pathType: Prefix
-          service:
-            name: '{{ include "containerus-server.fullname" . }}'
-            port: 80
         - path: /
           pathType: Prefix
-          service:
-            name: '{{ include "containerus-server.fullname" . }}-web'
-            port: 80
   tls: []

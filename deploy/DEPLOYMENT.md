@@ -1,6 +1,6 @@
 # Containerus Server — Production Deployment Guide
 
-> **Staging canonical URL**: <http://87.106.170.40.nip.io/> serves the Containerus UI at `/` and proxies the API under `/api/*` to the backend. See [`docs/SHARED_DEPLOY_SERVER.md`](../docs/SHARED_DEPLOY_SERVER.md) for day-to-day deploy operations; this document covers bootstrapping a new Helm/Compose environment from scratch.
+> **Staging canonical URL**: <http://87.106.170.40.nip.io/> exposes the **backend API only** under `/api/*`. The Containerus desktop app runs on each user's machine and connects to this URL — we do not deploy the Angular web UI in staging. See [`docs/SHARED_DEPLOY_SERVER.md`](../docs/SHARED_DEPLOY_SERVER.md) for day-to-day deploy operations; this document covers bootstrapping a new Helm/Compose environment from scratch.
 
 ## Table of Contents
 
@@ -165,7 +165,7 @@ helm upgrade --install containerus ./deploy/helm/containerus-server \
   ...
 ```
 
-For the shared staging environment `87.106.170.40.nip.io`, this layout is already captured in `deploy/helm/containerus-server/values-staging.yaml`:
+The shared staging environment `87.106.170.40.nip.io` intentionally runs **backend-only** — `deploy/helm/containerus-server/values-staging.yaml` keeps `web.enabled: false` and routes `/` to the backend Service so desktop clients can hit `/api/*` directly:
 
 ```bash
 helm upgrade containerus-server deploy/helm/containerus-server \
@@ -173,8 +173,6 @@ helm upgrade containerus-server deploy/helm/containerus-server \
   --reset-then-reuse-values \
   -f deploy/helm/containerus-server/values-staging.yaml
 ```
-
-More-specific prefixes (`/api`) must be listed before `/` so Traefik/ingress-nginx route `/api/*` to the backend and everything else to the frontend.
 
 ### 4. Verify rollout
 
