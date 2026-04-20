@@ -58,6 +58,11 @@ pub struct AppState {
     /// attacker cannot burn through reset attempts across many emails from
     /// one host.
     pub password_reset_ip_limiter: RateLimiter,
+    /// Shared bucket for project member invites (CON-120). Single-invite and
+    /// bulk-invite tick the same key so a caller cannot bypass the bulk
+    /// ceiling by spamming single-invite calls. Keyed on
+    /// `{project_id}:{user_id}` — per-project, per-inviter.
+    pub project_invite_limiter: KeyedRateLimiter,
 }
 
 /// Build the full axum router (API + WebSocket + middleware stack) for the
@@ -173,6 +178,13 @@ pub async fn run() {
     let password_reset_ip_limiter =
         RateLimiter::new(10, std::time::Duration::from_secs(3600));
 
+    // Project invite throttle (CON-120). Per (project, inviter) bucket so a
+    // compromised or runaway client can't spam invites; 100 invites/hour lines
+    // up with the bulk-endpoint page size so one fully-saturated bulk call
+    // empties the bucket for the hour.
+    let project_invite_limiter =
+        KeyedRateLimiter::new(100, std::time::Duration::from_secs(3600));
+
     let state = AppState {
         db,
         config,
@@ -184,6 +196,7 @@ pub async fn run() {
         revocation_cache,
         password_reset_email_limiter,
         password_reset_ip_limiter,
+        project_invite_limiter,
     };
 
     // Background: cleanup idle SSH connections.

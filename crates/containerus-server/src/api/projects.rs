@@ -8,6 +8,7 @@ use containerus_rbac_macros::require_permissions;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use uuid::Uuid;
+use validator::ValidateEmail;
 
 use crate::audit::log_action;
 use crate::auth::middleware::{AuthUser, ProjectScoped};
@@ -15,12 +16,16 @@ use crate::db::models::{Project, ProjectMemberResponse};
 use crate::ws::events::{InvalidationScope, PermissionEvent};
 use crate::AppState;
 
+/// Max invites accepted in a single `invite-bulk` payload (CON-120).
+const BULK_INVITE_MAX: usize = 100;
+
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/", get(list_projects).post(create_project))
         .route("/{project_id}", get(get_project).delete(delete_project))
         .route("/{project_id}/members", get(list_members))
         .route("/{project_id}/members/invite", post(invite_member))
+        .route("/{project_id}/members/invite-bulk", post(invite_members_bulk))
         .route(
             "/{project_id}/members/{user_id}/role",
             put(update_member_role),
@@ -49,6 +54,49 @@ pub struct CreateProjectRequest {
 pub struct InviteMemberRequest {
     pub email: String,
     pub role_id: Uuid,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BulkInviteEntry {
+    pub email: String,
+    pub role_id: Uuid,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BulkInviteRequest {
+    pub invites: Vec<BulkInviteEntry>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BulkInviteInvited {
+    pub email: String,
+    pub user_id: Uuid,
+    pub role_id: Uuid,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BulkInviteSkipped {
+    pub email: String,
+    pub reason: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BulkInviteErrored {
+    pub email: String,
+    pub reason: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BulkInviteResponse {
+    pub invited: Vec<BulkInviteInvited>,
+    pub skipped: Vec<BulkInviteSkipped>,
+    pub errored: Vec<BulkInviteErrored>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -513,6 +561,19 @@ async fn invite_member(
 
     let project_id = scoped.project_id;
 
+    // Shared invite throttle with `/members/invite-bulk` (CON-120). One tick
+    // per invited email so callers cannot bypass the bulk ceiling by firing
+    // single-invites in a loop.
+    if !state
+        .project_invite_limiter
+        .check(&invite_bucket_key(project_id, scoped.claims.sub))
+    {
+        return Err((
+            StatusCode::TOO_MANY_REQUESTS,
+            Json(json!({ "error": "Invite rate limit exceeded — please wait before inviting more members" })),
+        ));
+    }
+
     // Wrap role check, user lookup, and INSERT in a single transaction to ensure
     // atomicity: the role and user must still exist at INSERT time.
     let mut tx = state.db.begin().await.map_err(|e| {
@@ -608,6 +669,279 @@ async fn invite_member(
         StatusCode::CREATED,
         Json(json!({ "message": "Member added successfully" })),
     ))
+}
+
+fn invite_bucket_key(project_id: Uuid, user_id: Uuid) -> String {
+    format!("{project_id}:{user_id}")
+}
+
+/// Bulk-invite users to a project by email (CON-120).
+///
+/// Partial-success semantics: each entry is validated, looked up, and inserted
+/// in its own transaction so one bad row does not abort the batch. The
+/// response splits results into `invited`, `skipped` (duplicate payload /
+/// already a member), and `errored` (invalid email, unknown user, unknown
+/// role, transient DB error). Returns `200 OK` when every entry succeeded,
+/// `207 Multi-Status` when any entry was skipped or errored.
+#[require_permissions("projects.members.manage")]
+async fn invite_members_bulk(
+    State(state): State<AppState>,
+    scoped: ProjectScoped,
+    Json(req): Json<BulkInviteRequest>,
+) -> Result<(StatusCode, Json<BulkInviteResponse>), (StatusCode, Json<Value>)> {
+    scoped.require("projects.members.manage").map_err(|_| {
+        (
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": "You do not have permission to manage project members" })),
+        )
+    })?;
+
+    if req.invites.is_empty() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": "invites must contain at least one entry" })),
+        ));
+    }
+    if req.invites.len() > BULK_INVITE_MAX {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(json!({
+                "error": format!("invites may contain at most {BULK_INVITE_MAX} entries per request"),
+                "max": BULK_INVITE_MAX,
+            })),
+        ));
+    }
+
+    let project_id = scoped.project_id;
+    let inviter_id = scoped.claims.sub;
+    let bucket_key = invite_bucket_key(project_id, inviter_id);
+
+    // Pre-flight rate-limit check: refuse the whole batch if the bucket has
+    // no room for even one invite. Matching the shared single-invite bucket
+    // keeps bulk from sidestepping the per-hour ceiling. Each accepted entry
+    // below ticks the bucket again so a 100-row batch actually consumes 100
+    // tokens, not one.
+    if !state.project_invite_limiter.check(&bucket_key) {
+        return Err((
+            StatusCode::TOO_MANY_REQUESTS,
+            Json(json!({ "error": "Invite rate limit exceeded — please wait before inviting more members" })),
+        ));
+    }
+
+    let mut invited: Vec<BulkInviteInvited> = Vec::new();
+    let mut skipped: Vec<BulkInviteSkipped> = Vec::new();
+    let mut errored: Vec<BulkInviteErrored> = Vec::new();
+    let mut seen_emails: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+    for (idx, entry) in req.invites.iter().enumerate() {
+        let raw_email = entry.email.trim();
+        let normalised = raw_email.to_lowercase();
+        let display_email = raw_email.to_string();
+
+        // Spend one rate-limit token per entry after the first (the pre-flight
+        // check above already consumed one). Once the bucket is empty the
+        // remaining entries fall through to `errored` rather than partially
+        // inserting without audit/throttle coverage.
+        if idx > 0 && !state.project_invite_limiter.check(&bucket_key) {
+            errored.push(BulkInviteErrored {
+                email: display_email,
+                reason: "rate_limited".to_string(),
+            });
+            continue;
+        }
+
+        if normalised.is_empty() || !normalised.validate_email() {
+            errored.push(BulkInviteErrored {
+                email: display_email,
+                reason: "invalid_email".to_string(),
+            });
+            continue;
+        }
+
+        if !seen_emails.insert(normalised.clone()) {
+            skipped.push(BulkInviteSkipped {
+                email: display_email,
+                reason: "duplicate_in_payload".to_string(),
+            });
+            continue;
+        }
+
+        match insert_bulk_invite(
+            &state,
+            project_id,
+            inviter_id,
+            scoped.client_ip.as_deref(),
+            &normalised,
+            entry.role_id,
+        )
+        .await
+        {
+            BulkInviteOutcome::Invited { user_id } => {
+                invited.push(BulkInviteInvited {
+                    email: display_email,
+                    user_id,
+                    role_id: entry.role_id,
+                });
+            }
+            BulkInviteOutcome::Skipped(reason) => {
+                skipped.push(BulkInviteSkipped {
+                    email: display_email,
+                    reason,
+                });
+            }
+            BulkInviteOutcome::Errored(reason) => {
+                errored.push(BulkInviteErrored {
+                    email: display_email,
+                    reason,
+                });
+            }
+        }
+    }
+
+    // Bulk-level audit row mirrors the per-invite audit rows emitted inside
+    // `insert_bulk_invite`. `count` is the accepted-for-insert count so the
+    // audit trail shows how many rows actually landed, not just how many the
+    // caller attempted.
+    log_action(
+        &state.db,
+        Some(project_id),
+        Some(inviter_id),
+        "project.invite.bulk",
+        "project",
+        Some(&project_id.to_string()),
+        Some(json!({
+            "count": invited.len(),
+            "requested": req.invites.len(),
+            "skipped": skipped.len(),
+            "errored": errored.len(),
+        })),
+        scoped.client_ip.as_deref(),
+        None,
+    )
+    .await;
+
+    let status = if skipped.is_empty() && errored.is_empty() {
+        StatusCode::OK
+    } else {
+        StatusCode::MULTI_STATUS
+    };
+
+    Ok((
+        status,
+        Json(BulkInviteResponse {
+            invited,
+            skipped,
+            errored,
+        }),
+    ))
+}
+
+enum BulkInviteOutcome {
+    Invited { user_id: Uuid },
+    Skipped(String),
+    Errored(String),
+}
+
+async fn insert_bulk_invite(
+    state: &AppState,
+    project_id: Uuid,
+    inviter_id: Uuid,
+    client_ip: Option<&str>,
+    email: &str,
+    role_id: Uuid,
+) -> BulkInviteOutcome {
+    let mut tx = match state.db.begin().await {
+        Ok(tx) => tx,
+        Err(e) => {
+            tracing::error!("bulk invite: failed to begin tx: {e}");
+            return BulkInviteOutcome::Errored("internal_error".to_string());
+        }
+    };
+
+    let role_exists: i64 =
+        match sqlx::query_scalar("SELECT COUNT(*) FROM roles WHERE id = $1")
+            .bind(role_id)
+            .fetch_one(&mut *tx)
+            .await
+        {
+            Ok(count) => count,
+            Err(e) => {
+                tracing::error!("bulk invite: role lookup failed: {e}");
+                return BulkInviteOutcome::Errored("internal_error".to_string());
+            }
+        };
+    if role_exists == 0 {
+        return BulkInviteOutcome::Errored("invalid_role".to_string());
+    }
+
+    let target_user_id: Option<Uuid> =
+        match sqlx::query_scalar("SELECT id FROM users WHERE email = $1")
+            .bind(email)
+            .fetch_optional(&mut *tx)
+            .await
+        {
+            Ok(row) => row,
+            Err(e) => {
+                tracing::error!("bulk invite: user lookup failed: {e}");
+                return BulkInviteOutcome::Errored("internal_error".to_string());
+            }
+        };
+    let Some(target_user_id) = target_user_id else {
+        return BulkInviteOutcome::Errored("unknown_user".to_string());
+    };
+
+    let insert = sqlx::query(
+        "INSERT INTO project_members (project_id, user_id, role_id) VALUES ($1, $2, $3)",
+    )
+    .bind(project_id)
+    .bind(target_user_id)
+    .bind(role_id)
+    .execute(&mut *tx)
+    .await;
+
+    if let Err(e) = insert {
+        if let Some(db_err) = e.as_database_error() {
+            if db_err.is_unique_violation() {
+                // Already a member — not an error, just a skip.
+                return BulkInviteOutcome::Skipped("already_member".to_string());
+            }
+        }
+        tracing::error!("bulk invite: insert failed for {email}: {e}");
+        return BulkInviteOutcome::Errored("internal_error".to_string());
+    }
+
+    if let Err(e) = tx.commit().await {
+        tracing::error!("bulk invite: commit failed: {e}");
+        return BulkInviteOutcome::Errored("internal_error".to_string());
+    }
+
+    // Per-invite audit row (CON-120: "match single-invite auditing"). Kept
+    // outside the transaction so an audit-log outage never rolls back the
+    // membership insert the caller already depends on.
+    log_action(
+        &state.db,
+        Some(project_id),
+        Some(inviter_id),
+        "member.invite",
+        "member",
+        Some(&target_user_id.to_string()),
+        Some(json!({
+            "role_id": role_id.to_string(),
+            "source": "bulk",
+        })),
+        client_ip,
+        None,
+    )
+    .await;
+
+    state.permission_events.publish(
+        target_user_id,
+        PermissionEvent::invalidated(InvalidationScope::Member, Some(project_id)),
+    );
+
+    BulkInviteOutcome::Invited {
+        user_id: target_user_id,
+    }
 }
 
 /// Update a member's role in a project. Requires `projects.members.manage` permission.

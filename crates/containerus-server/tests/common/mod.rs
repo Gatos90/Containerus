@@ -153,6 +153,10 @@ impl TestHarness {
                 10_000,
                 std::time::Duration::from_secs(60),
             ),
+            project_invite_limiter: containerus_server::rate_limit::KeyedRateLimiter::new(
+                10_000,
+                std::time::Duration::from_secs(60),
+            ),
         };
 
         let auth_limiter = RateLimiter::new(10_000, std::time::Duration::from_secs(60));
