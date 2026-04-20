@@ -1,5 +1,7 @@
 # Containerus Server — Production Deployment Guide
 
+> **Staging canonical URL**: <http://87.106.170.40.nip.io/> serves the Containerus UI at `/` and proxies the API under `/api/*` to the backend. See [`docs/SHARED_DEPLOY_SERVER.md`](../docs/SHARED_DEPLOY_SERVER.md) for day-to-day deploy operations; this document covers bootstrapping a new Helm/Compose environment from scratch.
+
 ## Table of Contents
 
 1. [Prerequisites](#prerequisites)
@@ -140,6 +142,39 @@ helm upgrade --install containerus ./deploy/helm/containerus-server \
   --set secrets.adminPassword="$ADMIN_PASSWORD" \
   --set postgresql.auth.password="$DB_PASSWORD"
 ```
+
+### 3a. Frontend (containerus-web)
+
+The same chart ships an optional Angular frontend. Enable it alongside the backend when you want `/` → UI and `/api/*` → backend on the same host:
+
+```bash
+helm upgrade --install containerus ./deploy/helm/containerus-server \
+  -n containerus --create-namespace \
+  -f deploy/helm/containerus-server/values-production.yaml \
+  --set web.enabled=true \
+  --set web.image.tag=sha-4e6cdf5 \
+  --set-string 'ingress.hosts[0].host=containerus.example.com' \
+  --set-string 'ingress.hosts[0].paths[0].path=/api' \
+  --set-string 'ingress.hosts[0].paths[0].pathType=Prefix' \
+  --set-string 'ingress.hosts[0].paths[0].service.name={{ include "containerus-server.fullname" . }}' \
+  --set      'ingress.hosts[0].paths[0].service.port=80' \
+  --set-string 'ingress.hosts[0].paths[1].path=/' \
+  --set-string 'ingress.hosts[0].paths[1].pathType=Prefix' \
+  --set-string 'ingress.hosts[0].paths[1].service.name={{ include "containerus-server.fullname" . }}-web' \
+  --set      'ingress.hosts[0].paths[1].service.port=80' \
+  ...
+```
+
+For the shared staging environment `87.106.170.40.nip.io`, this layout is already captured in `deploy/helm/containerus-server/values-staging.yaml`:
+
+```bash
+helm upgrade containerus-server deploy/helm/containerus-server \
+  -n containerus \
+  --reset-then-reuse-values \
+  -f deploy/helm/containerus-server/values-staging.yaml
+```
+
+More-specific prefixes (`/api`) must be listed before `/` so Traefik/ingress-nginx route `/api/*` to the backend and everything else to the frontend.
 
 ### 4. Verify rollout
 
