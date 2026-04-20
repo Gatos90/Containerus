@@ -3,6 +3,7 @@ import { MainLayoutComponent } from './layout/main-layout/main-layout.component'
 import { CommandPaletteComponent } from './shared/components/command-palette/command-palette.component';
 import { ToastContainerComponent } from './shared/components/toast-container/toast-container.component';
 import { CommandTemplate } from './core/models/command-template.model';
+import { PermissionsWsService } from './core/services/permissions-ws.service';
 import { SystemState } from './state/system.state';
 import { ToastState } from './state/toast.state';
 
@@ -28,6 +29,10 @@ import { ToastState } from './state/toast.state';
 export class AppComponent {
   private readonly systemState = inject(SystemState);
   private readonly toast = inject(ToastState);
+  // CON-122: construct the permissions WS service at bootstrap so its
+  // effect() starts watching BackendService.connections immediately.
+  // The service opens/tears down per-connection sockets on its own.
+  private readonly _permissionsWs = inject(PermissionsWsService);
   readonly showCommandPalette = signal(false);
   private previousStates = new Map<string, string>();
 
