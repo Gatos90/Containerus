@@ -1,0 +1,81 @@
+<header
+  class="relative flex-shrink-0 border-b border-zinc-800 bg-zinc-900/90 backdrop-blur z-30"
+  [style.box-shadow]="accentRing() ? 'inset 0 -2px 0 0 ' + accentRing() : null"
+>
+  <div class="flex items-center gap-3 px-4 py-2 flex-wrap">
+    <app-connection-switcher></app-connection-switcher>
+
+    <label class="flex items-center gap-1.5 text-xs text-zinc-400" [class.opacity-50]="isLocal()">
+      <span>Project</span>
+      <select
+        class="bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-zinc-950 disabled:cursor-not-allowed"
+        [disabled]="isLocal() || loadingProjects() || projects().length === 0"
+        [value]="activeProjectId() ?? ''"
+        (change)="onProjectChange(($any($event.target)).value)"
+        [attr.aria-busy]="loadingProjects() || null"
+        aria-label="Active project"
+      >
+        @if (isLocal()) {
+          <option value="">— local mode —</option>
+        } @else if (loadingProjects()) {
+          <option value="">Loading…</option>
+        } @else if (projects().length === 0) {
+          <option value="">No projects</option>
+        } @else {
+          @if (!activeProjectId()) {
+            <option value="">Select a project…</option>
+          }
+          @for (p of projects(); track p.id) {
+            <option [value]="p.id">{{ p.name }}</option>
+          }
+        }
+      </select>
+    </label>
+
+    <label class="flex items-center gap-1.5 text-xs text-zinc-400" [class.opacity-50]="isLocal() || !activeProjectId()">
+      <span>Env</span>
+      <select
+        class="bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-zinc-950 disabled:cursor-not-allowed"
+        [disabled]="isLocal() || !activeProjectId() || loadingEnvs() || envs().length === 0"
+        [value]="activeEnvId() ?? ''"
+        (change)="onEnvChange(($any($event.target)).value)"
+        [attr.aria-busy]="loadingEnvs() || null"
+        aria-label="Active environment"
+      >
+        @if (isLocal()) {
+          <option value="">—</option>
+        } @else if (!activeProjectId()) {
+          <option value="">—</option>
+        } @else if (loadingEnvs()) {
+          <option value="">Loading…</option>
+        } @else if (envs().length === 0) {
+          <option value="">No environments</option>
+        } @else {
+          @if (!activeEnvId()) {
+            <option value="">Select an environment…</option>
+          }
+          @for (e of envs(); track e.id) {
+            <option [value]="e.id">{{ e.name }}</option>
+          }
+        }
+      </select>
+    </label>
+  </div>
+
+  @if (fallbackBanner()) {
+    <div
+      role="status"
+      aria-live="polite"
+      class="flex items-center justify-between gap-2 px-4 py-1.5 bg-amber-950/60 border-t border-amber-900 text-amber-200 text-xs"
+    >
+      <span>{{ fallbackBanner() }}</span>
+      <button
+        type="button"
+        (click)="dismissBanner()"
+        class="px-2 py-0.5 rounded bg-amber-900/50 hover:bg-amber-900 text-amber-100"
+      >
+        Dismiss
+      </button>
+    </div>
+  }
+</header>

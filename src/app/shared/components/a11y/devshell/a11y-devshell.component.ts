@@ -50,10 +50,10 @@ export class A11yDevshellComponent {
 
   readonly drawerOpen = signal(false);
   readonly drawerDirty = signal(false);
-  readonly drawerTrigger = viewChild<ElementRef<HTMLButtonElement>>('drawerTrigger');
+  readonly drawerTrigger = viewChild<ElementRef<HTMLButtonElement>>('drawerTriggerRef');
 
   readonly listMode = signal<'loading' | 'empty' | 'error' | 'idle'>('idle');
-  readonly gridTemplate = viewChild.required<TemplateRef<{ $implicit: DemoRow }>>('gridTemplate');
+  readonly gridTemplate = viewChild.required<TemplateRef<{ $implicit: DemoRow; index: number }>>('gridRowTemplate');
 
   readonly rows: DemoRow[] = Array.from({ length: 5000 }, (_, i) => ({
     id: i,

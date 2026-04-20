@@ -1,12 +1,13 @@
 import { CommonModule, DecimalPipe } from '@angular/common';
 import { ChangeDetectionStrategy, Component, inject, signal, computed } from '@angular/core';
 import { Router, RouterLink, RouterLinkActive } from '@angular/router';
-import { LucideAngularModule, LucideIconData, Box, Image, HardDrive, Network, Server, Settings, MoreHorizontal, Command, ChevronDown, ChevronUp, Terminal, Unplug, ExternalLink, Crown, ShieldCheck, Activity, Cpu, MemoryStick, FolderOpen, RefreshCw, Cloud, Users, ScrollText, Globe, LogIn, LogOut, Link, X, Loader2, Plus, Layers } from 'lucide-angular';
+import { LucideAngularModule, LucideIconData, Box, Image, HardDrive, Network, Server, Settings, MoreHorizontal, Command, ChevronDown, ChevronUp, Terminal, Unplug, ExternalLink, Crown, ShieldCheck, Activity, Cpu, MemoryStick, FolderOpen, RefreshCw, Cloud, Users, ScrollText, Globe, LogIn, LogOut, Link, X, Loader2, Plus, Layers, LayoutDashboard, Share2, KeyRound } from 'lucide-angular';
 import { SystemState } from '../../state/system.state';
 import { ContainerState } from '../../state/container.state';
 import { TerminalState, DEFAULT_TERMINAL_OPTIONS } from '../../state/terminal.state';
 import { TerminalService } from '../../core/services/terminal.service';
 import { BackendService } from '../../core/services/backend.service';
+import { UiPreferencesState } from '../../state/ui-preferences.state';
 import { ContainerSystem, ExtendedSystemInfo, LiveSystemMetrics, OsType } from '../../core/models/system.model';
 
 export interface LoadLevelInfo {
@@ -24,6 +25,14 @@ interface NavItem {
   icon: LucideIconData;
   badge?: () => number | null;
   showInMobile?: boolean;
+  /** Hidden when the app is in local mode (no active backend connection). */
+  hideInLocalMode?: boolean;
+}
+
+interface NavGroup {
+  id: string;
+  label: string | null;
+  items: NavItem[];
 }
 
 @Component({
@@ -39,6 +48,7 @@ export class SidebarComponent {
   private readonly terminalState = inject(TerminalState);
   private readonly terminalService = inject(TerminalService);
   readonly backend = inject(BackendService);
+  readonly ui = inject(UiPreferencesState);
 
   // State for "More" bottom sheet
   showMoreSheet = signal(false);
@@ -77,76 +87,103 @@ export class SidebarComponent {
   readonly Loader2 = Loader2;
   readonly Plus = Plus;
   readonly Layers = Layers;
+  readonly LayoutDashboard = LayoutDashboard;
+  readonly Share2 = Share2;
+  readonly KeyRound = KeyRound;
 
   reconnecting = signal<string | null>(null);
 
-  navItems: NavItem[] = [
-    {
-      label: 'Containers',
-      route: '/containers',
-      icon: Box,
-      badge: () => this.containerState.stats().running || this.containerState.stats().total,
-      showInMobile: true,
-    },
-    {
-      label: 'Compose',
-      route: '/compose',
-      icon: Layers,
-      showInMobile: false,
-    },
-    {
-      label: 'Images',
-      route: '/images',
-      icon: Image,
-      showInMobile: true,
-    },
-    {
-      label: 'Volumes',
-      route: '/volumes',
-      icon: HardDrive,
-    },
-    {
-      label: 'Networks',
-      route: '/networks',
-      icon: Network,
-    },
-    {
-      label: 'Files',
-      route: '/files',
-      icon: FolderOpen,
-    },
-    {
-      label: 'Systems',
-      route: '/systems',
-      icon: Server,
-      badge: () => this.systemState.stats().connected,
-      showInMobile: true,
-    },
-    {
-      label: 'Commands',
-      route: '/commands',
-      icon: Command,
-    },
-    {
-      label: 'Settings',
-      route: '/settings',
-      icon: Settings,
-    },
-  ];
+  /**
+   * Seven-group IA from CON-115 §2: Overview / Containers / Kubernetes /
+   * Files / Terminals / Port forwards / Access / Settings. Groups are
+   * filtered by mode — Access is hidden entirely in local mode.
+   */
+  readonly navGroups = computed<NavGroup[]>(() => {
+    const local = this.ui.isLocalMode();
 
-  readonly allNavItems = computed(() => {
-    const items = [...this.navItems];
-    // Always include Backends nav if there are connections
-    if (this.backend.hasConnections()) {
-      items.push({
-        label: 'Backends',
-        route: '/backends',
-        icon: Globe,
-        badge: () => this.backend.connectedBackends().length || null,
-      });
-    }
-    return items;
+    const groups: NavGroup[] = [
+      {
+        id: 'overview',
+        label: null,
+        items: [
+          { label: 'Overview', route: '/overview', icon: LayoutDashboard, hideInLocalMode: true, showInMobile: true },
+        ],
+      },
+      {
+        id: 'containers',
+        label: 'Containers',
+        items: [
+          { label: 'Containers', route: '/containers', icon: Box, badge: () => this.containerState.stats().running || this.containerState.stats().total, showInMobile: true },
+          { label: 'Compose', route: '/compose', icon: Layers },
+          { label: 'Images', route: '/images', icon: Image, showInMobile: true },
+          { label: 'Volumes', route: '/volumes', icon: HardDrive },
+          { label: 'Networks', route: '/networks', icon: Network },
+        ],
+      },
+      {
+        id: 'kubernetes',
+        label: 'Kubernetes',
+        items: [
+          { label: 'Clusters', route: '/k8s', icon: Cloud, hideInLocalMode: true },
+        ],
+      },
+      {
+        id: 'files',
+        label: null,
+        items: [
+          { label: 'Files', route: '/files', icon: FolderOpen },
+        ],
+      },
+      {
+        id: 'terminals',
+        label: null,
+        items: [
+          { label: 'Terminals', route: '/terminal', icon: Terminal },
+          { label: 'Commands', route: '/commands', icon: Command },
+        ],
+      },
+      {
+        id: 'portforwards',
+        label: null,
+        items: [
+          { label: 'Port forwards', route: '/port-forwards', icon: Share2 },
+        ],
+      },
+      {
+        id: 'access',
+        label: 'Access',
+        items: [
+          { label: 'People', route: '/access/people', icon: Users, hideInLocalMode: true },
+          { label: 'Roles', route: '/admin/roles', icon: KeyRound, hideInLocalMode: true },
+          { label: 'Resource access', route: '/access/resources', icon: ShieldCheck, hideInLocalMode: true },
+          { label: 'Audit log', route: '/audit-log', icon: ScrollText, hideInLocalMode: true },
+        ],
+      },
+      {
+        id: 'infrastructure',
+        label: null,
+        items: [
+          { label: 'Systems', route: '/systems', icon: Server, badge: () => this.systemState.stats().connected, showInMobile: true },
+          { label: 'Backends', route: '/backends', icon: Globe, badge: () => this.backend.connectedBackends().length || null, hideInLocalMode: true },
+        ],
+      },
+      {
+        id: 'settings',
+        label: null,
+        items: [
+          { label: 'Settings', route: '/settings', icon: Settings },
+        ],
+      },
+    ];
+
+    return groups
+      .map((g) => ({ ...g, items: g.items.filter((i) => !(local && i.hideInLocalMode)) }))
+      .filter((g) => g.items.length > 0);
   });
+
+  readonly allNavItems = computed<NavItem[]>(() =>
+    this.navGroups().flatMap((g) => g.items),
+  );
 
   // Mobile nav shows only essential items (max 5 for bottom nav)
   get mobileNavItems(): NavItem[] {

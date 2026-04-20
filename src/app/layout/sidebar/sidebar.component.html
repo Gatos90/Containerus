@@ -60,30 +60,37 @@
   }
 
   <!-- Scrollable Nav -->
-  <nav class="flex-1 overflow-auto min-h-0 p-3 space-y-1">
-    @for (item of allNavItems(); track item.route) {
-      <a
-        [routerLink]="item.route"
-        routerLinkActive="bg-zinc-800 text-white"
-        class="flex items-center gap-3 px-3 py-2 rounded-lg text-zinc-400 hover:bg-zinc-800 hover:text-white transition-colors"
-      >
-        <lucide-icon [img]="item.icon" class="w-5 h-5"></lucide-icon>
-        <span class="flex-1">{{ item.label }}</span>
-        @if (item.badge && item.badge() !== null) {
-          <span class="px-2 py-0.5 text-xs rounded-full bg-zinc-700 text-zinc-300">
-            {{ item.badge() }}
-          </span>
+  <nav class="flex-1 overflow-auto min-h-0 p-3 space-y-4" aria-label="Primary">
+    @for (group of navGroups(); track group.id) {
+      <div class="space-y-1">
+        @if (group.label) {
+          <h2 class="px-3 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">{{ group.label }}</h2>
         }
-      </a>
+        @for (item of group.items; track item.route) {
+          <a
+            [routerLink]="item.route"
+            routerLinkActive="bg-zinc-800 text-white"
+            class="flex items-center gap-3 px-3 py-2 rounded-lg text-zinc-400 hover:bg-zinc-800 hover:text-white transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-zinc-900"
+          >
+            <lucide-icon [img]="item.icon" class="w-5 h-5" aria-hidden="true"></lucide-icon>
+            <span class="flex-1">{{ item.label }}</span>
+            @if (item.badge && item.badge() !== null) {
+              <span class="px-2 py-0.5 text-xs rounded-full bg-zinc-700 text-zinc-300">
+                {{ item.badge() }}
+              </span>
+            }
+          </a>
+        }
+      </div>
     }
 
     <!-- Connect to backend button (shown when no backends exist yet) -->
     @if (!backend.hasConnections()) {
       <button
         (click)="connectToBackend()"
-        class="flex items-center gap-3 px-3 py-2 rounded-lg text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300 transition-colors w-full"
+        class="flex items-center gap-3 px-3 py-2 rounded-lg text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300 transition-colors w-full focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-zinc-900"
       >
-        <lucide-icon [img]="Plus" class="w-5 h-5"></lucide-icon>
+        <lucide-icon [img]="Plus" class="w-5 h-5" aria-hidden="true"></lucide-icon>
         <span class="flex-1 text-left">Add Backend</span>
       </button>
     }

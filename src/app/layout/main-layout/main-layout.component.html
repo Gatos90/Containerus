@@ -2,6 +2,8 @@
   <app-sidebar></app-sidebar>
 
   <main class="flex-1 flex flex-col overflow-hidden">
+    <app-topbar class="hidden md:block"></app-topbar>
+
     @if (updateState.updateAvailable()) {
       <div role="status" aria-live="polite" aria-atomic="true" class="bg-blue-900/50 border-b border-blue-800 px-4 py-2 flex items-center justify-between">
         <span class="text-blue-200 text-sm">

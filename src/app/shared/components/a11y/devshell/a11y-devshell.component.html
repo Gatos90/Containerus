@@ -32,7 +32,7 @@
   <section aria-labelledby="sec-drawer">
     <h2 id="sec-drawer" class="mb-2 text-sm font-semibold uppercase tracking-wide text-zinc-500">Drawer dialog</h2>
     <div class="flex gap-3">
-      <button #drawerTrigger type="button" class="rounded bg-blue-700 px-3 py-1.5 text-sm" (click)="openDrawer($event)">
+      <button #drawerTriggerRef type="button" class="rounded bg-blue-700 px-3 py-1.5 text-sm" (click)="openDrawer($event)">
         Open drawer
       </button>
       <label class="inline-flex items-center gap-2 text-sm">
@@ -58,7 +58,7 @@
   <!-- VirtualGrid ----------------------------------------------------- -->
   <section aria-labelledby="sec-grid">
     <h2 id="sec-grid" class="mb-2 text-sm font-semibold uppercase tracking-wide text-zinc-500">Virtual grid (5,000 rows)</h2>
-    <ng-template #gridTemplate let-row>
+    <ng-template #gridRowTemplate let-row>
       <span class="flex-1 truncate">{{ row.actor }}</span>
       <span class="text-xs text-zinc-400 font-mono">{{ row.action }}</span>
     </ng-template>

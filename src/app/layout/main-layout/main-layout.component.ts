@@ -4,6 +4,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router, RouterOutlet } from '@angular/router';
 import { filter } from 'rxjs';
 import { SidebarComponent } from '../sidebar/sidebar.component';
+import { TopbarComponent } from '../topbar/topbar.component';
 import { AppState } from '../../state/app.state';
 import { AiSettingsState } from '../../state/ai-settings.state';
 import { TerminalState } from '../../state/terminal.state';
@@ -14,7 +15,7 @@ import { WhatsNewModalComponent } from '../../shared/components/whats-new-modal/
 
 @Component({
   selector: 'app-main-layout',
-  imports: [CommonModule, RouterOutlet, SidebarComponent, TerminalWorkspaceComponent, WhatsNewModalComponent],
+  imports: [CommonModule, RouterOutlet, SidebarComponent, TopbarComponent, TerminalWorkspaceComponent, WhatsNewModalComponent],
   templateUrl: './main-layout.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
