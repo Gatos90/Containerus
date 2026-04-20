@@ -37,6 +37,7 @@ import { SystemService } from '../../../../core/services/system.service';
 import { AiSettingsState } from '../../../../state/ai-settings.state';
 import { UpdateState } from '../../../../state/update.state';
 import { ChangelogState } from '../../../../state/changelog.state';
+import { UiPreferencesState } from '../../../../state/ui-preferences.state';
 import {
   AI_PROVIDERS,
   AiModel,
@@ -57,6 +58,7 @@ export class SettingsPageComponent implements OnInit {
   private systemService = inject(SystemService);
   readonly updateState = inject(UpdateState);
   readonly changelogState = inject(ChangelogState);
+  readonly uiPreferences = inject(UiPreferencesState);
 
   // Icons
   readonly Settings = Settings;
