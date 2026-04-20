@@ -605,7 +605,7 @@
       title="Deactivate user?"
       [message]="'Deactivating ' + target.email + ' will:'"
       [consequences]="[
-        'revoke all of their active sessions',
+        'revoke their ability to sign back in (existing sessions end within 15 minutes as access tokens expire)',
         'clear their MFA secrets and backup codes',
         'deny login until an admin reactivates the account'
       ]"
