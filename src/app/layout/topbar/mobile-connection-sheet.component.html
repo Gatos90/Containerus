@@ -13,6 +13,7 @@
       role="dialog"
       aria-modal="true"
       [attr.aria-labelledby]="listboxId + '-title'"
+      cdkTrapFocus
     >
       <!-- Handle -->
       <div class="flex justify-center py-3 flex-shrink-0" aria-hidden="true">
@@ -71,7 +72,7 @@
             <span class="flex-1 min-w-0">
               <span class="block text-zinc-100 truncate">{{ opt.label }}</span>
               @if (opt.sub) {
-                <span class="block text-xs text-zinc-500 truncate">{{ opt.sub }}</span>
+                <span class="block text-xs text-zinc-400 truncate">{{ opt.sub }}</span>
               }
             </span>
             <span class="flex items-center gap-1.5 text-[11px] text-zinc-400 flex-shrink-0">
@@ -80,7 +81,7 @@
                 [ngClass]="statusDotClass(opt.status)"
                 aria-hidden="true"
               ></span>
-              <span class="sr-only">,</span>
+              <span class="sr-only">Status: </span>
               {{ statusLabel(opt.status) }}
             </span>
           </li>

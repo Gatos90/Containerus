@@ -1,5 +1,5 @@
 import { CommonModule, DecimalPipe } from '@angular/common';
-import { ChangeDetectionStrategy, Component, inject, signal, computed } from '@angular/core';
+import { ChangeDetectionStrategy, Component, ElementRef, ViewChild, inject, signal, computed } from '@angular/core';
 import { Router, RouterLink, RouterLinkActive } from '@angular/router';
 import { LucideAngularModule, LucideIconData, Box, Image, HardDrive, Network, Server, Settings, MoreHorizontal, Command, ChevronDown, ChevronUp, Terminal, Unplug, ExternalLink, Crown, ShieldCheck, Activity, Cpu, MemoryStick, FolderOpen, RefreshCw, Cloud, Users, ScrollText, Globe, LogIn, LogOut, Link, X, Loader2, Plus, Layers, LayoutDashboard, Share2, KeyRound } from 'lucide-angular';
 import { SystemState } from '../../state/system.state';
@@ -56,6 +56,15 @@ export class SidebarComponent {
 
   // CON-127 — mobile-only connection switcher sheet
   showConnectionSheet = signal(false);
+
+  @ViewChild('connectionTriggerBtn', { static: false })
+  connectionTriggerBtn?: ElementRef<HTMLButtonElement>;
+
+  /** Close the mobile connection sheet and restore focus to its trigger. */
+  closeConnectionSheet(): void {
+    this.showConnectionSheet.set(false);
+    queueMicrotask(() => this.connectionTriggerBtn?.nativeElement.focus());
+  }
 
   // State for connected systems expansion
   systemsExpanded = signal(false);

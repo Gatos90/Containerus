@@ -12,6 +12,7 @@ import {
   output,
   signal,
 } from '@angular/core';
+import { A11yModule } from '@angular/cdk/a11y';
 import { BackendService } from '../../core/services/backend.service';
 import { LOCAL_CONNECTION_ID, UiPreferencesState } from '../../state/ui-preferences.state';
 import {
@@ -38,7 +39,7 @@ interface SwitcherOption {
 @Component({
   selector: 'app-mobile-connection-sheet',
   standalone: true,
-  imports: [CommonModule, ConnectionBadgeComponent],
+  imports: [CommonModule, ConnectionBadgeComponent, A11yModule],
   templateUrl: './mobile-connection-sheet.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -91,6 +92,20 @@ export class MobileConnectionSheetComponent {
       this.activeIndex.set(idx);
       queueMicrotask(() => this.listboxEl?.nativeElement.focus());
     });
+
+    // iOS Safari: prevent the page behind the backdrop from scrolling while
+    // the sheet is open. Restore the prior value on close so we don't stomp
+    // another overlay's lock.
+    effect((onCleanup) => {
+      if (!this.open()) return;
+      if (typeof document === 'undefined') return;
+      const body = document.body;
+      const prev = body.style.overflow;
+      body.style.overflow = 'hidden';
+      onCleanup(() => {
+        body.style.overflow = prev;
+      });
+    });
   }
 
   statusLabel(status: SwitcherOption['status']): string {
@@ -106,7 +121,7 @@ export class MobileConnectionSheetComponent {
   statusDotClass(status: SwitcherOption['status']): string {
     switch (status) {
       case 'connected': return 'bg-green-500';
-      case 'connecting': return 'bg-amber-500 animate-pulse';
+      case 'connecting': return 'bg-amber-500 motion-safe:animate-pulse';
       case 'error': return 'bg-red-500';
       case 'disconnected': return 'bg-zinc-500';
       case 'local': return 'bg-zinc-400';

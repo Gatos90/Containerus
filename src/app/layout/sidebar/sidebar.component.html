@@ -348,6 +348,7 @@
 
     <!-- CON-127: Connection switcher entry (mobile-only — the topbar is hidden < md:) -->
     <button
+      #connectionTriggerBtn
       type="button"
       (click)="showConnectionSheet.set(true)"
       aria-haspopup="dialog"
@@ -373,7 +374,7 @@
 <!-- CON-127: Mobile connection switcher sheet -->
 <app-mobile-connection-sheet
   [open]="showConnectionSheet()"
-  (closed)="showConnectionSheet.set(false)"
+  (closed)="closeConnectionSheet()"
 ></app-mobile-connection-sheet>
 
 <!-- More Menu Bottom Sheet -->
