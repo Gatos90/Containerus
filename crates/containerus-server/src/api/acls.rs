@@ -34,6 +34,11 @@ pub struct CreateAclRequest {
     pub user_id: Uuid,
     pub resource_type: String,
     pub resource_id: Uuid,
+    /// Only valid when `resource_type == "container"`. Identifies the parent
+    /// system so the DB can cascade the ACL row when the system is deleted
+    /// (CON-117). MUST be null for non-container types; MUST be set for
+    /// container rows — enforced by the DB CHECK constraint.
+    pub system_id: Option<Uuid>,
     pub role_id: Option<Uuid>,
     pub extra_permissions: Vec<String>,
     pub denied_permissions: Vec<String>,
@@ -171,6 +176,34 @@ async fn create_acl(
         return Err((StatusCode::BAD_REQUEST, Json(json!({ "error": "Resource type is required" }))));
     }
 
+    // CON-117: the `system_id` field is only meaningful for container-scoped
+    // ACLs — it carries the parent system so the FK `ON DELETE CASCADE` can
+    // clean the row up when the system is torn down. Enforce the invariant
+    // at the API layer too so we return a crisp 400 instead of the raw
+    // Postgres CHECK-constraint error.
+    let resource_type_norm = req.resource_type.trim();
+    match (resource_type_norm, req.system_id) {
+        ("container", None) => {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                Json(json!({
+                    "error": "container-scoped ACLs require systemId",
+                    "field": "systemId",
+                })),
+            ));
+        }
+        (t, Some(_)) if t != "container" => {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                Json(json!({
+                    "error": "systemId is only allowed for container-scoped ACLs",
+                    "field": "systemId",
+                })),
+            ));
+        }
+        _ => {}
+    }
+
     // CON-79: `resource_acls.role_id` is reserved — the column persists but the
     // resolver never reads it. Accepting a non-null value here would silently
     // create a per-resource role overlay that never runs, which is a deny/allow
@@ -200,16 +233,17 @@ async fn create_acl(
 
     let acl = sqlx::query_as::<_, ResourceAcl>(
         r#"
-        INSERT INTO resource_acls (id, user_id, project_id, resource_type, resource_id, role_id, extra_permissions, denied_permissions, created_at, updated_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        INSERT INTO resource_acls (id, user_id, project_id, resource_type, resource_id, system_id, role_id, extra_permissions, denied_permissions, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
         RETURNING *
         "#,
     )
     .bind(acl_id)
     .bind(req.user_id)
     .bind(project_id)
-    .bind(req.resource_type.trim())
+    .bind(resource_type_norm)
     .bind(req.resource_id)
+    .bind(req.system_id)
     .bind(req.role_id)
     .bind(&extra_perms)
     .bind(&denied_perms)

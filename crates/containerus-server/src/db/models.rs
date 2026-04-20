@@ -211,6 +211,11 @@ pub struct ResourceAcl {
     pub project_id: Uuid,
     pub resource_type: String,
     pub resource_id: Uuid,
+    // CON-117: set only for `resource_type='container'` rows. Containers have
+    // no PG table to FK against, so we carry the parent system id explicitly
+    // and let `ON DELETE CASCADE` on systems clean up orphaned container ACLs.
+    // The 0009 schema CHECK enforces the invariant (container ↔ system_id set).
+    pub system_id: Option<Uuid>,
     // CON-79: reserved; the resolver never consults this value. The write
     // path rejects non-null inputs so callers can't install an overlay that
     // silently does nothing. Kept on the model so legacy rows still

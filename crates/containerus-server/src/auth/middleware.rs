@@ -337,6 +337,7 @@ impl ProjectScoped {
         let input = ResolverInput {
             is_company_admin: self.permissions.is_company_admin,
             role_permissions: &self.permissions.permissions,
+            container_acl: None,
             resource_acl: acl_view.as_ref(),
             env_override: None,
         };
@@ -511,6 +512,7 @@ impl SystemScoped {
         let input = ResolverInput {
             is_company_admin: self.permissions.is_company_admin,
             role_permissions: &self.permissions.permissions,
+            container_acl: None,
             resource_acl: acl_view.as_ref(),
             env_override: None,
         };
@@ -534,6 +536,117 @@ impl SystemScoped {
             Err(AuthError::InsufficientPermission)
         }
     }
+
+    /// Container-scoped permission check (CON-117). Layers a
+    /// `resource_type='container'` ACL on top of the existing system-scoped
+    /// check: a container deny wins over a system allow, and a container
+    /// allow unblocks the permission even when the role lacks it.
+    ///
+    /// `container_runtime_id` is the opaque Docker/Podman identifier from the
+    /// request path. It is hashed with the parent system id to produce the
+    /// deterministic UUID we store in `resource_acls.resource_id`; that way
+    /// the same container ID under two different systems never collides, and
+    /// creating the ACL row from the UI is just `Uuid::new_v5(system_id,
+    /// runtime_id)` on the client side too.
+    ///
+    /// The deny audit row is stamped with `resource_type` reflecting which
+    /// layer produced the deny (`container` when the container layer rejected
+    /// it, `system` otherwise) so incident response can distinguish a
+    /// container-scoped deny from a system-wide one.
+    pub async fn require_for_container(
+        &self,
+        perm: &str,
+        container_runtime_id: &str,
+        state: &AppState,
+    ) -> Result<(), AuthError> {
+        if !state.config.enforce_acls {
+            // Flag-off path preserves today's role-only behaviour and skips
+            // the DB load entirely — matches `require_for_system`.
+            return self.require_for_system(perm, state).await;
+        }
+
+        let container_resource_id = container_acl_resource_id(self.system.id, container_runtime_id);
+
+        let container_view = resolver::load_resource_acl_view(
+            &state.db,
+            self.claims.sub,
+            self.project_id,
+            "container",
+            container_resource_id,
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to load container ACL: {e}");
+            AuthError::InternalError
+        })?;
+
+        let system_view = resolver::load_resource_acl_view(
+            &state.db,
+            self.claims.sub,
+            self.project_id,
+            "system",
+            self.system.id,
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to load system ACL: {e}");
+            AuthError::InternalError
+        })?;
+
+        let input = ResolverInput {
+            is_company_admin: self.permissions.is_company_admin,
+            role_permissions: &self.permissions.permissions,
+            container_acl: container_view.as_ref(),
+            resource_acl: system_view.as_ref(),
+            env_override: None,
+        };
+
+        let resolved = resolver::resolve(&input, perm);
+        if resolved.is_allowed() {
+            Ok(())
+        } else {
+            // Stamp the audit row with the layer that produced the deny so
+            // a container-scoped deny is visibly distinct from a
+            // system-scoped or default deny (CON-117 acceptance criterion).
+            let (resource_type, resource_id) = match resolved.reason {
+                resolver::DecisionReason::ContainerAclDeny
+                | resolver::DecisionReason::ContainerAclAllow => {
+                    ("container", container_runtime_id.to_owned())
+                }
+                _ => ("system", self.system.id.to_string()),
+            };
+            log_permission_denied(
+                &state.db,
+                &self.caller(),
+                Some(self.project_id),
+                Some(self.environment_id),
+                resource_type,
+                Some(&resource_id),
+                perm,
+                resolved.reason.as_str(),
+            )
+            .await;
+            Err(AuthError::InsufficientPermission)
+        }
+    }
+}
+
+/// Deterministic UUID-v5 derivation for the `resource_acls.resource_id` used
+/// by container-scoped ACL rows. Containers aren't a Postgres table, so we
+/// can't use a real UUID primary key — we hash `(system_id, runtime_id)` into
+/// the dedicated CONTAINER_ACL_NAMESPACE instead. The write path (UI) and the
+/// read path (this middleware) must produce byte-identical UUIDs, so callers
+/// on both sides MUST go through this helper.
+pub fn container_acl_resource_id(system_id: Uuid, container_runtime_id: &str) -> Uuid {
+    // v5 namespace dedicated to container ACLs. Generated once; never change
+    // this constant without a data migration because it would orphan every
+    // existing container ACL row.
+    const CONTAINER_ACL_NAMESPACE: Uuid = Uuid::from_u128(0x7f6e5d4c_3b2a_4918_8a7b_6c5d4e3f2a1b);
+    // Under a given system, the runtime id alone is unique. Hashing the
+    // system id into the namespace first keeps collisions impossible across
+    // systems too, even if two runtimes happened to hand out the same id.
+    let per_system_ns = Uuid::new_v5(&CONTAINER_ACL_NAMESPACE, system_id.as_bytes());
+    Uuid::new_v5(&per_system_ns, container_runtime_id.as_bytes())
 }
 
 // ============================================================================

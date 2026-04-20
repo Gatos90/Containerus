@@ -1,12 +1,14 @@
 //! Permission resolution with deny > allow precedence.
 //!
-//! Six-step precedence (CON-62 plan §2 / CON-63):
+//! Eight-step precedence (CON-62 plan §2 / CON-63; extended for CON-117):
 //! 1. Company admin → allow
-//! 2. `resource_acls.denied_permissions` at resource scope → deny (wins over everything below)
-//! 3. `resource_acls.extra_permissions` at resource scope → allow
-//! 4. Environment-level overrides (deny, then allow) — scaffolded here; table lands in CON-62c
-//! 5. Project-level role grants (`project_members.role_id` → `role_permissions`)
-//! 6. Default → deny
+//! 2. Container-scoped `resource_acls.denied_permissions` → deny (most specific)
+//! 3. Container-scoped `resource_acls.extra_permissions` → allow
+//! 4. System/cluster/environment-scoped `resource_acls.denied_permissions` → deny
+//! 5. System/cluster/environment-scoped `resource_acls.extra_permissions` → allow
+//! 6. Environment-level role overrides (deny, then allow) — scaffolded here; table lands in CON-62c
+//! 7. Project-level role grants (`project_members.role_id` → `role_permissions`)
+//! 8. Default → deny
 //!
 //! The resolver is intentionally pure: callers assemble a [`ResolverInput`] from the
 //! JWT, the `PermissionCache`, and (optionally) a [`ResourceAclView`] loaded from
@@ -83,6 +85,12 @@ pub struct EnvOverrideView {
 pub struct ResolverInput<'a> {
     pub is_company_admin: bool,
     pub role_permissions: &'a HashSet<String>,
+    /// Container-scoped ACL (resource_type = "container"). Most specific layer;
+    /// a deny here wins over every lower layer including the system/resource ACL.
+    /// CON-117: set by `require_for_container`; `None` for non-container flows.
+    pub container_acl: Option<&'a ResourceAclView>,
+    /// System/cluster/environment-scoped ACL (resource_type in `system`,
+    /// `cluster`, `environment`). The historical "resource" layer.
     pub resource_acl: Option<&'a ResourceAclView>,
     pub env_override: Option<&'a EnvOverrideView>,
 }
@@ -108,6 +116,12 @@ impl Decision {
 #[serde(rename_all = "snake_case")]
 pub enum DecisionReason {
     CompanyAdmin,
+    /// Container-scoped ACL denied (CON-117). More specific than
+    /// `ResourceAclDeny` — set only when the deny came from a
+    /// `resource_type='container'` row.
+    ContainerAclDeny,
+    /// Container-scoped ACL granted the permission (CON-117).
+    ContainerAclAllow,
     ResourceAclDeny,
     ResourceAclAllow,
     EnvOverrideDeny,
@@ -125,6 +139,8 @@ impl DecisionReason {
     pub fn as_str(self) -> &'static str {
         match self {
             DecisionReason::CompanyAdmin => "company_admin",
+            DecisionReason::ContainerAclDeny => "container_acl_deny",
+            DecisionReason::ContainerAclAllow => "container_acl_allow",
             DecisionReason::ResourceAclDeny => "resource_acl_deny",
             DecisionReason::ResourceAclAllow => "resource_acl_allow",
             DecisionReason::EnvOverrideDeny => "env_override_deny",
@@ -160,21 +176,37 @@ pub fn resolve(input: &ResolverInput<'_>, permission: &str) -> ResolvedPermissio
         return ResolvedPermission { decision: Decision::Allow, reason: DecisionReason::CompanyAdmin };
     }
 
-    // 2. Resource-scoped deny — wins over every lower-precedence allow.
+    // 2a. Container-scoped deny — most specific layer; wins over every lower
+    //     allow including a system-scoped allow (CON-117).
+    if let Some(acl) = input.container_acl {
+        if set_covers(&acl.denied_permissions, permission) {
+            return ResolvedPermission { decision: Decision::Deny, reason: DecisionReason::ContainerAclDeny };
+        }
+    }
+
+    // 2b. Container-scoped allow — beats system/env/role allows, but not a
+    //     container deny above.
+    if let Some(acl) = input.container_acl {
+        if set_covers(&acl.extra_permissions, permission) {
+            return ResolvedPermission { decision: Decision::Allow, reason: DecisionReason::ContainerAclAllow };
+        }
+    }
+
+    // 3. System/cluster/environment-scoped deny — wins over every lower-precedence allow.
     if let Some(acl) = input.resource_acl {
         if set_covers(&acl.denied_permissions, permission) {
             return ResolvedPermission { decision: Decision::Deny, reason: DecisionReason::ResourceAclDeny };
         }
     }
 
-    // 3. Resource-scoped allow — beats env + role allows, but not a resource deny above.
+    // 4. System/cluster/environment-scoped allow — beats env + role allows.
     if let Some(acl) = input.resource_acl {
         if set_covers(&acl.extra_permissions, permission) {
             return ResolvedPermission { decision: Decision::Allow, reason: DecisionReason::ResourceAclAllow };
         }
     }
 
-    // 4. Environment-scoped override — deny wins over allow within the same layer.
+    // 5. Environment-scoped override — deny wins over allow within the same layer.
     if let Some(env) = input.env_override {
         if set_covers(&env.denied_permissions, permission) {
             return ResolvedPermission { decision: Decision::Deny, reason: DecisionReason::EnvOverrideDeny };
@@ -184,12 +216,12 @@ pub fn resolve(input: &ResolverInput<'_>, permission: &str) -> ResolvedPermissio
         }
     }
 
-    // 5. Project-level role grants from `project_members.role_id` → `role_permissions`.
+    // 7. Project-level role grants from `project_members.role_id` → `role_permissions`.
     if input.role_permissions.contains(permission) {
         return ResolvedPermission { decision: Decision::Allow, reason: DecisionReason::RoleGrant };
     }
 
-    // 6. Default deny.
+    // 8. Default deny.
     ResolvedPermission { decision: Decision::Deny, reason: DecisionReason::Default }
 }
 
@@ -298,6 +330,7 @@ mod tests {
         let input = ResolverInput {
             is_company_admin: true,
             role_permissions: &role,
+            container_acl: None,
             resource_acl: None,
             env_override: None,
         };
@@ -314,6 +347,7 @@ mod tests {
         let input = ResolverInput {
             is_company_admin: true,
             role_permissions: &role,
+            container_acl: None,
             resource_acl: Some(&acl_row),
             env_override: None,
         };
@@ -331,6 +365,7 @@ mod tests {
         let input = ResolverInput {
             is_company_admin: false,
             role_permissions: &role,
+            container_acl: None,
             resource_acl: Some(&acl_row),
             env_override: None,
         };
@@ -347,6 +382,7 @@ mod tests {
         let input = ResolverInput {
             is_company_admin: false,
             role_permissions: &role,
+            container_acl: None,
             resource_acl: Some(&acl_row),
             env_override: Some(&env_row),
         };
@@ -364,6 +400,7 @@ mod tests {
         let input = ResolverInput {
             is_company_admin: false,
             role_permissions: &role,
+            container_acl: None,
             resource_acl: Some(&acl_row),
             env_override: None,
         };
@@ -381,6 +418,7 @@ mod tests {
         let input = ResolverInput {
             is_company_admin: false,
             role_permissions: &role,
+            container_acl: None,
             resource_acl: None,
             env_override: Some(&env_row),
         };
@@ -396,6 +434,7 @@ mod tests {
         let input = ResolverInput {
             is_company_admin: false,
             role_permissions: &role,
+            container_acl: None,
             resource_acl: None,
             env_override: Some(&env_row),
         };
@@ -412,6 +451,7 @@ mod tests {
         let input = ResolverInput {
             is_company_admin: false,
             role_permissions: &role,
+            container_acl: None,
             resource_acl: None,
             env_override: None,
         };
@@ -428,6 +468,7 @@ mod tests {
         let input = ResolverInput {
             is_company_admin: false,
             role_permissions: &role,
+            container_acl: None,
             resource_acl: None,
             env_override: None,
         };
@@ -474,6 +515,7 @@ mod tests {
             let input = ResolverInput {
                 is_company_admin: admin,
                 role_permissions: &role,
+                container_acl: None,
                 resource_acl: acl_row.as_ref(),
                 env_override: env_row.as_ref(),
             };
@@ -492,6 +534,7 @@ mod tests {
             project_id: Uuid::nil(),
             resource_type: "system".into(),
             resource_id: Uuid::nil(),
+            system_id: None,
             role_id: None,
             extra_permissions: extra,
             denied_permissions: denied,
@@ -592,6 +635,7 @@ mod tests {
         let input = ResolverInput {
             is_company_admin: false,
             role_permissions: &role,
+            container_acl: None,
             resource_acl: Some(&acl_row),
             env_override: None,
         };
@@ -615,6 +659,7 @@ mod tests {
         let input = ResolverInput {
             is_company_admin: false,
             role_permissions: &role,
+            container_acl: None,
             resource_acl: Some(&acl_row),
             env_override: None,
         };
@@ -637,6 +682,7 @@ mod tests {
         let input = ResolverInput {
             is_company_admin: false,
             role_permissions: &role,
+            container_acl: None,
             resource_acl: Some(&acl_row),
             env_override: None,
         };
@@ -652,6 +698,7 @@ mod tests {
         let input = ResolverInput {
             is_company_admin: false,
             role_permissions: &role,
+            container_acl: None,
             resource_acl: None,
             env_override: Some(&env_row),
         };
@@ -675,12 +722,177 @@ mod tests {
         let input = ResolverInput {
             is_company_admin: false,
             role_permissions: &role,
+            container_acl: None,
             resource_acl: Some(&acl_row),
             env_override: None,
         };
         let r = resolve(&input, "containers.exec");
         assert_eq!(r.decision, Decision::Allow);
         assert_eq!(r.reason, DecisionReason::RoleGrant);
+    }
+
+    // ---------- CON-117: container-scoped ACL layer ----------
+    //
+    // Container ACLs sit above the system/resource layer in the precedence
+    // table. A deny at the container layer wins over a system-scoped allow,
+    // and an allow at the container layer unblocks a permission even when
+    // the role doesn't grant it — without leaking that grant to other
+    // containers on the same system.
+
+    #[test]
+    fn container_deny_wins_over_role_grant() {
+        let role = perms(&["containers.exec"]);
+        let container = acl(&[], &["containers.exec"]);
+        let input = ResolverInput {
+            is_company_admin: false,
+            role_permissions: &role,
+            container_acl: Some(&container),
+            resource_acl: None,
+            env_override: None,
+        };
+        let r = resolve(&input, "containers.exec");
+        assert_eq!(r.decision, Decision::Deny);
+        assert_eq!(r.reason, DecisionReason::ContainerAclDeny);
+    }
+
+    #[test]
+    fn container_deny_wins_over_system_allow() {
+        // Acceptance criterion: a deny of `containers.delete` on a
+        // container-scoped ACL blocks delete for that container even when a
+        // system-scoped ACL allow would otherwise grant it.
+        let role = HashSet::new();
+        let container = acl(&[], &["containers.delete"]);
+        let system = acl(&["containers.delete"], &[]);
+        let input = ResolverInput {
+            is_company_admin: false,
+            role_permissions: &role,
+            container_acl: Some(&container),
+            resource_acl: Some(&system),
+            env_override: None,
+        };
+        let r = resolve(&input, "containers.delete");
+        assert_eq!(r.decision, Decision::Deny);
+        assert_eq!(r.reason, DecisionReason::ContainerAclDeny);
+    }
+
+    #[test]
+    fn container_allow_grants_when_role_and_system_lack_it() {
+        // Acceptance criterion: a grant of `containers.exec` on a
+        // container-scoped ACL unblocks exec for that specific container,
+        // even when the user's project role lacks it.
+        let role = HashSet::new();
+        let container = acl(&["containers.exec"], &[]);
+        let input = ResolverInput {
+            is_company_admin: false,
+            role_permissions: &role,
+            container_acl: Some(&container),
+            resource_acl: None,
+            env_override: None,
+        };
+        let r = resolve(&input, "containers.exec");
+        assert_eq!(r.decision, Decision::Allow);
+        assert_eq!(r.reason, DecisionReason::ContainerAclAllow);
+    }
+
+    #[test]
+    fn container_allow_beats_system_deny_is_false_system_deny_wins_when_no_container_deny() {
+        // A system-scoped deny still beats a bare role grant when the
+        // container layer has no matching deny or allow entry.
+        let role = perms(&["containers.exec"]);
+        let container = acl(&[], &[]); // no entries for containers.exec
+        let system = acl(&[], &["containers.exec"]);
+        let input = ResolverInput {
+            is_company_admin: false,
+            role_permissions: &role,
+            container_acl: Some(&container),
+            resource_acl: Some(&system),
+            env_override: None,
+        };
+        let r = resolve(&input, "containers.exec");
+        assert_eq!(r.decision, Decision::Deny);
+        assert_eq!(r.reason, DecisionReason::ResourceAclDeny);
+    }
+
+    #[test]
+    fn container_allow_overrides_system_deny() {
+        // Container-scoped allow is *more specific* than a system-scoped deny:
+        // a deny on `containers.exec` at system scope should NOT be bypassed
+        // simply because another container on that system has an allow, but
+        // an allow on *this* container must unblock the permission. Matches
+        // step 2b of the precedence table.
+        let role = HashSet::new();
+        let container = acl(&["containers.exec"], &[]);
+        let system = acl(&[], &["containers.exec"]);
+        let input = ResolverInput {
+            is_company_admin: false,
+            role_permissions: &role,
+            container_acl: Some(&container),
+            resource_acl: Some(&system),
+            env_override: None,
+        };
+        let r = resolve(&input, "containers.exec");
+        assert_eq!(r.decision, Decision::Allow);
+        assert_eq!(r.reason, DecisionReason::ContainerAclAllow);
+    }
+
+    #[test]
+    fn company_admin_bypasses_container_deny() {
+        // Consistent with the existing system-scoped carve-out: company
+        // admins ignore the entire ACL stack.
+        let role = HashSet::new();
+        let container = acl(&[], &["containers.exec"]);
+        let input = ResolverInput {
+            is_company_admin: true,
+            role_permissions: &role,
+            container_acl: Some(&container),
+            resource_acl: None,
+            env_override: None,
+        };
+        let r = resolve(&input, "containers.exec");
+        assert_eq!(r.decision, Decision::Allow);
+        assert_eq!(r.reason, DecisionReason::CompanyAdmin);
+    }
+
+    #[test]
+    fn container_deny_on_coarse_key_blocks_split_key() {
+        // CON-74: a container-scoped deny on the coarse `containers.logs`
+        // key must keep covering the post-0006 split keys so tenants don't
+        // silently lose the deny.
+        let role = perms(&["containers.logs.read"]);
+        let container = acl(&[], &["containers.logs"]);
+        let input = ResolverInput {
+            is_company_admin: false,
+            role_permissions: &role,
+            container_acl: Some(&container),
+            resource_acl: None,
+            env_override: None,
+        };
+        let r = resolve(&input, "containers.logs.read");
+        assert_eq!(r.decision, Decision::Deny);
+        assert_eq!(r.reason, DecisionReason::ContainerAclDeny);
+
+        let r = resolve(&input, "containers.logs.follow");
+        assert_eq!(r.decision, Decision::Deny);
+        assert_eq!(r.reason, DecisionReason::ContainerAclDeny);
+    }
+
+    #[test]
+    fn container_acl_empty_falls_through_to_system_layer() {
+        // A container ACL row that exists but has no matching keys must fall
+        // through to the system layer; it must not short-circuit either way.
+        let role = HashSet::new();
+        let container = acl(&[], &[]);
+        let system = acl(&["containers.exec"], &[]);
+        let input = ResolverInput {
+            is_company_admin: false,
+            role_permissions: &role,
+            container_acl: Some(&container),
+            resource_acl: Some(&system),
+            env_override: None,
+        };
+        let r = resolve(&input, "containers.exec");
+        assert_eq!(r.decision, Decision::Allow);
+        assert_eq!(r.reason, DecisionReason::ResourceAclAllow);
     }
 
     #[test]

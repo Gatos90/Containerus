@@ -423,6 +423,7 @@ async fn wait_for_tunnel_auth(
                             let input = ResolverInput {
                                 is_company_admin: false,
                                 role_permissions: &role_perms,
+                                container_acl: None,
                                 resource_acl: acl_view.as_ref(),
                                 env_override: None,
                             };

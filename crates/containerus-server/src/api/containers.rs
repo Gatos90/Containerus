@@ -352,15 +352,16 @@ async fn inspect_container(
     Path((_sys_id, container_id)): Path<(Uuid, String)>,
     Query(query): Query<ContainerQuery>,
 ) -> Result<axum::response::Response, (StatusCode, Json<serde_json::Value>)> {
-    user.require_for_system("containers.view", &state).await
-        .map_err(|_| (StatusCode::FORBIDDEN, Json(json!({"error": "Insufficient permissions"}))))?;
-    let system = &user.system;
-    let system_id = system.id;
-
-
+    // CON-117: validate the container id first so we never pass unchecked
+    // user input into the ACL lookup (or the shell command below).
     if !is_valid_identifier(&container_id) {
         return Ok((StatusCode::BAD_REQUEST, Json(json!({"error": "Invalid container_id"}))).into_response());
     }
+
+    user.require_for_container("containers.view", &container_id, &state).await
+        .map_err(|_| (StatusCode::FORBIDDEN, Json(json!({"error": "Insufficient permissions"}))))?;
+    let system = &user.system;
+    let system_id = system.id;
 
     if let Err(e) = ensure_shared_connected(&state, system).await {
         return Ok(e.into_response());
@@ -414,15 +415,14 @@ async fn container_action(
         "pause" | "unpause" => "containers.pause",
         _ => return Ok((StatusCode::BAD_REQUEST, Json(json!({"error": "Unknown container action"}))).into_response()),
     };
-    user.require_for_system(permission, &state).await
-        .map_err(|_| (StatusCode::FORBIDDEN, Json(json!({"error": "Insufficient permissions"}))))?;
-    let system = &user.system;
-    let system_id = system.id;
-
-
+    // CON-117: validate before the ACL lookup so the resolver key stays clean.
     if !is_valid_identifier(&container_id) {
         return Ok((StatusCode::BAD_REQUEST, Json(json!({"error": "Invalid container_id"}))).into_response());
     }
+    user.require_for_container(permission, &container_id, &state).await
+        .map_err(|_| (StatusCode::FORBIDDEN, Json(json!({"error": "Insufficient permissions"}))))?;
+    let system = &user.system;
+    let system_id = system.id;
 
     if let Err(e) = ensure_shared_connected(&state, system).await {
         return Ok(e.into_response());
@@ -472,15 +472,13 @@ async fn container_logs(
 ) -> Result<axum::response::Response, (StatusCode, Json<serde_json::Value>)> {
     // Snapshot log fetch — uses the split `containers.logs.read` key (CON-73).
     // Streaming/follow via WebSocket (ws/terminal) should gate on `containers.logs.follow`.
-    user.require_for_system("containers.logs.read", &state).await
-        .map_err(|_| (StatusCode::FORBIDDEN, Json(json!({"error": "Insufficient permissions"}))))?;
-    let system = &user.system;
-    let system_id = system.id;
-
-
     if !is_valid_identifier(&container_id) {
         return Ok((StatusCode::BAD_REQUEST, Json(json!({"error": "Invalid container_id"}))).into_response());
     }
+    user.require_for_container("containers.logs.read", &container_id, &state).await
+        .map_err(|_| (StatusCode::FORBIDDEN, Json(json!({"error": "Insufficient permissions"}))))?;
+    let system = &user.system;
+    let system_id = system.id;
 
     if let Err(e) = ensure_shared_connected(&state, system).await {
         return Ok(e.into_response());

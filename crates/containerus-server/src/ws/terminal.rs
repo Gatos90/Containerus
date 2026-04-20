@@ -20,8 +20,10 @@ use uuid::Uuid;
 use containerus_core::models::container::ContainerRuntime;
 use containerus_core::runtime::CommandBuilder;
 
-use crate::audit::{log_event, AuditCaller, AuditEvent};
+use crate::audit::{log_event, log_permission_denied, AuditCaller, AuditEvent};
 use crate::auth::jwt::decode_access_token;
+use crate::auth::middleware::container_acl_resource_id;
+use crate::auth::resolver::{self, ResolverInput};
 use crate::db::models::SystemRow;
 use crate::AppState;
 
@@ -95,6 +97,100 @@ fn is_valid_container_id(s: &str) -> bool {
             .all(|c| c.is_alphanumeric() || c == '_' || c == '-' || c == '.')
 }
 
+/// CON-117: container-scoped `containers.exec` enforcement for the WebSocket
+/// terminal. Runs only when `enforce_acls = true`; the legacy role-only path
+/// in `wait_for_auth` remains the single source of truth when the flag is
+/// off. Returns `Err(())` if any layer denies (or a DB load failed); caller
+/// closes the session with `"Insufficient permissions"` and the helper
+/// writes the `rbac.permission_denied` audit row itself so the audit shape
+/// matches the REST handlers.
+async fn enforce_container_exec_acl(
+    state: &AppState,
+    caller: &AuditCaller,
+    user_id: Uuid,
+    project_id: Uuid,
+    environment_id: Uuid,
+    system_id: Uuid,
+    container_runtime_id: &str,
+) -> Result<(), ()> {
+    let container_resource_id = container_acl_resource_id(system_id, container_runtime_id);
+
+    let container_view = match resolver::load_resource_acl_view(
+        &state.db,
+        user_id,
+        project_id,
+        "container",
+        container_resource_id,
+    )
+    .await
+    {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::error!("Failed to load container ACL for ws exec: {e}");
+            return Err(());
+        }
+    };
+
+    let system_view = match resolver::load_resource_acl_view(
+        &state.db,
+        user_id,
+        project_id,
+        "system",
+        system_id,
+    )
+    .await
+    {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::error!("Failed to load system ACL for ws exec: {e}");
+            return Err(());
+        }
+    };
+
+    // Getting here implies wait_for_auth already validated role-based
+    // `containers.exec` (or the caller is a company admin, in which case
+    // wait_for_auth skipped the role check and we treat them as bypassing
+    // the ACL stack the same way). Seed the resolver's role set with the
+    // single permission under test so a container/system ACL that neither
+    // denies nor allows falls through to an allow instead of a spurious
+    // default-deny.
+    let mut role_permissions = std::collections::HashSet::new();
+    role_permissions.insert("containers.exec".to_string());
+
+    let input = ResolverInput {
+        is_company_admin: false,
+        role_permissions: &role_permissions,
+        container_acl: container_view.as_ref(),
+        resource_acl: system_view.as_ref(),
+        env_override: None,
+    };
+
+    let resolved = resolver::resolve(&input, "containers.exec");
+    if resolved.is_allowed() {
+        Ok(())
+    } else {
+        let (resource_type, resource_id) = match resolved.reason {
+            resolver::DecisionReason::ContainerAclDeny
+            | resolver::DecisionReason::ContainerAclAllow => {
+                ("container", container_runtime_id.to_owned())
+            }
+            _ => ("system", system_id.to_string()),
+        };
+        log_permission_denied(
+            &state.db,
+            caller,
+            Some(project_id),
+            Some(environment_id),
+            resource_type,
+            Some(&resource_id),
+            "containers.exec",
+            resolved.reason.as_str(),
+        )
+        .await;
+        Err(())
+    }
+}
+
 /// Handle the WebSocket terminal session with real PTY streaming.
 /// Authentication is performed via the first WebSocket message.
 async fn handle_terminal_session(
@@ -164,7 +260,19 @@ async fn handle_terminal_session(
     };
 
     // Proceed with PTY setup (moved from the old inline loop)
-    run_terminal_pty(ws_sender, ws_receiver, state.clone(), user_id, system_id, runtime_str, start_msg).await;
+    run_terminal_pty(
+        ws_sender,
+        ws_receiver,
+        state.clone(),
+        user_id,
+        system_id,
+        project_id,
+        environment_id,
+        caller.clone(),
+        runtime_str,
+        start_msg,
+    )
+    .await;
 
     // Emit session close audit
     log_event(
@@ -399,6 +507,9 @@ async fn run_terminal_pty(
     state: AppState,
     user_id: Uuid,
     system_id: Uuid,
+    project_id: Uuid,
+    environment_id: Uuid,
+    caller: AuditCaller,
     runtime_str: String,
     start_msg: StartMessage,
 ) {
@@ -427,6 +538,34 @@ async fn run_terminal_pty(
             let _ = ws_sender
                 .send(Message::Text(
                     json!({"type": "error", "message": "Invalid container_id"})
+                        .to_string()
+                        .into(),
+                ))
+                .await;
+            return;
+        }
+        // CON-117: container-scoped ACL enforcement for exec. The pre-start
+        // auth check (wait_for_auth) only confirmed a role grant — it could
+        // not see `container_id` yet. Now that we have it, layer the
+        // container + system ACLs on top and fail closed if the composite
+        // resolution denies. This is where an `rbac.permission_denied` row
+        // with `resource_type = "container"` gets written.
+        if state.config.enforce_acls
+            && enforce_container_exec_acl(
+                &state,
+                &caller,
+                user_id,
+                project_id,
+                environment_id,
+                system_id,
+                container_id,
+            )
+            .await
+            .is_err()
+        {
+            let _ = ws_sender
+                .send(Message::Text(
+                    json!({"type": "error", "message": "Insufficient permissions"})
                         .to_string()
                         .into(),
                 ))
