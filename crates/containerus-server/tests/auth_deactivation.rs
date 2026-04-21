@@ -9,6 +9,7 @@ mod common;
 
 use axum::http::{Method, StatusCode};
 use common::{call, skip_without_db, TestHarness};
+use serde_json::json;
 
 const SESSIONS_URI: &str = "/api/sessions";
 
@@ -118,6 +119,144 @@ async fn ws_verifier_rejects_deactivated_user_same_as_http_extractor() {
             "expected VerifyTokenError::UserDeactivated after deactivation, got {other:?}"
         ),
     }
+
+    h.cleanup().await;
+}
+
+// CON-139 — the DeactivateUser handler MUST call
+// `state.user_active_cache.invalidate(user_id)` after the tx commits so the
+// happy path evicts the cache entry immediately instead of waiting out the
+// 30s TTL. This test drives the real admin endpoint (rather than the DB +
+// explicit invalidate of the CON-137 tests above) so it regression-catches
+// the wire-up itself, not just the cache primitive.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn deactivate_endpoint_invalidates_auth_cache_within_10ms() {
+    let Some(h) = TestHarness::try_new(false).await else {
+        skip_without_db("deactivate_endpoint_invalidates_auth_cache_within_10ms");
+        return;
+    };
+
+    // Target user whose token we want to see rejected post-deactivation.
+    let target_uid = h.create_user("con139-target").await;
+    let target_token = h.login_as(target_uid, false).await;
+
+    // Prime the `UserActiveCache` so the pre-deactivation path goes through
+    // the cached-hit branch — exactly the branch the handler must invalidate.
+    let (before, _) =
+        call(&h.router, Method::GET, SESSIONS_URI, Some(&target_token), None).await;
+    assert_ne!(
+        before,
+        StatusCode::UNAUTHORIZED,
+        "precondition: target user's token must verify before deactivation"
+    );
+
+    // Company admin to call the deactivate endpoint.
+    let admin_uid = h.create_user("con139-admin").await;
+    h.grant_company_admin(admin_uid).await;
+    let admin_token = h.login_as(admin_uid, true).await;
+
+    let uri = format!("/api/admin/users/{target_uid}");
+    let (status, body) = call(
+        &h.router,
+        Method::PATCH,
+        &uri,
+        Some(&admin_token),
+        Some(json!({ "isActive": false })),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "deactivate endpoint must succeed; body={}",
+        String::from_utf8_lossy(&body)
+    );
+
+    // Measure the elapsed time from "deactivation returned" to "token no
+    // longer verifies". If the handler forgets to invalidate, the cache
+    // keeps the stale `true` entry for up to the 30s TTL — this assertion
+    // would then fail on the UNAUTHORIZED check (the cached hit would
+    // short-circuit back to 2xx) rather than on the latency bound.
+    let started = std::time::Instant::now();
+    let (after, _) =
+        call(&h.router, Method::GET, SESSIONS_URI, Some(&target_token), None).await;
+    let elapsed = started.elapsed();
+
+    assert_eq!(
+        after,
+        StatusCode::UNAUTHORIZED,
+        "deactivated user's token must be rejected immediately after endpoint returns"
+    );
+    // `invalidate` is an in-memory DashMap::remove; the follow-up request
+    // should comfortably land well under the ~10ms ceiling called out in
+    // the CON-139 acceptance. Generous upper bound so CI jitter doesn't
+    // flake — the whole point is "not 30s TTL", and anything in this range
+    // proves the cache was evicted rather than expired on its own.
+    assert!(
+        elapsed < std::time::Duration::from_millis(500),
+        "post-deactivation rejection took {elapsed:?}, expected ~ms (not TTL)"
+    );
+
+    h.cleanup().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn reactivate_endpoint_invalidates_auth_cache_so_user_unlocks_immediately() {
+    // CON-139 — the same invalidate call must run on reactivation too. If it
+    // didn't, the cached `false` entry would keep a freshly reactivated user
+    // locked out until the TTL expires.
+    let Some(h) = TestHarness::try_new(false).await else {
+        skip_without_db("reactivate_endpoint_invalidates_auth_cache_so_user_unlocks_immediately");
+        return;
+    };
+
+    let target_uid = h.create_user("con139-reactivate").await;
+    // Start the user as deactivated in the DB.
+    sqlx::query("UPDATE users SET is_active = false WHERE id = $1")
+        .bind(target_uid)
+        .execute(&h.db)
+        .await
+        .expect("seed inactive");
+    let target_token = h.login_as(target_uid, false).await;
+
+    // Prime the cache with `is_active = false` so we exercise the branch
+    // where a stale cached `false` would lock out a reactivated user.
+    let (before, _) =
+        call(&h.router, Method::GET, SESSIONS_URI, Some(&target_token), None).await;
+    assert_eq!(
+        before,
+        StatusCode::UNAUTHORIZED,
+        "precondition: deactivated user must be rejected (primes the false cache entry)"
+    );
+
+    let admin_uid = h.create_user("con139-react-admin").await;
+    h.grant_company_admin(admin_uid).await;
+    let admin_token = h.login_as(admin_uid, true).await;
+
+    let uri = format!("/api/admin/users/{target_uid}");
+    let (status, body) = call(
+        &h.router,
+        Method::PATCH,
+        &uri,
+        Some(&admin_token),
+        Some(json!({ "isActive": true })),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "reactivate endpoint must succeed; body={}",
+        String::from_utf8_lossy(&body)
+    );
+
+    // Without the reactivate-side invalidate, the cached `false` entry would
+    // still short-circuit the auth middleware into a 401 here.
+    let (after, _) =
+        call(&h.router, Method::GET, SESSIONS_URI, Some(&target_token), None).await;
+    assert_ne!(
+        after,
+        StatusCode::UNAUTHORIZED,
+        "reactivated user must regain access immediately, not after TTL expiry"
+    );
 
     h.cleanup().await;
 }

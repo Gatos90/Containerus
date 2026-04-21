@@ -214,6 +214,15 @@ async fn update_user(
         internal_error()
     })?;
 
+    // CON-139: Evict the auth-cache entry for the target user immediately
+    // after the flip commits so the middleware re-reads `is_active` on the
+    // next request instead of waiting out the 30s TTL. Runs for both
+    // deactivate (happy-path token rejection in ~ms) and reactivate (don't
+    // lock the user out of a freshly reactivated account until the TTL
+    // elapses). Safe to call unconditionally — the cache is in-memory and
+    // the lookup after a commit failure would have been skipped anyway.
+    state.user_active_cache.invalidate(user_id);
+
     let action = if target_is_active { "user.reactivate" } else { "user.deactivate" };
     let user_id_str = updated.id.to_string();
     log_event(
