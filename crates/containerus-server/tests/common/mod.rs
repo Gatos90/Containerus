@@ -28,7 +28,9 @@ use sqlx::{Executor, PgPool};
 use uuid::Uuid;
 
 use containerus_server::auth::jwt::{create_access_token, ProjectMembership};
-use containerus_server::auth::middleware::{PermissionCache, TokenRevocationCache};
+use containerus_server::auth::middleware::{
+    PermissionCache, TokenRevocationCache, UserActiveCache,
+};
 use containerus_server::config::ServerConfig;
 use containerus_server::connections::ConnectionManager;
 use containerus_server::k8s::ClusterManager;
@@ -142,6 +144,7 @@ impl TestHarness {
             k8s: ClusterManager::new(vault),
             permission_cache,
             revocation_cache: TokenRevocationCache::new(),
+            user_active_cache: UserActiveCache::new(),
         };
 
         let auth_limiter = RateLimiter::new(10_000, std::time::Duration::from_secs(60));

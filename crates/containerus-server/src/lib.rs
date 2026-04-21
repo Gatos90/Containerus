@@ -16,7 +16,7 @@ pub mod rate_limit;
 pub mod vault;
 pub mod ws;
 
-use auth::middleware::{PermissionCache, TokenRevocationCache};
+use auth::middleware::{PermissionCache, TokenRevocationCache, UserActiveCache};
 use sqlx::PgPool;
 use axum::http::header::{AUTHORIZATION, CONTENT_TYPE};
 use axum::http::Method;
@@ -43,6 +43,7 @@ pub struct AppState {
     pub k8s: ClusterManager,
     pub permission_cache: PermissionCache,
     pub revocation_cache: TokenRevocationCache,
+    pub user_active_cache: UserActiveCache,
 }
 
 /// Build the full axum router (API + WebSocket + middleware stack) for the
@@ -149,6 +150,7 @@ pub async fn run() {
         .expect("Failed to load permission cache");
 
     let revocation_cache = TokenRevocationCache::new();
+    let user_active_cache = UserActiveCache::new();
 
     let state = AppState {
         db,
@@ -158,6 +160,7 @@ pub async fn run() {
         k8s,
         permission_cache,
         revocation_cache,
+        user_active_cache,
     };
 
     // Background: cleanup idle SSH connections.
