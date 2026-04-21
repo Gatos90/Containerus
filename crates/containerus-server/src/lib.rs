@@ -16,7 +16,7 @@ pub mod rate_limit;
 pub mod vault;
 pub mod ws;
 
-use auth::middleware::{PermissionCache, TokenRevocationCache};
+use auth::middleware::{PermissionCache, TokenRevocationCache, UserActiveCache};
 use ws::events::PermissionEventBus;
 use sqlx::PgPool;
 use axum::http::header::{AUTHORIZATION, CONTENT_TYPE};
@@ -48,6 +48,11 @@ pub struct AppState {
     /// in `ws::permissions`.
     pub permission_events: PermissionEventBus,
     pub revocation_cache: TokenRevocationCache,
+    /// CON-137: short-lived (≤30s) cache of `users.is_active` so the auth
+    /// middleware can reject deactivated users without a per-request DB hit
+    /// on hot paths. Invalidated explicitly by `DeactivateUser` so the
+    /// happy-path eviction beats the TTL.
+    pub user_active_cache: UserActiveCache,
     /// Per-email rate limit for `POST /api/auth/password/reset/request`
     /// (CON-118). Caps at 5 requests/hour per normalised email so the public
     /// endpoint cannot be weaponised for enumeration or mail-bombing against
@@ -175,6 +180,7 @@ pub async fn run() {
         .expect("Failed to load permission cache");
 
     let revocation_cache = TokenRevocationCache::new();
+    let user_active_cache = UserActiveCache::new();
 
     // Password reset throttles (CON-118). One-hour rolling windows so both
     // limiters age out after a quiet period. Numbers match the ticket's
@@ -207,6 +213,7 @@ pub async fn run() {
         permission_cache,
         permission_events: PermissionEventBus::new(),
         revocation_cache,
+        user_active_cache,
         password_reset_email_limiter,
         password_reset_ip_limiter,
         project_invite_limiter,

@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use axum::{
     extract::{connect_info::ConnectInfo, FromRequestParts},
@@ -62,6 +63,100 @@ impl TokenRevocationCache {
     fn prune_expired(&self) {
         let now = chrono::Utc::now().timestamp();
         self.revoked.retain(|_, &mut exp| exp > now);
+    }
+}
+
+// ============================================================================
+// UserActiveCache — short-TTL cache of `users.is_active` keyed by user id
+// ============================================================================
+
+/// TTL for cached `is_active` entries. Bounds the window in which a
+/// deactivated user's access token can still be accepted after `is_active`
+/// flips in the database. 30s matches the CON-137 acceptance ceiling.
+pub const USER_ACTIVE_CACHE_TTL: Duration = Duration::from_secs(30);
+
+/// In-memory cache of `(is_active, cached_at)` per user. Keeps the per-request
+/// DB hit off the hot path for authenticated endpoints while still closing
+/// the "deactivated user keeps API access until their JWT expires" window.
+///
+/// Trade-off vs. a deactivation-version counter: a plain TTL is simpler and
+/// has no write-side coordination cost, but it admits a worst-case
+/// `USER_ACTIVE_CACHE_TTL` of continued access post-deactivation. The
+/// deactivation endpoint MUST call [`UserActiveCache::invalidate`] on the
+/// deactivated user so the happy path is effectively immediate.
+#[derive(Clone)]
+pub struct UserActiveCache {
+    entries: Arc<DashMap<Uuid, (bool, Instant)>>,
+    ttl: Duration,
+}
+
+impl UserActiveCache {
+    pub fn new() -> Self {
+        Self {
+            entries: Arc::new(DashMap::new()),
+            ttl: USER_ACTIVE_CACHE_TTL,
+        }
+    }
+
+    /// Construct a cache with a custom TTL. Exposed for integration tests
+    /// that need a zero-TTL cache to exercise the fall-through path without
+    /// `tokio::time::sleep`. Production callers should use [`Self::new`].
+    pub fn with_ttl(ttl: Duration) -> Self {
+        Self {
+            entries: Arc::new(DashMap::new()),
+            ttl,
+        }
+    }
+
+    /// Returns true if the user exists and has `is_active = true`. On DB
+    /// error, returns the error so callers can fail closed (middleware
+    /// converts it into `AuthError::InternalError`, a 500). A missing user
+    /// row is treated as `is_active = false` — a deleted user cannot hold a
+    /// valid session.
+    pub async fn is_user_active(
+        &self,
+        db: &PgPool,
+        user_id: Uuid,
+    ) -> Result<bool, sqlx::Error> {
+        if let Some(entry) = self.entries.get(&user_id) {
+            let (is_active, cached_at) = *entry;
+            if cached_at.elapsed() < self.ttl {
+                return Ok(is_active);
+            }
+        }
+
+        let row: Option<bool> =
+            sqlx::query_scalar("SELECT is_active FROM users WHERE id = $1")
+                .bind(user_id)
+                .fetch_optional(db)
+                .await?;
+
+        let is_active = row.unwrap_or(false);
+        self.entries.insert(user_id, (is_active, Instant::now()));
+        Ok(is_active)
+    }
+
+    /// Immediately drop any cached `is_active` value for this user. Call
+    /// from the deactivate-user handler so the next request re-reads from
+    /// the database instead of waiting out the TTL.
+    pub fn invalidate(&self, user_id: Uuid) {
+        self.entries.remove(&user_id);
+    }
+
+    /// Evict all entries. Useful for tests and administrative refreshes.
+    pub fn clear(&self) {
+        self.entries.clear();
+    }
+
+    #[cfg(test)]
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+}
+
+impl Default for UserActiveCache {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -205,9 +300,78 @@ where
             return Err(AuthError::InvalidToken);
         }
 
+        // CON-137: reject tokens whose owner has been deactivated. This runs
+        // on every authenticated request, but `UserActiveCache` absorbs the
+        // hot-path DB hit with a short TTL.
+        match app_state
+            .user_active_cache
+            .is_user_active(&app_state.db, claims.sub)
+            .await
+        {
+            Ok(true) => {}
+            Ok(false) => return Err(AuthError::InvalidToken),
+            Err(e) => {
+                tracing::error!("Failed to check user is_active for {}: {e}", claims.sub);
+                return Err(AuthError::InternalError);
+            }
+        }
+
         let client_ip = extract_client_ip(parts);
 
         Ok(AuthUser { claims, client_ip })
+    }
+}
+
+// ============================================================================
+// Shared access-token verifier for non-extractor paths (e.g. WebSocket auth)
+// ============================================================================
+
+/// Errors returned by [`verify_access_token_active`]. Callers translate these
+/// into whatever transport-specific error shape they need (HTTP, WS frame).
+#[derive(Debug)]
+pub enum VerifyTokenError {
+    InvalidOrExpired,
+    UserDeactivated,
+    Internal,
+}
+
+impl VerifyTokenError {
+    pub fn user_message(&self) -> &'static str {
+        match self {
+            VerifyTokenError::InvalidOrExpired => "Invalid or expired token",
+            VerifyTokenError::UserDeactivated => "Invalid or expired token",
+            VerifyTokenError::Internal => "Authentication check failed",
+        }
+    }
+}
+
+/// Decode an access token and enforce revocation + `is_active` in one call.
+/// Mirrors the [`AuthUser`] extractor so WebSocket auth paths (terminal,
+/// tunnel, k8s watch/exec) get identical deactivation semantics. Closes the
+/// CON-137 gap where WS handlers called `decode_access_token` directly and
+/// missed the deactivation check the HTTP extractor now performs.
+pub async fn verify_access_token_active(
+    state: &AppState,
+    token: &str,
+) -> Result<AccessClaims, VerifyTokenError> {
+    let claims = decode_access_token(token, &state.config.jwt_secret)
+        .map_err(|_| VerifyTokenError::InvalidOrExpired)?;
+
+    if state.revocation_cache.is_revoked(&claims.jti) {
+        return Err(VerifyTokenError::InvalidOrExpired);
+    }
+
+    match state
+        .user_active_cache
+        .is_user_active(&state.db, claims.sub)
+        .await
+    {
+        Ok(true) => Ok(claims),
+        Ok(false) => Err(VerifyTokenError::UserDeactivated),
+        Err(e) => {
+            tracing::error!("Failed to check user is_active for {}: {e}", claims.sub);
+            Err(VerifyTokenError::Internal)
+        }
     }
 }
 
@@ -724,5 +888,46 @@ mod tests {
         // Expired entry must be gone; new entry must remain
         assert!(!cache.revoked.contains_key(&old_jti));
         assert!(cache.revoked.contains_key(&new_jti));
+    }
+
+    #[test]
+    fn test_user_active_cache_invalidate_removes_entry() {
+        let cache = UserActiveCache::new();
+        let user_id = Uuid::new_v4();
+        // Seed the cache directly so we don't need a live DB.
+        cache.entries.insert(user_id, (true, Instant::now()));
+        assert_eq!(cache.len(), 1);
+
+        cache.invalidate(user_id);
+        assert_eq!(cache.len(), 0);
+    }
+
+    #[test]
+    fn test_user_active_cache_entry_expires_after_ttl() {
+        // Use a 0ms TTL so every lookup treats the cached row as stale.
+        let cache = UserActiveCache::with_ttl(Duration::from_millis(0));
+        let user_id = Uuid::new_v4();
+        cache.entries.insert(user_id, (true, Instant::now()));
+
+        let cached = cache
+            .entries
+            .get(&user_id)
+            .map(|e| e.1.elapsed() >= cache.ttl)
+            .unwrap_or(false);
+        assert!(
+            cached,
+            "cached_at elapsed must exceed the zero TTL so the next read falls through to DB"
+        );
+    }
+
+    #[test]
+    fn test_user_active_cache_clear_removes_all_entries() {
+        let cache = UserActiveCache::new();
+        cache.entries.insert(Uuid::new_v4(), (true, Instant::now()));
+        cache.entries.insert(Uuid::new_v4(), (false, Instant::now()));
+        assert_eq!(cache.len(), 2);
+
+        cache.clear();
+        assert_eq!(cache.len(), 0);
     }
 }

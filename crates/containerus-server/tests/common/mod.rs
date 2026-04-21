@@ -28,7 +28,9 @@ use sqlx::{Executor, PgPool};
 use uuid::Uuid;
 
 use containerus_server::auth::jwt::{create_access_token, ProjectMembership};
-use containerus_server::auth::middleware::{PermissionCache, TokenRevocationCache};
+use containerus_server::auth::middleware::{
+    PermissionCache, TokenRevocationCache, UserActiveCache,
+};
 use containerus_server::config::ServerConfig;
 use containerus_server::connections::ConnectionManager;
 use containerus_server::k8s::ClusterManager;
@@ -143,6 +145,7 @@ impl TestHarness {
             permission_cache,
             permission_events: containerus_server::ws::events::PermissionEventBus::new(),
             revocation_cache: TokenRevocationCache::new(),
+            user_active_cache: UserActiveCache::new(),
             // Tests disable rate-limiting by setting a ceiling high enough to
             // never trip in a single run (mirrors `auth_limiter` above).
             password_reset_email_limiter: containerus_server::rate_limit::KeyedRateLimiter::new(

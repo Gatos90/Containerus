@@ -16,7 +16,7 @@ use serde_json::json;
 use uuid::Uuid;
 
 use crate::audit::{log_event, AuditCaller, AuditEvent};
-use crate::auth::jwt::decode_access_token;
+use crate::auth::middleware::verify_access_token_active;
 use crate::auth::resolver::{self, ResolverInput};
 use crate::db::models::SystemRow;
 use crate::AppState;
@@ -292,12 +292,12 @@ async fn wait_for_tunnel_auth(
                             }
                         };
 
-                        let claims = match decode_access_token(token, &state.config.jwt_secret) {
+                        let claims = match verify_access_token_active(state, token).await {
                             Ok(c) => c,
-                            Err(_) => {
+                            Err(err) => {
                                 let _ = ws_sender
                                     .send(Message::Text(
-                                        json!({"type": "error", "message": "Invalid or expired token"})
+                                        json!({"type": "error", "message": err.user_message()})
                                             .to_string()
                                             .into(),
                                     ))
