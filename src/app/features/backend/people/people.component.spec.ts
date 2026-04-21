@@ -179,8 +179,8 @@ describe('PeopleComponent', () => {
     const t = fixture.componentInstance.toast();
     expect(t?.kind).toBe('success');
     expect(t?.message).toContain('deactivated');
-    expect(t?.message).toContain('Sign-in blocked');
-    expect(t?.message).toContain('15 min');
+    expect(t?.message).toContain('Sessions ended');
+    expect(t?.message).toContain('sign-in blocked');
   });
 
   it('routes success and error toasts through separate live regions', async () => {

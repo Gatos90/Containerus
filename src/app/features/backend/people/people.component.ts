@@ -546,7 +546,7 @@ export class PeopleComponent implements OnInit {
         kind: 'success',
         message: isActive
           ? `${member.email} reactivated.`
-          : `${member.email} deactivated. Sign-in blocked; existing sessions end within ~15 min.`,
+          : `${member.email} deactivated. Sessions ended and sign-in blocked.`,
       });
       return true;
     } catch (e: any) {
